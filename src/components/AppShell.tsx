@@ -2,7 +2,7 @@ import { BarChart3, FileText, Lightbulb, LogOut, Menu, Moon, Settings, Sun, Targ
 import type { ReactNode } from 'react'
 import { BrandLogo } from './BrandLogo'
 
-export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'insights' | 'settings' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
+export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
 
 const nav = [
   ['dashboard', 'Início', BarChart3], ['audience', 'Público', Users], ['pages', 'Páginas', FileText],
