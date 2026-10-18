@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ArrowRight, Check } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import { Button } from './ui/Button'
@@ -43,6 +43,7 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
   const [loading, setLoading] = useState(false)
   const options = useMemo(() => segmentOptions[segment], [segment])
   const isOther = subsegment === 'Outros'
+  useEffect(() => { const paths: Record<AuthFlowMode, string> = { login: '/entrar', consent: '/consentimento', 'onboarding-business': '/cadastro/negocio', 'onboarding-source': '/cadastro/fonte-de-dados' }; const path = paths[mode]; if (window.location.pathname !== path) window.history.pushState({}, '', path) }, [mode])
 
   const ready = () => {
     if (supabase) return true
