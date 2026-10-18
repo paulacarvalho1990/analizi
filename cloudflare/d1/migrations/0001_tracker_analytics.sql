@@ -12,18 +12,32 @@ create table if not exists events (
   id text primary key,
   tracker_site_id text not null references tracker_sites(tracker_site_id),
   occurred_at text not null,
+  received_at text not null default current_timestamp,
   event_name text not null,
+  visitor_id text not null,
+  session_id text not null,
+  session_number integer,
   page_path text,
   page_title text,
+  page_url text,
+  page_hostname text,
   referrer_host text,
+  referrer_url text,
   source text,
   medium text not null default '',
   campaign text not null default '',
-  session_hash text,
+  device_type text,
+  browser text,
+  operating_system text,
+  language text,
+  engagement_time_ms integer,
+  is_conversion integer not null default 0,
   metadata_json text not null default '{}'
 );
 
 create index if not exists events_site_time_idx on events (tracker_site_id, occurred_at desc);
+create index if not exists events_site_visitor_idx on events (tracker_site_id, visitor_id, occurred_at desc);
+create index if not exists events_site_session_idx on events (tracker_site_id, session_id, occurred_at asc);
 create index if not exists events_site_page_idx on events (tracker_site_id, page_path);
 create index if not exists events_site_source_idx on events (tracker_site_id, source, medium, campaign);
 
