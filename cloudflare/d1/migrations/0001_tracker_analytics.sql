@@ -44,12 +44,13 @@ create index if not exists events_site_source_idx on events (tracker_site_id, so
 create table if not exists daily_metrics (
   tracker_site_id text not null references tracker_sites(tracker_site_id),
   metric_date text not null,
-  visits integer not null default 0,
-  visitors integer not null default 0,
-  new_visitors integer not null default 0,
-  average_time_seconds integer not null default 0,
-  contact_interactions integer not null default 0,
-  closing_rate real,
+  sessions integer not null default 0,
+  users integer not null default 0,
+  new_users integer not null default 0,
+  page_views integer not null default 0,
+  conversions integer not null default 0,
+  average_engagement_seconds integer not null default 0,
+  exit_rate real,
   primary key (tracker_site_id, metric_date)
 );
 
@@ -59,7 +60,11 @@ create table if not exists daily_sources (
   source text not null,
   medium text not null default '',
   campaign text not null default '',
-  visits integer not null default 0,
+  users integer not null default 0,
+  new_users integer not null default 0,
+  sessions integer not null default 0,
+  page_views integer not null default 0,
+  conversions integer not null default 0,
   primary key (tracker_site_id, metric_date, source, medium, campaign)
 );
 
@@ -68,9 +73,13 @@ create table if not exists daily_pages (
   metric_date text not null,
   page_path text not null,
   page_title text,
-  visits integer not null default 0,
-  average_time_seconds integer not null default 0,
+  page_views integer not null default 0,
+  users integer not null default 0,
+  entrances integer not null default 0,
   exits integer not null default 0,
+  exit_rate real,
+  average_engagement_seconds integer not null default 0,
+  conversions integer not null default 0,
   primary key (tracker_site_id, metric_date, page_path)
 );
 
