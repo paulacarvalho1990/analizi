@@ -59,50 +59,6 @@ create table public.data_sources (
   unique (site_id, kind)
 );
 
--- Dados exibidos no painel. Eventos brutos do rastreador ficarão no D1 e serão agregados aqui.
-create table public.daily_metrics (
-  site_id uuid not null references public.sites(id) on delete cascade,
-  metric_date date not null,
-  visits integer not null default 0 check (visits >= 0),
-  visitors integer not null default 0 check (visitors >= 0),
-  new_visitors integer not null default 0 check (new_visitors >= 0),
-  average_time_seconds integer not null default 0 check (average_time_seconds >= 0),
-  contact_interactions integer not null default 0 check (contact_interactions >= 0),
-  closing_rate numeric(5,2) check (closing_rate between 0 and 100),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  primary key (site_id, metric_date)
-);
-
-create table public.daily_sources (
-  site_id uuid not null references public.sites(id) on delete cascade,
-  metric_date date not null,
-  source text not null,
-  medium text not null default '',
-  campaign text not null default '',
-  visits integer not null default 0 check (visits >= 0),
-  primary key (site_id, metric_date, source, medium, campaign)
-);
-
-create table public.daily_pages (
-  site_id uuid not null references public.sites(id) on delete cascade,
-  metric_date date not null,
-  page_path text not null,
-  page_title text,
-  visits integer not null default 0 check (visits >= 0),
-  average_time_seconds integer not null default 0 check (average_time_seconds >= 0),
-  exits integer not null default 0 check (exits >= 0),
-  primary key (site_id, metric_date, page_path)
-);
-
-create table public.monthly_event_usage (
-  site_id uuid not null references public.sites(id) on delete cascade,
-  usage_month date not null check (usage_month = date_trunc('month', usage_month)::date),
-  event_count bigint not null default 0 check (event_count >= 0),
-  updated_at timestamptz not null default now(),
-  primary key (site_id, usage_month)
-);
-
 create table public.weekly_reports (
   id uuid primary key default gen_random_uuid(),
   site_id uuid not null references public.sites(id) on delete cascade,
@@ -114,9 +70,6 @@ create table public.weekly_reports (
   unique (site_id, week_start, week_end)
 );
 
-create index daily_metrics_site_date_idx on public.daily_metrics (site_id, metric_date desc);
-create index daily_sources_site_date_idx on public.daily_sources (site_id, metric_date desc);
-create index daily_pages_site_date_idx on public.daily_pages (site_id, metric_date desc);
 create index sites_tracker_site_id_idx on public.sites (tracker_site_id);
 
 create or replace function public.set_updated_at()
@@ -165,7 +118,6 @@ create trigger profiles_updated_at before update on public.profiles for each row
 create trigger businesses_updated_at before update on public.businesses for each row execute function public.set_updated_at();
 create trigger sites_updated_at before update on public.sites for each row execute function public.set_updated_at();
 create trigger sources_updated_at before update on public.data_sources for each row execute function public.set_updated_at();
-create trigger metrics_updated_at before update on public.daily_metrics for each row execute function public.set_updated_at();
 create trigger new_user_profile after insert on auth.users for each row execute procedure public.handle_new_user();
 create trigger new_business_owner after insert on public.businesses for each row execute procedure public.add_business_owner();
 
@@ -174,10 +126,6 @@ alter table public.businesses enable row level security;
 alter table public.business_members enable row level security;
 alter table public.sites enable row level security;
 alter table public.data_sources enable row level security;
-alter table public.daily_metrics enable row level security;
-alter table public.daily_sources enable row level security;
-alter table public.daily_pages enable row level security;
-alter table public.monthly_event_usage enable row level security;
 alter table public.weekly_reports enable row level security;
 
 create policy "profiles can read their own record" on public.profiles for select using (id = auth.uid());
@@ -198,10 +146,6 @@ create policy "owners can manage sites" on public.sites for all using (public.is
 create policy "members can read sources" on public.data_sources for select using (exists (select 1 from public.sites where sites.id = site_id and public.is_business_member(sites.business_id)));
 create policy "owners can manage sources" on public.data_sources for all using (exists (select 1 from public.sites where sites.id = site_id and public.is_business_owner(sites.business_id))) with check (exists (select 1 from public.sites where sites.id = site_id and public.is_business_owner(sites.business_id)));
 
-create policy "members can read daily metrics" on public.daily_metrics for select using (exists (select 1 from public.sites where sites.id = site_id and public.is_business_member(sites.business_id)));
-create policy "members can read daily sources" on public.daily_sources for select using (exists (select 1 from public.sites where sites.id = site_id and public.is_business_member(sites.business_id)));
-create policy "members can read daily pages" on public.daily_pages for select using (exists (select 1 from public.sites where sites.id = site_id and public.is_business_member(sites.business_id)));
-create policy "members can read event usage" on public.monthly_event_usage for select using (exists (select 1 from public.sites where sites.id = site_id and public.is_business_member(sites.business_id)));
 create policy "members can read weekly reports" on public.weekly_reports for select using (exists (select 1 from public.sites where sites.id = site_id and public.is_business_member(sites.business_id)));
 
 revoke all on function public.is_business_member(uuid) from public;
