@@ -37,7 +37,7 @@ create table public.sites (
   name text not null check (char_length(name) between 2 and 120),
   domain text not null,
   tracker_site_id text not null unique default (
-    'ANLZ' || upper(substr(encode(gen_random_bytes(5), 'hex'), 1, 5)) || '-A'
+    'ANLZ' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 5)) || '-A'
   ) check (tracker_site_id ~ '^ANLZ[A-Z0-9]{5}-A$'),
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
