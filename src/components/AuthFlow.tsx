@@ -5,7 +5,7 @@ import { Button } from './ui/Button'
 import { supabase } from '../lib/supabase'
 
 export type AuthFlowMode = 'login' | 'consent' | 'onboarding-business' | 'onboarding-source'
-type Props = { mode: AuthFlowMode; setMode: (mode: AuthFlowMode | 'app') => void }
+type Props = { mode: AuthFlowMode; setMode: (mode: AuthFlowMode | 'app') => void; onSourceCreated?: (source: 'ga4' | 'tracker') => void }
 type Segment = 'products' | 'services' | 'health'
 export const CONSENT_VERSION = '2026-10-18'
 
@@ -26,7 +26,7 @@ function GoogleMark() {
   return <svg aria-hidden="true" className="google-mark" viewBox="0 0 24 24"><path fill="#4285F4" d="M21.805 10.023h-9.18v3.804h5.281c-.228 1.225-.914 2.264-1.944 2.962v2.494h3.145c1.841-1.695 2.903-4.188 2.903-7.153 0-.666-.06-1.307-.17-1.93z"/><path fill="#34A853" d="M12.625 21.5c2.625 0 4.825-.87 6.433-2.217l-3.145-2.494c-.87.584-1.985.93-3.288.93-2.532 0-4.678-1.71-5.446-4.01H3.93v2.575C5.53 19.45 8.81 21.5 12.625 21.5z"/><path fill="#FBBC05" d="M7.179 13.709a5.35 5.35 0 0 1 0-3.418V7.716H3.93a9.125 9.125 0 0 0 0 8.568l3.249-2.575z"/><path fill="#EA4335" d="M12.625 6.281c1.428 0 2.711.491 3.722 1.454l2.793-2.793C17.445 3.361 15.245 2.5 12.625 2.5 8.81 2.5 5.53 4.55 3.93 7.716l3.249 2.575c.768-2.3 2.914-4.01 5.446-4.01z"/></svg>
 }
 
-export function AuthFlow({ mode, setMode }: Props) {
+export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
   const [userName, setUserName] = useState('')
   const [businessName, setBusinessName] = useState('')
   const [site, setSite] = useState('')
@@ -89,6 +89,7 @@ export function AuthFlow({ mode, setMode }: Props) {
     setLoading(true)
     const { error: sourceError } = await supabase!.from('data_sources').insert({ site_id: siteId, kind: source })
     if (sourceError) setError('Não foi possível salvar sua fonte de dados. Tente novamente.')
+    else if (onSourceCreated) onSourceCreated(source)
     else setMode('app')
     setLoading(false)
   }
