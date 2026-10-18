@@ -70,7 +70,7 @@ export function AuthFlow({ mode, setMode }: Props) {
     setError('')
     if (!ready()) return
     setLoading(true)
-    const { error: authError } = await supabase!.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })
+    const { error: authError } = await supabase!.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin, queryParams: { prompt: 'select_account consent' } } })
     if (authError) {
       setError('Não foi possível iniciar o acesso com Google.')
       setLoading(false)
