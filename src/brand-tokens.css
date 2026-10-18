@@ -12,11 +12,11 @@
   --foreground: #111827;
   --muted-foreground: #6B7280;
   --border: #E5E7EB;
-  --primary: #1D4ED8;            /* blue escurecido para botão com texto branco */
+  --primary: #D61F83;            /* rosa principal com contraste para texto branco */
   --primary-foreground: #FFFFFF;
-  --accent: #FF3CAC;
-  --accent-foreground: #0B1220;   /* usar sobre preenchimentos neon */
-  --focus-ring: #1D4ED8;
+  --accent: #3B82F6;             /* azul reservado para dados e destaque secundário */
+  --accent-foreground: #0B1220;
+  --focus-ring: #D61F83;
   --success: #15803D;
   --warning: #9A3412;
   --error: #B91C1C;
@@ -25,16 +25,16 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --background: #0B1220;
-  --surface: #111C32;
+  --background: #1E2025;
+  --surface: #292C33;
   --foreground: #F9FAFB;
   --muted-foreground: #A3AEC2;
-  --border: #26334B;
-  --primary: #3B82F6;
-  --primary-foreground: #0B1220; /* contraste maior que branco no azul claro */
-  --accent: #FF3CAC;
+  --border: #3D414A;
+  --primary: #FF3CAC;
+  --primary-foreground: #1E2025;
+  --accent: #3B82F6;
   --accent-foreground: #0B1220;
-  --focus-ring: #93C5FD;
+  --focus-ring: #FF8A3D;
   --success: #4ADE80;
   --warning: #FDBA74;
   --error: #FCA5A5;
