@@ -1,7 +1,7 @@
 import { BarChart3, FileText, Lightbulb, LogOut, Menu, Settings, Target, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'insights' | 'settings'
+export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'insights' | 'settings' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
 
 const nav = [
   ['dashboard', 'Início', BarChart3], ['audience', 'Público', Users], ['pages', 'Páginas', FileText],
