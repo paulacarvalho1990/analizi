@@ -201,6 +201,17 @@ async function trackerStatus(id: string, env: Env) {
   return json({ configured: true, received: Boolean(row.last_event_at), lastEventAt: row.last_event_at })
 }
 
+async function analytics(id: string, env: Env) {
+  const safeId = trackerId(id)
+  if (!safeId) return json({ error: 'Identificação inválida.' }, 400)
+  const results = await env.ANALIZI_EVENTS.batch([
+    env.ANALIZI_EVENTS.prepare(`select count(distinct visitor_id) users, count(distinct session_id) sessions, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts, sum(event_name='first_visit') newUsers, round(avg(engagement_time_ms)/1000) attentionSeconds from events where tracker_site_id=? and occurred_at >= datetime('now','-7 days')`).bind(safeId),
+    env.ANALIZI_EVENTS.prepare(`select coalesce(source,'direto') name, count(*) value from events where tracker_site_id=? and occurred_at >= datetime('now','-7 days') group by coalesce(source,'direto') order by value desc limit 6`).bind(safeId),
+    env.ANALIZI_EVENTS.prepare(`select coalesce(page_path,'/') path, max(page_title) title, sum(event_name='page_view') views from events where tracker_site_id=? and occurred_at >= datetime('now','-7 days') group by coalesce(page_path,'/') order by views desc limit 10`).bind(safeId),
+  ]) as Array<{ results?: Array<Record<string, unknown>> }>
+  return json({ totals: results[0]?.results?.[0] ?? {}, sources: results[1]?.results ?? [], pages: results[2]?.results ?? [] })
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
@@ -208,6 +219,8 @@ export default {
     if (url.pathname === '/v1/tracker-sites') return provisionTrackerSite(request, env)
     const statusMatch = url.pathname.match(/^\/v1\/tracker-sites\/(ANLZ[A-Z0-9]{5}-A)\/status$/i)
     if (statusMatch) return trackerStatus(statusMatch[1], env)
+    const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)
+    if (analyticsMatch) return analytics(analyticsMatch[1], env)
     return env.ASSETS.fetch(request)
   },
 }
