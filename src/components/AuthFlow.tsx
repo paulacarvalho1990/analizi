@@ -4,9 +4,10 @@ import { BrandLogo } from './BrandLogo'
 import { Button } from './ui/Button'
 import { supabase } from '../lib/supabase'
 
-export type AuthFlowMode = 'login' | 'onboarding-business' | 'onboarding-source'
+export type AuthFlowMode = 'login' | 'consent' | 'onboarding-business' | 'onboarding-source'
 type Props = { mode: AuthFlowMode; setMode: (mode: AuthFlowMode | 'app') => void }
 type Segment = 'products' | 'services' | 'health'
+export const CONSENT_VERSION = '2026-10-18'
 
 const segmentOptions: Record<Segment, string[]> = {
   products: ['Moda e acessórios', 'Beleza e cosméticos', 'Alimentos e bebidas', 'Casa e decoração', 'Eletrônicos', 'Saúde e bem-estar', 'Pet shop', 'Autopeças e acessórios', 'Livros e papelaria', 'Produtos infantis', 'Outros'],
@@ -34,6 +35,8 @@ export function AuthFlow({ mode, setMode }: Props) {
   const [subsegment, setSubsegment] = useState('')
   const [otherSubsegment, setOtherSubsegment] = useState('')
   const [source, setSource] = useState<'ga4' | 'tracker'>('tracker')
+  const [serviceTermsAccepted, setServiceTermsAccepted] = useState(false)
+  const [dataTermsAccepted, setDataTermsAccepted] = useState(false)
   const [siteId, setSiteId] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -98,7 +101,32 @@ export function AuthFlow({ mode, setMode }: Props) {
     if (authError) { setError('Não foi possível iniciar o acesso com Google.'); setLoading(false) }
   }
 
+  const acceptConsents = async () => {
+    setError('')
+    if (!serviceTermsAccepted || !dataTermsAccepted) { setError('Você precisa aceitar os dois termos para continuar.'); return }
+    if (!ready()) return
+    setLoading(true)
+    const { data: { user }, error: userError } = await supabase!.auth.getUser()
+    if (userError || !user) { setError('Sua sessão expirou. Entre novamente com Google.'); setLoading(false); return }
+    const { error: consentError } = await supabase!.from('user_consents').insert([
+      { user_id: user.id, consent_key: 'service_terms', version: CONSENT_VERSION, source: 'web', terms_snapshot: { title: 'Uso do Analizi', version: CONSENT_VERSION } },
+      { user_id: user.id, consent_key: 'site_data_processing', version: CONSENT_VERSION, source: 'web', terms_snapshot: { title: 'Dados do site e integrações', version: CONSENT_VERSION } },
+    ])
+    if (consentError) setError('Não foi possível registrar seus consentimentos. Tente novamente.')
+    else setMode('onboarding-business')
+    setLoading(false)
+  }
+
+  const declineConsents = async () => {
+    setLoading(true)
+    await supabase?.auth.signOut()
+    setLoading(false)
+    setMode('login')
+  }
+
   if (mode === 'login') return <div className="auth-layout"><section className="auth-pitch"><BrandLogo inverse /><div><span className="eyebrow">ANALYTICS DESCOMPLICADO</span><h1>Entenda o que acontece no seu site.</h1><p>Transformamos os números do seu site em decisões simples para o seu negócio.</p></div><div className="testimonial">“Finalmente consigo acompanhar os resultados do meu site sem precisar entender de tecnologia.”<span>— Marina, Clínica Horizonte</span></div></section><section className="auth-form"><div className="form-box"><span className="eyebrow">BEM-VINDO(A)</span><h2>Entre ou crie sua conta.</h2><p>Use sua conta Google para acessar o Analizi com segurança.</p>{error && <p className="form-feedback error">{error}</p>}<button type="button" className="google-auth-button" disabled={loading} onClick={loginWithGoogle}><GoogleMark /><span>{loading ? 'Redirecionando...' : 'Continuar com o Google'}</span></button><p className="switch">Ainda não tem uma conta? Ela será criada no seu primeiro acesso.</p></div></section></div>
+
+  if (mode === 'consent') return <div className="onboarding consent-page"><header><BrandLogo /><span>Antes de começar</span></header><section className="onboarding-card consent-card"><span className="eyebrow">SEUS CONSENTIMENTOS</span><h1>Vamos deixar tudo claro.</h1><p>Para usar o Analizi, precisamos do seu aceite nos dois termos abaixo. Você pode recusar; nesse caso, o cadastro será encerrado.</p><article className="consent-term"><h2>1. Uso do Analizi</h2><p>O Analizi é um serviço em evolução contínua. Podemos atualizar funcionalidades, interfaces, limites, integrações, planos e preços para melhorar ou manter o serviço. Quando uma mudança impactar seu plano ou cobrança, ela será comunicada antes de produzir efeito, conforme as condições aplicáveis.</p><p>As análises são apoio à decisão: não garantem resultados comerciais, disponibilidade ininterrupta ou compatibilidade permanente com serviços de terceiros.</p><label className="consent-check"><input type="checkbox" checked={serviceTermsAccepted} onChange={(event) => setServiceTermsAccepted(event.target.checked)} /> <span>Li e aceito os termos de uso do Analizi — versão {CONSENT_VERSION}.</span></label></article><article className="consent-term"><h2>2. Dados do site e integrações</h2><p>Você autoriza o Analizi a coletar, receber, organizar e armazenar métricas do site vinculado, necessárias para gerar relatórios e insights. Esses dados ficam armazenados em nossa infraestrutura enquanto sua conta estiver ativa ou pelo período exigido por lei.</p><p>Ao conectar o Google Analytics 4, você autoriza acesso somente de leitura aos dados permitidos. Ao instalar o Rastreador Analizi, você declara ter autorização para inserir o código no site e para tratar os dados de navegação conforme a LGPD e seus próprios avisos de privacidade.</p><p>Você declara ter poderes para vincular o negócio e acessar informações privadas e inteligência de negócio nele contidas. O Analizi não deve coletar conteúdo de formulários, senhas, e-mails ou telefones pelo rastreador.</p><label className="consent-check"><input type="checkbox" checked={dataTermsAccepted} onChange={(event) => setDataTermsAccepted(event.target.checked)} /> <span>Li e aceito o tratamento e armazenamento dos dados do site — versão {CONSENT_VERSION}.</span></label></article>{error && <p className="form-feedback error">{error}</p>}<div className="onboarding-actions"><Button type="button" variant="ghost" disabled={loading} onClick={declineConsents}>Não aceito</Button><Button type="button" disabled={loading || !serviceTermsAccepted || !dataTermsAccepted} onClick={acceptConsents}>{loading ? 'Registrando...' : 'Aceitar e continuar'}<ArrowRight size={18} /></Button></div><small className="consent-note">O aceite é registrado com a sua conta, a versão dos termos e data/hora.</small></section></div>
 
   if (mode === 'onboarding-business') return <div className="onboarding"><header><BrandLogo /><span>Passo 1 de 2</span></header><div className="steps"><i className="done" /> <i /></div><form className="onboarding-card onboarding-details" onSubmit={submitBusiness}><span className="eyebrow">VAMOS COMEÇAR</span><h1>Conte um pouco sobre você e seu negócio.</h1><p>Usaremos essas informações para deixar suas análises mais úteis para o seu tipo de site.</p><div className="two-fields"><label>Seu nome<input required value={userName} onChange={(event) => setUserName(event.target.value)} placeholder="Ex.: Paula Carvalho" autoComplete="name" /></label><label>Nome do negócio<input required value={businessName} onChange={(event) => setBusinessName(event.target.value)} placeholder="Ex.: Clínica Horizonte" /></label></div><div className="two-fields"><label>Endereço do site<input required value={site} onChange={(event) => setSite(event.target.value)} placeholder="seusite.com.br" inputMode="url" /><small>Vamos salvar apenas o domínio, sem páginas ou caminhos.</small></label><label>Sua função no negócio<select value={creatorRole} onChange={(event) => setCreatorRole(event.target.value)}><option value="owner_partner">Proprietário(a) ou sócio(a)</option><option value="developer">Desenvolvedor(a)</option><option value="employee">Funcionário(a)</option><option value="other">Outra função</option></select></label></div><div className="two-fields"><label>Segmento do negócio<select value={segment} onChange={(event) => { setSegment(event.target.value as Segment); setSubsegment(''); setOtherSubsegment('') }}><option value="products">Produtos</option><option value="services">Serviços</option><option value="health">Saúde</option></select></label><label>Tipo de {segmentLabels[segment].toLowerCase()}<select required value={subsegment} onChange={(event) => { setSubsegment(event.target.value); setOtherSubsegment('') }}><option value="" disabled>Selecione uma opção</option>{options.map((option) => <option key={option}>{option}</option>)}</select></label></div>{isOther && <label>Descreva o tipo do negócio<input required value={otherSubsegment} onChange={(event) => setOtherSubsegment(event.target.value)} placeholder="Ex.: Equipamentos para agricultura" /></label>}{error && <p className="form-feedback error">{error}</p>}<div className="onboarding-actions"><span /><Button disabled={loading}>{loading ? 'Salvando...' : 'Continuar'}<ArrowRight size={18} /></Button></div></form></div>
 
