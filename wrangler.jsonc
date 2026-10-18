@@ -11,7 +11,8 @@
     {
       "binding": "ANALIZI_EVENTS",
       "database_name": "analizi-events-prod",
-      "database_id": "74d5e998-2198-4131-b4e7-7e355dc4b3da"
+      "database_id": "74d5e998-2198-4131-b4e7-7e355dc4b3da",
+      "migrations_dir": "cloudflare/d1/migrations"
     }
   ],
   "env": {

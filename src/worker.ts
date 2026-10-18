@@ -55,7 +55,7 @@ type TrackerEvent = {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': '*' },
   })
 }
 
@@ -87,7 +87,7 @@ function requestedHost(request: Request) {
 
 async function collect(request: Request, env: Env) {
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: { 'access-control-allow-methods': 'POST, OPTIONS' } })
+    return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' } })
   }
   if (request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
 
@@ -159,10 +159,55 @@ async function collect(request: Request, env: Env) {
   return json({ accepted: statements.length - 1 }, 202)
 }
 
+function trackerId(value: unknown) {
+  const id = compactText(value, 32).toUpperCase()
+  return /^ANLZ[A-Z0-9]{5}-A$/.test(id) ? id : ''
+}
+
+function siteDomain(value: unknown) {
+  const domain = compactText(value, 253).replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0].toLowerCase()
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain) ? domain : ''
+}
+
+async function provisionTrackerSite(request: Request, env: Env) {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' } })
+  if (request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
+  let payload: { trackerSiteId?: unknown, domain?: unknown, supabaseSiteId?: unknown, businessId?: unknown }
+  try { payload = await request.json() } catch { return json({ error: 'Formato inválido.' }, 400) }
+  const id = trackerId(payload.trackerSiteId)
+  const domain = siteDomain(payload.domain)
+  const supabaseSiteId = compactText(payload.supabaseSiteId, 64)
+  const businessId = compactText(payload.businessId, 64)
+  if (!id || !domain) return json({ error: 'Identificação ou domínio inválido.' }, 400)
+  await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare(`
+    insert into tracker_sites (tracker_site_id, supabase_site_id, business_id, domain, is_active)
+    values (?, ?, ?, ?, 1)
+    on conflict(tracker_site_id) do update set domain = excluded.domain, is_active = 1, updated_at = current_timestamp
+  `).bind(id, supabaseSiteId || id, businessId || id, domain)])
+  return json({ trackerSiteId: id, domain })
+}
+
+async function trackerStatus(id: string, env: Env) {
+  const safeId = trackerId(id)
+  if (!safeId) return json({ error: 'Identificação inválida.' }, 400)
+  const result = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare(`
+    select s.tracker_site_id, max(e.received_at) as last_event_at
+    from tracker_sites s left join events e on e.tracker_site_id = s.tracker_site_id
+    where s.tracker_site_id = ? and s.is_active = 1
+    group by s.tracker_site_id
+  `).bind(safeId)]) as Array<{ results?: Array<{ tracker_site_id: string, last_event_at: string | null }> }>
+  const row = result[0]?.results?.[0]
+  if (!row) return json({ configured: false, received: false }, 404)
+  return json({ configured: true, received: Boolean(row.last_event_at), lastEventAt: row.last_event_at })
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname === '/v1/events') return collect(request, env)
+    if (url.pathname === '/v1/tracker-sites') return provisionTrackerSite(request, env)
+    const statusMatch = url.pathname.match(/^\/v1\/tracker-sites\/(ANLZ[A-Z0-9]{5}-A)\/status$/i)
+    if (statusMatch) return trackerStatus(statusMatch[1], env)
     return env.ASSETS.fetch(request)
   },
 }
