@@ -71,13 +71,19 @@
   send('page_view')
 
   document.addEventListener('click', (event) => {
-    const target = event.target instanceof Element ? event.target.closest('button, [role="button"], input[type="button"], input[type="submit"], [data-analizi-event], a[href*="wa.me"], a[href*="whatsapp.com"]') : null
+    const target = event.target instanceof Element ? event.target.closest('a, button, [role="button"], input[type="button"], input[type="submit"], [data-analizi-event]') : null
     if (!target) return
     const href = target instanceof HTMLAnchorElement ? target.href : ''
     const label = truncate(target.getAttribute('aria-label') || target.textContent || target.getAttribute('value') || '', 160)
-    const explicit = target.getAttribute('data-analizi-event')
+    const explicit = (target.getAttribute('data-analizi-event') || '').toLowerCase()
     const isWhatsapp = /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com)/i.test(href)
-    const eventName = isWhatsapp ? 'whatsapp_contact' : explicit === 'sign_up' || explicit === 'login' ? explicit : 'button_click'
-    send(eventName, { button_label: label, button_id: truncate(target.id, 120), destination: cleanUrl(href) })
+    const isPhone = /^tel:/i.test(href)
+    const isEmail = /^mailto:/i.test(href)
+    const hasLeadIntent = /\b(fale\s*(com|conosco)|entre\s*em\s*contato|contato|whats(?:app)?|agend[ea]|marc[ae]\s*(uma\s*)?(consulta|reuni[aã]o)|solicite|pedir|pe[cç]a\s*(um\s*)?or[cç]amento|or[cç]amento|quero\s*(saber|agendar|falar|receber)|ligue|telefone|enviar\s*(mensagem|formul[aá]rio)|tirar\s*d[uú]vidas|falar\s*com\s*(um\s*)?(especialista|consultor)|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?|cadastre-se|inscreva-se)\b/i.test(label)
+    const isMarkedLead = ['contact', 'lead', 'whatsapp', 'quote', 'appointment', 'sign_up', 'login'].includes(explicit)
+    if (!isWhatsapp && !isPhone && !isEmail && !hasLeadIntent && !isMarkedLead) return
+    const eventName = isWhatsapp || explicit === 'whatsapp' ? 'whatsapp_contact' : explicit === 'sign_up' || explicit === 'login' ? explicit : 'button_click'
+    const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : explicit || 'contato'
+    send(eventName, { button_label: label || 'Botão de contato', button_id: truncate(target.id, 120), destination: cleanUrl(href), contact_intent: intent })
   }, { capture: true })
 })()
