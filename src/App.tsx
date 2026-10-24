@@ -348,7 +348,14 @@ function useAnalytics() {
       try {
         const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/analytics/${currentSite.tracker_site_id}?${query}`);
         if (response.ok) {
-          setData({ ...await response.json() as AnalyticsData, sourceKind: source?.data?.[0]?.kind });
+          const payload = await response.json() as AnalyticsData;
+          setData({ ...payload, sourceKind: source?.data?.[0]?.kind });
+          if (supabase && currentSite.id && payload?.totals && (Number(payload.totals.pageViews || 0) > 0 || Number(payload.totals.users || 0) > 0)) {
+            void supabase.from('data_sources').update({
+              status: 'connected',
+              last_synced_at: new Date().toISOString()
+            }).eq('site_id', currentSite.id).eq('status', 'pending');
+          }
         } else {
           setData(null);
         }
@@ -367,28 +374,137 @@ function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) { return <d
 
 function ConnectionStatus() {
   const { currentSite } = useBusiness();
-  const [state, setState] = useState<'loading' | 'none' | 'pending' | 'ready'>('loading');
+  const [state, setState] = useState<'loading' | 'none' | 'pending' | 'warning_24h' | 'ready'>('loading');
   const [updatedAt, setUpdatedAt] = useState('');
+
   useEffect(() => {
+    let isMounted = true;
     const load = async () => {
-      if (!currentSite?.id) { setState('none'); return; }
-      if (!supabase) { setState('ready'); return; }
-      const source = await supabase.from('data_sources').select('status,connected_at,last_synced_at,created_at').eq('site_id', currentSite.id).order('created_at', { ascending: false }).limit(1);
-      const item = source?.data?.[0];
-      if (!item) { setState('none'); return; }
-      if (item.status === 'connected' || item.last_synced_at) {
-        setState('ready');
-        if (item.last_synced_at) setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.last_synced_at)));
-      } else {
-        setState('pending');
+      if (!currentSite?.id) {
+        if (isMounted) setState('none');
+        return;
+      }
+      if (!supabase) {
+        if (isMounted) setState('ready');
+        return;
+      }
+
+      try {
+        const source = await supabase
+          .from('data_sources')
+          .select('id,status,connected_at,last_synced_at,created_at')
+          .eq('site_id', currentSite.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        const item = source?.data?.[0];
+        if (!item) {
+          if (isMounted) setState('none');
+          return;
+        }
+
+        if (item.status === 'connected' || item.last_synced_at) {
+          if (isMounted) {
+            setState('ready');
+            if (item.last_synced_at) {
+              setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.last_synced_at)));
+            }
+          }
+          return;
+        }
+
+        let hasEvents = false;
+        let lastEventAt: string | null = null;
+        if (currentSite.tracker_site_id) {
+          try {
+            const check = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${currentSite.tracker_site_id}/status`);
+            if (check.ok) {
+              const checkData = await check.json() as { configured?: boolean; received?: boolean; lastEventAt?: string | null };
+              if (checkData.received) {
+                hasEvents = true;
+                lastEventAt = checkData.lastEventAt || new Date().toISOString();
+              }
+            }
+          } catch {
+            // falha de rede silenciosa
+          }
+        }
+
+        if (hasEvents) {
+          const nowIso = new Date().toISOString();
+          void supabase
+            .from('data_sources')
+            .update({
+              status: 'connected',
+              connected_at: item.connected_at || nowIso,
+              last_synced_at: lastEventAt || nowIso
+            })
+            .eq('id', item.id);
+
+          if (isMounted) {
+            setState('ready');
+            if (lastEventAt) {
+              setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lastEventAt)));
+            }
+          }
+          return;
+        }
+
+        const createdAt = item.created_at ? new Date(item.created_at).getTime() : Date.now();
+        const hoursSinceCreation = (Date.now() - createdAt) / (1000 * 60 * 60);
+
+        if (isMounted) {
+          if (hoursSinceCreation >= 24) {
+            setState('warning_24h');
+          } else {
+            setState('pending');
+          }
+        }
+      } catch {
+        if (isMounted) setState('none');
       }
     };
+
     void load();
+    return () => { isMounted = false; };
   }, [currentSite]);
+
   if (state === 'loading') return null;
-  if (state === 'none') return <article className="connection-status danger"><b>SUA CONEXÃO NÃO ESTÁ CONFIGURADA.</b><p>Escolha uma fonte de dados em Configurações para começar a acompanhar seu site.</p></article>;
-  if (state === 'pending') return <article className="connection-status"><b>Você acabou de conectar seu site.</b><p>Seus dados serão coletados em até 24 horas.</p></article>;
-  return <article className="connection-status success"><b>Dados atualizados até ontem.</b><p>{updatedAt ? `Última atualização: ${updatedAt}.` : 'A próxima atualização será exibida aqui.'}</p></article>;
+  if (state === 'none') {
+    return (
+      <article className="connection-status danger">
+        <b>SUA CONEXÃO NÃO ESTÁ CONFIGURADA.</b>
+        <p>Escolha uma fonte de dados em Configurações para começar a acompanhar seu site.</p>
+      </article>
+    );
+  }
+  if (state === 'warning_24h') {
+    return (
+      <article className="connection-status danger">
+        <b>NENHUM EVENTO DETECTADO APÓS 24 HORAS.</b>
+        <p>Seu site foi configurado há mais de 24 horas, mas ainda não recebemos visitas. Verifique se o código do rastreador foi publicado corretamente.</p>
+      </article>
+    );
+  }
+  if (state === 'pending') {
+    return (
+      <article className="connection-status">
+        <b>Você acabou de conectar seu site.</b>
+        <p>Seus dados serão coletados em até 24 horas.</p>
+      </article>
+    );
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayFormatted = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(yesterday);
+
+  return (
+    <article className="connection-status success">
+      <b>DADOS COLETADOS ATÉ {yesterdayFormatted}.</b>
+      <p>{updatedAt ? `Última sincronização: ${updatedAt}.` : 'A próxima atualização será exibida aqui.'}</p>
+    </article>
+  );
 }
 
 function Pages() { const analytics = useAnalytics(); const [tablePage, setTablePage] = useState(0); const pages = analytics?.pages ?? []; const p = analytics?.previousTotals; const visiblePages = pages.slice(tablePage * ITEMS_PER_PAGE, (tablePage + 1) * ITEMS_PER_PAGE); const duration = (seconds?: number) => seconds ? `${Math.floor(seconds / 60)}min ${seconds % 60}s` : '—'; const totalViews = pages.reduce((sum, item) => sum + Number(item.views || 0), 0); const pagesWithExit = pages.filter(item => item.exitRate != null); const averageExit = pagesWithExit.length ? pagesWithExit.reduce((sum, item) => sum + Number(item.exitRate || 0), 0) / pagesWithExit.length : 0; const topPage = pages[0]; return <><PageHeader title="Suas páginas" subtitle="Veja quais páginas atraem e mantêm mais pessoas no seu site."/><AnalyticsFilters analytics={analytics}/><section className="metrics page-metrics"><MetricCard title="Páginas acompanhadas" value={String(pages.length || '—')} note="páginas com atividade no período"/><MetricCard title="Visualizações" value={String(totalViews || '—')} {...comparison(totalViews, p?.pageViews)}/><MetricCard title="Página mais vista" value={topPage?.path || '—'} note="mais visualizada no período"/><MetricCard title="Taxa média de saída" value={averageExit ? `${averageExit.toFixed(1).replace('.', ',')}%` : '—'} note="saídas sem interação"/></section><section className="pages-split"><PageChart pages={pages}/><article className="table-card compact-table pages-table"><div className="section-heading"><div><h3>Desempenho das páginas</h3><p>Período selecionado</p></div><button className="filter-button">Ordenado por visualizações <ChevronDown size={15}/></button></div><div className="table-head"><span>Página</span><span>Visualizações</span><span>Tempo de atenção</span><span title="Porcentagem de visualizações que saíram sem interagir">Taxa de saída</span></div>{visiblePages.map((item) => <div className="page-row" key={item.path}><span><b>{item.title || item.path}</b><small>{item.path}</small></span><span><b>{item.views}</b></span><span>{duration(item.attentionSeconds)}</span><span>{item.exitRate == null ? '—' : `${item.exitRate}%`}</span></div>)}{!pages.length && <p className="empty-state">Ainda não recebemos visualizações de páginas neste período.</p>}<TablePagination page={tablePage} total={pages.length} setPage={setTablePage}/></article></section></> }
@@ -498,8 +614,20 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
     setTestResult('Verificando se o seu site enviou um evento...');
     try {
       const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${siteId}/status`);
-      const status = await response.json() as { received?: boolean };
-      setTestResult(status.received ? 'Instalação confirmada. Recebemos um evento do seu site.' : `Ainda não recebemos um evento de ${domain || 'seu site'}. Publique o código, abra o site em outra aba e tente novamente.`);
+      const status = await response.json() as { received?: boolean; lastEventAt?: string | null };
+      if (status.received) {
+        setTestResult('Instalação confirmada. Recebemos um evento do seu site.');
+        if (supabase && currentSite?.id) {
+          const nowIso = new Date().toISOString();
+          void supabase.from('data_sources').update({
+            status: 'connected',
+            connected_at: nowIso,
+            last_synced_at: status.lastEventAt || nowIso
+          }).eq('site_id', currentSite.id);
+        }
+      } else {
+        setTestResult(`Ainda não recebemos um evento de ${domain || 'seu site'}. Publique o código, abra o site em outra aba e tente novamente.`);
+      }
     } catch {
       setTestResult('Não foi possível verificar agora. Tente novamente em alguns instantes.');
     } finally {
