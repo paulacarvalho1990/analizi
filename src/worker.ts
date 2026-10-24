@@ -544,7 +544,6 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
 
   let body: {
     trackerSiteId?: string
-    forceRefresh?: boolean
     business?: {
       name?: string
       segment?: string
@@ -568,12 +567,13 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
     return json({ error: 'Payload JSON inválido.' }, 400)
   }
 
-  const { trackerSiteId, forceRefresh, business, metrics } = body
+  const { trackerSiteId, business, metrics } = body
   const safeSiteId = trackerId(trackerSiteId)
   const currentWeek = getWeekCycle()
 
-  // 1. Checa se já existe análise salva no D1 para a semana atual (a menos que seja forceRefresh explícito)
-  if (safeSiteId && !forceRefresh) {
+  // 1. Checa se já existe análise salva no D1 para o ciclo semanal atual.
+  // Regra estrita: insights são fixados por semana e NÃO permitem regeneração sob demanda.
+  if (safeSiteId) {
     try {
       const existing = (await env.ANALIZI_EVENTS.batch([
         env.ANALIZI_EVENTS.prepare(
