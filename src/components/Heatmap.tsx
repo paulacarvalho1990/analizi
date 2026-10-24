@@ -53,11 +53,33 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
   const type = block.type || 'section'
   const label = block.label || ''
 
+  // Calcula z-index e nível para evitar que texto/botão fique encoberto por fundos ou seções
+  let zIndex = 1
+  let opacity = 0.95
+  if (type === 'section' || type === 'header' || type === 'footer') {
+    zIndex = 1
+    opacity = 0.4
+  } else if (type === 'banner' || type === 'card') {
+    zIndex = 2
+    opacity = 0.75
+  } else if (type === 'image' || type === 'video') {
+    zIndex = 3
+    opacity = 0.9
+  } else if (type === 'heading' || type === 'form') {
+    zIndex = 4
+    opacity = 0.95
+  } else if (type === 'button' || type === 'link' || type === 'input') {
+    zIndex = 5
+    opacity = 1
+  }
+
   const style: React.CSSProperties = {
     top: `${bTop}px`,
-    left: `${Math.min(bLeft, baseWidth - 30)}px`,
-    width: `${Math.min(bWidth, baseWidth)}px`,
-    height: `${bHeight}px`
+    left: `${Math.max(0, bLeft)}px`,
+    width: `${Math.max(20, bWidth)}px`,
+    height: `${Math.max(16, bHeight)}px`,
+    zIndex,
+    opacity
   }
 
   // Placeholder completo para Imagem
@@ -224,7 +246,7 @@ export function Heatmap() {
   const layout = data?.layout
   const blocks = layout?.blocks || []
   const pageHeight = Math.max(layout?.pageHeight || 1200, 800)
-  const baseWidth = device === 'mobile' ? 390 : 1200
+  const baseWidth = device === 'mobile' ? 390 : Math.max(layout?.viewportWidth || 1200, 1100)
   const clicks = data?.clicks || []
   const maxClickCount = Math.max(...clicks.map((c) => c.count), 1)
 
@@ -364,13 +386,13 @@ export function Heatmap() {
             </section>
           )}
 
-          {/* Área do Wireframe + Heatmap */}
+          {/* Área do Wireframe + Heatmap com Scroll Lateral Suave e Contido */}
           <div className="heatmap-canvas-wrapper">
             <div
               className={`heatmap-canvas ${device}`}
               style={{
-                width: device === 'mobile' ? '390px' : '100%',
-                maxWidth: device === 'mobile' ? '390px' : '1200px',
+                width: device === 'mobile' ? '390px' : `${baseWidth}px`,
+                minWidth: device === 'mobile' ? '390px' : `${baseWidth}px`,
                 minHeight: `${pageHeight}px`,
                 position: 'relative'
               }}
