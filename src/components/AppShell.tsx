@@ -5,6 +5,20 @@ import { WorkspaceSelector } from './WorkspaceSelector'
 
 export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
 
+export const PAGE_TITLES: Record<Page, string> = {
+  dashboard: 'Visão Geral | Analizi',
+  audience: 'Público | Analizi',
+  pages: 'Páginas | Analizi',
+  results: 'Resultados | Analizi',
+  heatmap: 'Heatmap & Comportamento | Analizi',
+  insights: 'Insights de IA | Analizi',
+  settings: 'Configurações | Analizi',
+  team: 'Acesso ao Negócio | Analizi',
+  'data-sources': 'Fontes de Dados | Analizi',
+  'ga4-setup': 'Conectar Google Analytics | Analizi',
+  'tracker-setup': 'Instalar Rastreador | Analizi',
+}
+
 const nav = [
   ['dashboard', 'Início', BarChart3], ['audience', 'Público', Users], ['pages', 'Páginas', FileText],
   ['results', 'Resultados', Target], ['heatmap', 'Heatmap', Flame], ['insights', 'Insights', Lightbulb],
@@ -13,7 +27,13 @@ const nav = [
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
   const paths: Partial<Record<Page, string>> = { dashboard: '/painel', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics' }
   const navigate = (next: Page) => { const path = paths[next]; if (path && window.location.pathname !== path) window.history.pushState({}, '', path); setPage(next) }
-  useEffect(() => { const path = paths[page]; if (path && window.location.pathname !== path) window.history.pushState({}, '', path) }, [page])
+  useEffect(() => {
+    const path = paths[page];
+    if (path && window.location.pathname !== path) window.history.pushState({}, '', path);
+    if (PAGE_TITLES[page]) {
+      document.title = PAGE_TITLES[page];
+    }
+  }, [page])
 
   return (
     <div className="app-shell">
