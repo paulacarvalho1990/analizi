@@ -50,6 +50,7 @@ function Results() {
         <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
         <MetricCard title="WhatsApp" value={String(t?.whatsappContacts ?? '—')} {...comparison(t?.whatsappContacts, p?.whatsappContacts)} />
         <MetricCard title="Cadastros" value={String(t?.signUps ?? '—')} {...comparison(t?.signUps, p?.signUps)} />
+        <MetricCard title="Logins" value={String(t?.logins ?? '—')} {...comparison(t?.logins, p?.logins)} />
         <MetricCard title="Taxa de contato" value={contactRate} note="sessões com ação" />
       </section>
 
@@ -57,8 +58,8 @@ function Results() {
         <article className="table-card compact-table results-detail-table">
           <div className="section-heading">
             <div>
-              <h3>Contatos confirmados</h3>
-              <p>Ações de contato registradas</p>
+              <h3>Ações confirmadas</h3>
+              <p>Contatos, cadastros e acessos registrados</p>
             </div>
           </div>
           <div className="contact-detail-head">
@@ -70,12 +71,12 @@ function Results() {
           {visibleContacts.map((item, index) => (
             <div className="contact-detail-row" key={`${item.date}-${item.type}-${item.path}-${index}`}>
               <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
-              <span>{item.type === 'whatsapp_contact' ? 'WhatsApp' : 'Cadastro'}</span>
+              <span>{item.type === 'whatsapp_contact' ? 'WhatsApp' : item.type === 'sign_up' ? 'Cadastro' : item.type === 'login' ? 'Login' : item.type}</span>
               <span>{item.path}</span>
               <span>{item.contacts}</span>
             </div>
           ))}
-          {!contactDetails.length && <p className="empty-state">Nenhum contato foi registrado no período.</p>}
+          {!contactDetails.length && <p className="empty-state">Nenhuma ação foi registrada no período.</p>}
           <TablePagination page={contactPage} total={contactDetails.length} setPage={setContactPage} />
         </article>
 
@@ -315,7 +316,7 @@ function Insights() {
 }
 
 type AuthPage = 'loading' | 'landing' | 'login' | 'signup' | 'consent' | 'onboarding-business' | 'onboarding-source' | 'app'
-interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, attentionSeconds?: number, contactSessions?: number }
+interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, logins?: number, attentionSeconds?: number, contactSessions?: number }
 interface AnalyticsData { totals: AnalyticsTotals, previousTotals?: AnalyticsTotals, sources: Array<{ name: string, value: string | number }>, pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>, daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>, sourcePages?: Array<{ source: string, path: string, views: number, users: number }>, contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>, clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>, filterPages?: Array<{ path: string }>, filterSources?: Array<{ source: string }>, periodDays?: number, sourceKind?: string }
 interface AnalyticsFilter { start: string, end: string, group: 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year', page: string, source: string }
 
