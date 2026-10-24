@@ -1139,7 +1139,9 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           count(*) as clicks,
           count(distinct session_id) as sessions
         from events
-        where event_name = 'button_click' and date(occurred_at) <= date('now', '-1 day')
+        where event_name in ('button_click', 'whatsapp_contact', 'sign_up', 'login')
+          and json_extract(metadata_json, '$.button_label') is not null
+          and date(occurred_at) <= date('now', '-1 day')
         group by tracker_site_id, date(occurred_at), coalesce(page_path, '/'), coalesce(json_extract(metadata_json, '$.button_label'), 'Botão sem texto'), coalesce(json_extract(metadata_json, '$.button_id'), ''), coalesce(json_extract(metadata_json, '$.destination'), ''), coalesce(json_extract(metadata_json, '$.contact_intent'), 'geral'), coalesce(json_extract(metadata_json, '$.is_contact_lead'), 0)
         on conflict(tracker_site_id, metric_date, page_path, button_label, button_id, destination, contact_intent, is_contact_lead) do update set
           clicks = excluded.clicks,
