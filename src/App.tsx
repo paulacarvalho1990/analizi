@@ -377,7 +377,7 @@ function Insights() {
     if (analytics && currentSite) {
       fetchInsights();
     }
-  }, [currentSite?.id]);
+  }, [currentSite?.id, analytics]);
 
   return (
     <>
