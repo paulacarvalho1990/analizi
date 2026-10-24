@@ -101,7 +101,7 @@ async function collect(request: Request, env: Env) {
   if (request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
 
   const size = Number(request.headers.get('content-length') || 0)
-  if (size > 24_000) return json({ error: 'Evento muito grande.' }, 413)
+  if (size > 120_000) return json({ error: 'Evento muito grande.' }, 413)
 
   let payload: { events?: TrackerEvent[] }
   try {
