@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react'
 import {
   Flame, Monitor, Smartphone, MousePointer, ArrowDown, RefreshCw, Clock,
   Image as ImageIcon, Video, Type, CheckSquare, Layout, Navigation,
-  CreditCard, Flag, TextCursorInput, Link as LinkIcon, MoveHorizontal
+  CreditCard, Flag, TextCursorInput, Link as LinkIcon, MoveHorizontal,
+  BarChart3, SlidersHorizontal, Table as TableIcon
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
@@ -18,12 +19,15 @@ interface LayoutBlock {
 
 /**
  * Filtra e organiza blocos estruturais para garantir que NENHUM visual fique empilhado
- * ou sobreposto no wireframe. Elementos interativos/folha têm prioridade sobre seções/containers.
+ * ou sobreposto no wireframe. Gráficos, filtros, tabelas e elementos interativos têm prioridade.
  */
 function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number): LayoutBlock[] {
   if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) return []
 
   const priorityMap: Record<string, number> = {
+    chart: 12,
+    filter: 11,
+    table: 11,
     button: 10,
     input: 10,
     form: 9,
@@ -32,7 +36,7 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
     'image-link': 8,
     link: 7,
     heading: 7,
-    card: 5,
+    card: 6,
     banner: 4,
     header: 3,
     nav: 3,
@@ -40,16 +44,30 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
     section: 1
   }
 
-  // 1. Normaliza e remove wrappers gigantes que cobrem a página toda
+  // 1. Normaliza, infere tipos compostos (chart, filter, table) e remove wrappers gigantes
   const valid = rawBlocks
-    .map((b) => ({
-      ...b,
-      top: Math.max(0, Math.round(b.top || 0)),
-      left: Math.max(0, Math.round(b.left || 0)),
-      width: Math.max(24, Math.round(b.width || 0)),
-      height: Math.max(20, Math.round(b.height || 0)),
-      label: String(b.label || '').replace(/\s+/g, ' ').trim()
-    }))
+    .map((b) => {
+      const rawLabel = String(b.label || '').replace(/\s+/g, ' ').trim()
+      let inferredType = b.type || 'section'
+      if (inferredType === 'card' || inferredType === 'section') {
+        if (/^(gr[aá]fico|visualiza[cç][oõ]es ao longo|visualiza[cç][oõ]es por p[aá]gina|origens dos acessos)/i.test(rawLabel)) {
+          inferredType = 'chart'
+        } else if (/^(filtro|per[ií]odo|agrupar por)/i.test(rawLabel)) {
+          inferredType = 'filter'
+        } else if (/^(tabela|m[eé]tricas por dia|desempenho das p[aá]ginas|origem por p[aá]gina|a[cç][oõ]es confirmadas|cliques)/i.test(rawLabel)) {
+          inferredType = 'table'
+        }
+      }
+      return {
+        ...b,
+        type: inferredType,
+        top: Math.max(0, Math.round(b.top || 0)),
+        left: Math.max(0, Math.round(b.left || 0)),
+        width: Math.max(24, Math.round(b.width || 0)),
+        height: Math.max(20, Math.round(b.height || 0)),
+        label: rawLabel
+      }
+    })
     .filter((b) => {
       // Descarta seções genéricas gigantes que englobam múltiplos blocos
       if (b.type === 'section' && b.height > 450 && b.width > 900) return false
@@ -57,8 +75,8 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
       return true
     })
 
-  // 2. Se um container (section, banner, header, card) contém outros blocos menores dentro dele,
-  // descartamos o container externo para não empilhar caixa sobre caixa.
+  // 2. Se um container genérico (section, banner, header) contém outros blocos menores dentro dele,
+  // descartamos o container externo. Já blocos compostos (chart, filter, table, card) são preservados inteiros!
   const containsRect = (outer: LayoutBlock, inner: LayoutBlock) => {
     const tol = 8
     return (
@@ -71,9 +89,25 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
   }
 
   const withoutRedundantContainers = valid.filter((block, idx) => {
-    if (['section', 'banner', 'header', 'card', 'heading'].includes(block.type)) {
+    // Se este bloco está dentro de um bloco composto (chart, filter, table), descarta o filho solto para manter o componente inteiro
+    const insideComposite = valid.some(
+      (other, oIdx) =>
+        oIdx !== idx &&
+        ['chart', 'filter', 'table'].includes(other.type) &&
+        containsRect(other, block)
+    )
+    if (insideComposite) return false
+
+    if (['section', 'banner', 'header', 'heading'].includes(block.type)) {
       const innerChildren = valid.filter((other, oIdx) => oIdx !== idx && containsRect(block, other))
       if (innerChildren.length > 0) {
+        return false
+      }
+    }
+    if (block.type === 'card') {
+      const innerChildren = valid.filter((other, oIdx) => oIdx !== idx && containsRect(block, other))
+      // Só descarta um card se ele for um wrapper gigante com mais de 3 sub-blocos independentes
+      if (innerChildren.length > 3) {
         return false
       }
     }
@@ -246,6 +280,68 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
         <div className="wireframe-banner-accent" />
         <Flag size={14} className="wireframe-svg-icon" />
         <span className="block-label">{label || 'Banner Promocional / Destaque'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Gráfico Matemático / Visualização de Dados
+  if (type === 'chart') {
+    return (
+      <div className="wireframe-block wireframe-chart" style={style} title={`GRÁFICO MATEMÁTICO: ${label}`}>
+        <div className="wireframe-chart-header">
+          <BarChart3 size={15} className="wireframe-svg-icon" />
+          <span className="block-label">{label || 'Gráfico de Métricas / Evolução'}</span>
+        </div>
+        {bHeight > 110 && (
+          <div className="wireframe-chart-bars">
+            <span style={{ height: '38%' }} />
+            <span style={{ height: '64%' }} />
+            <span style={{ height: '52%' }} />
+            <span style={{ height: '86%' }} />
+            <span style={{ height: '72%' }} />
+            <span style={{ height: '45%' }} />
+            <span style={{ height: '94%' }} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Placeholder completo para Barra de Filtros / Período / Seletores
+  if (type === 'filter') {
+    return (
+      <div className="wireframe-block wireframe-filter" style={style} title={`FILTROS E CONTROLES: ${label}`}>
+        <div className="wireframe-filter-header">
+          <SlidersHorizontal size={14} className="wireframe-svg-icon" />
+          <span className="block-label">{label || 'Filtros de Período, Página, Origem e Atalhos'}</span>
+        </div>
+        <div className="wireframe-filter-pills">
+          <span className="fake-filter-chip">De / Até</span>
+          <span className="fake-filter-chip">Agrupar</span>
+          <span className="fake-filter-chip">Página</span>
+          <span className="fake-filter-chip">Origem</span>
+          <span className="fake-filter-chip accent">7d · 30d · 90d</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Tabela de Dados
+  if (type === 'table') {
+    return (
+      <div className="wireframe-block wireframe-table" style={style} title={`TABELA DE DADOS: ${label}`}>
+        <div className="wireframe-table-header">
+          <TableIcon size={14} className="wireframe-svg-icon" />
+          <span className="block-label">{label || 'Tabela de Métricas e Resultados'}</span>
+        </div>
+        {bHeight > 110 && (
+          <div className="wireframe-table-rows">
+            <div className="fake-table-row head" />
+            <div className="fake-table-row" />
+            <div className="fake-table-row" />
+            <div className="fake-table-row" />
+          </div>
+        )}
       </div>
     )
   }
