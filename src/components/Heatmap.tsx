@@ -3,7 +3,8 @@ import {
   Flame, Monitor, Smartphone, MousePointer, ArrowDown, RefreshCw, Clock,
   Image as ImageIcon, Video, Type, CheckSquare, Layout, Navigation,
   CreditCard, Flag, TextCursorInput, Link as LinkIcon, MoveHorizontal,
-  BarChart3, SlidersHorizontal, Table as TableIcon
+  BarChart3, SlidersHorizontal, Table as TableIcon, MapPin, HelpCircle,
+  MessageSquareQuote, Volume2, GalleryHorizontal
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
@@ -19,19 +20,24 @@ interface LayoutBlock {
 
 /**
  * Filtra e organiza blocos estruturais para garantir que NENHUM visual fique empilhado
- * ou sobreposto no wireframe. Gráficos, filtros, tabelas e elementos interativos têm prioridade.
+ * ou sobreposto no wireframe. Gráficos, vídeos, mapas, filtros, tabelas, FAQs e elementos interativos têm prioridade.
  */
 function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number): LayoutBlock[] {
   if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) return []
 
   const priorityMap: Record<string, number> = {
     chart: 12,
+    video: 12,
+    map: 12,
+    audio: 11,
     filter: 11,
     table: 11,
+    faq: 10,
+    testimonial: 10,
+    carousel: 10,
     button: 10,
     input: 10,
     form: 9,
-    video: 8,
     image: 8,
     'image-link': 8,
     link: 7,
@@ -44,7 +50,7 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
     section: 1
   }
 
-  // 1. Normaliza, infere tipos compostos (chart, filter, table) e remove wrappers gigantes
+  // 1. Normaliza, infere tipos compostos (chart, filter, table, faq, video, map, testimonial) e remove wrappers gigantes
   const valid = rawBlocks
     .map((b) => {
       const rawLabel = String(b.label || '').replace(/\s+/g, ' ').trim()
@@ -56,6 +62,12 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
           inferredType = 'filter'
         } else if (/^(tabela|m[eé]tricas por dia|desempenho das p[aá]ginas|origem por p[aá]gina|a[cç][oõ]es confirmadas|cliques)/i.test(rawLabel)) {
           inferredType = 'table'
+        } else if (/(?:d[uú]vidas|perguntas frequentes|faq|acorde[aã]o|passo a passo por plataforma)/i.test(rawLabel)) {
+          inferredType = 'faq'
+        } else if (/(?:depoimento|avalia[cç][aã]o|o que dizem)/i.test(rawLabel)) {
+          inferredType = 'testimonial'
+        } else if (/(?:mapa|localiza[cç][aã]o|endere[cç]o)/i.test(rawLabel)) {
+          inferredType = 'map'
         }
       }
       return {
@@ -76,7 +88,7 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
     })
 
   // 2. Se um container genérico (section, banner, header) contém outros blocos menores dentro dele,
-  // descartamos o container externo. Já blocos compostos (chart, filter, table, card) são preservados inteiros!
+  // descartamos o container externo. Já blocos compostos (chart, filter, table, video, map, faq, testimonial, carousel) são preservados inteiros!
   const containsRect = (outer: LayoutBlock, inner: LayoutBlock) => {
     const tol = 8
     return (
@@ -89,11 +101,11 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
   }
 
   const withoutRedundantContainers = valid.filter((block, idx) => {
-    // Se este bloco está dentro de um bloco composto (chart, filter, table), descarta o filho solto para manter o componente inteiro
+    // Se este bloco está dentro de um bloco composto (chart, filter, table, video, map, faq, testimonial, carousel), descarta o filho solto para manter o componente inteiro
     const insideComposite = valid.some(
       (other, oIdx) =>
         oIdx !== idx &&
-        ['chart', 'filter', 'table'].includes(other.type) &&
+        ['chart', 'filter', 'table', 'video', 'map', 'audio', 'faq', 'testimonial', 'carousel'].includes(other.type) &&
         containsRect(other, block)
     )
     if (insideComposite) return false
@@ -342,6 +354,86 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
             <div className="fake-table-row" />
           </div>
         )}
+      </div>
+    )
+  }
+
+  // Placeholder completo para Mapa Interativo / Localização
+  if (type === 'map') {
+    return (
+      <div
+        className="wireframe-block wireframe-map"
+        style={{ ...style, background: '#132524', border: '1px solid #23534e', color: '#99f6e4', padding: 0 }}
+        title={`MAPA / LOCALIZAÇÃO: ${label}`}
+      >
+        <div className="wireframe-map-inner" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: '10px', gap: '6px' }}>
+          <MapPin size={bHeight > 80 ? 26 : 16} className="wireframe-svg-icon" style={{ color: '#2dd4bf' }} />
+          <span className="block-label">{label || 'Mapa Interativo / Localização'}</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Player de Áudio / Podcast
+  if (type === 'audio') {
+    return (
+      <div
+        className="wireframe-block wireframe-audio"
+        style={{ ...style, background: '#231b2e', border: '1px solid #4c356b', color: '#e9d5ff' }}
+        title={`ÁUDIO / PODCAST: ${label}`}
+      >
+        <Volume2 size={15} className="wireframe-svg-icon" style={{ color: '#c084fc' }} />
+        <span className="block-label">{label || 'Player de Áudio / Podcast'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder completo para FAQ / Acordeão
+  if (type === 'faq') {
+    return (
+      <div
+        className="wireframe-block wireframe-faq"
+        style={{ ...style, background: '#172030', border: '1px solid #2e415f', color: '#dbeafe', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', padding: '10px 14px', gap: '8px' }}
+        title={`FAQ / ACORDEÃO: ${label}`}
+      >
+        <div className="wireframe-faq-header" style={{ display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 700 }}>
+          <HelpCircle size={14} className="wireframe-svg-icon" style={{ color: '#60a5fa' }} />
+          <span className="block-label">{label || 'Perguntas Frequentes / Acordeão'}</span>
+        </div>
+        {bHeight > 90 && (
+          <div className="wireframe-faq-items" style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+            <div className="fake-faq-row" style={{ height: '16px', background: 'rgba(96, 165, 250, 0.12)', border: '1px solid rgba(96, 165, 250, 0.28)', borderRadius: '5px', width: '100%' }} />
+            <div className="fake-faq-row" style={{ height: '16px', background: 'rgba(96, 165, 250, 0.12)', border: '1px solid rgba(96, 165, 250, 0.28)', borderRadius: '5px', width: '100%' }} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Placeholder completo para Depoimento / Prova Social
+  if (type === 'testimonial') {
+    return (
+      <div
+        className="wireframe-block wireframe-testimonial"
+        style={{ ...style, background: '#241d18', border: '1px solid #433227', borderLeft: '3px solid #f97316', color: '#ffedd5' }}
+        title={`DEPOIMENTO: ${label}`}
+      >
+        <MessageSquareQuote size={15} className="wireframe-svg-icon" style={{ color: '#fb923c' }} />
+        <span className="block-label">{label || 'Depoimento / Avaliação de Cliente'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Carrossel / Slider
+  if (type === 'carousel') {
+    return (
+      <div
+        className="wireframe-block wireframe-carousel"
+        style={{ ...style, background: '#1a1e2e', border: '1px dashed #4f46e5', color: '#e0e7ff' }}
+        title={`CARROSSEL / SLIDER: ${label}`}
+      >
+        <GalleryHorizontal size={15} className="wireframe-svg-icon" style={{ color: '#818cf8' }} />
+        <span className="block-label">{label || 'Carrossel / Galeria Interativa'}</span>
       </div>
     )
   }

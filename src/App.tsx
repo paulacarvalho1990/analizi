@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, BarChart3, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, FileText, Flame, Lightbulb, Copy, ExternalLink, Globe2, Info, Link2, MoreHorizontal, MousePointerClick, Settings as SettingsIcon, ShieldCheck, Sparkles, Target, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Lightbulb, Copy, ExternalLink, Globe, Globe2, Info, Link2, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Sparkles, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard } from './components/Metrics'
@@ -879,7 +879,7 @@ function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) {
   useEffect(() => {
     document.title = 'Analizi — Analytics Simples para Negócios Reais';
   }, []);
-  return <div className="landing"><header className="landing-nav"><BrandLogo /><nav><a href="#funcionalidades">Funcionalidades</a><a href="#como-funciona">Como funciona</a><a href="#preco">Preço</a></nav><div><Button variant="ghost" onClick={() => setMode('login')}>Entrar</Button><Button onClick={() => setMode('signup')}>Teste grátis</Button></div></header><main><section className="landing-hero"><div><span className="eyebrow">ANALYTICS SIMPLES PARA NEGÓCIOS REAIS</span><h1>Seu site fala. O Analizi traduz.</h1><p>Descubra o que atrai pessoas, o que gera contatos e onde melhorar — sem precisar entender de analytics.</p><div className="hero-actions"><Button onClick={() => setMode('signup')}>Testar 7 dias grátis <ArrowRight size={18}/></Button><Button variant="secondary" onClick={() => setMode('login')}>Já tenho uma conta</Button></div><small>Sem cartão de crédito. Cancele quando quiser.</small></div><div className="hero-product"><div className="product-bar"><span/><span/><span/></div><div className="product-head"><span>Visão geral</span><b>Últimos 7 dias</b></div><div className="product-metrics"><div><small>Visualizações de páginas</small><b>852</b><i>+18%</i></div><div><small>Contatos iniciados</small><b>38</b><i>+6%</i></div><div><small>Taxa de saída</small><b>32,4%</b><em>quanto menor, melhor</em></div></div><div className="mini-chart"><span/><span/><span/><span/><span/><span/><span/></div><div className="product-insight"><Sparkles size={18}/><span><b>Seu site está crescendo</b><small>As visualizações aumentaram 18% nesta semana.</small></span></div></div></section><section className="landing-proof"><span>FEITO PARA QUEM QUER DECIDIR COM CLAREZA</span><div><b>Sites mais compreensíveis.</b><b>Decisões mais seguras.</b><b>Negócios mais próximos dos clientes.</b></div></section><section id="funcionalidades" className="landing-section"><div className="section-intro"><span className="eyebrow">TUDO O QUE IMPORTA</span><h2>Menos telas técnicas. Mais respostas úteis.</h2><p>O Analizi organiza as informações do seu site em uma visão que faz sentido para a rotina do seu negócio.</p></div><div className="feature-grid"><article><div className="feature-icon blue"><Globe2 size={22}/></div><h3>Entenda seus visitantes</h3><p>Veja de onde as pessoas chegam e quais páginas despertam mais interesse.</p></article><article><div className="feature-icon pink"><Sparkles size={22}/></div><h3>Receba insights claros</h3><p>Identifique mudanças importantes sem interpretar gráficos complexos.</p></article><article><div className="feature-icon orange"><MousePointerClick size={22}/></div><h3>Acompanhe os contatos</h3><p>Saiba quais páginas geram contatos pelo WhatsApp e novos cadastros.</p></article><article><div className="feature-icon blue"><CircleCheck size={22}/></div><h3>Melhore a experiência</h3><p>Use a Taxa de saída para encontrar páginas que precisam de atenção.</p></article></div></section><section id="como-funciona" className="steps-section"><div className="section-intro"><span className="eyebrow">COMECE EM MINUTOS</span><h2>Como funciona</h2></div><div className="steps-grid"><article><i>01</i><h3>Conecte seu site</h3><p>Use o Google Analytics que você já tem ou instale o rastreador Analizi.</p></article><article><i>02</i><h3>Acompanhe o essencial</h3><p>Veja usuários, origens, páginas e contatos em uma visão simples.</p></article><article><i>03</i><h3>Faça escolhas melhores</h3><p>Transforme dados em melhorias reais para o seu site e negócio.</p></article></div></section><section className="benefits-section"><div><span className="eyebrow">FEITO PARA PEQUENOS NEGÓCIOS</span><h2>Uma ferramenta que respeita seu tempo.</h2><ul><li><Check size={18}/>Em português e sem jargões técnicos</li><li><Check size={18}/>Acesse seus dados de qualquer lugar</li><li><Check size={18}/>Dados organizados e isolados por negócio</li><li><Check size={18}/>Relatório semanal direto no seu e-mail</li></ul></div><aside><span className="eyebrow">DESTAQUE</span><h3>Não espere uma planilha para saber como foi sua semana.</h3><p>Receba um resumo objetivo dos resultados e uma oportunidade para melhorar.</p><Sparkles size={34}/></aside></section><section id="preco" className="pricing-section"><span className="eyebrow">PLANOS SIMPLES PARA CRESCER COM VOCÊ</span><h2>Comece a entender seu site hoje.</h2><p className="pricing-subtitle">Os relatórios são os mesmos. Você escolhe a quantidade de sites, eventos e se precisa exportar os dados.</p><div className="pricing-grid"><article className="price-card"><div><span>ESSENCIAL</span><h3>R$ <b>79,90</b><small>/mês</small></h3><p>Para acompanhar um site com clareza.</p></div><ul><li><Check size={17}/>1 site</li><li><Check size={17}/>Até 20 mil eventos por mês</li><li><Check size={17}/>Dashboard e relatório semanal</li><li><Check size={17}/>Google Analytics ou Rastreador Analizi</li><li><Check size={17}/>Sem exportação de dados</li></ul><p className="plan-notice"><b>Mais de 20 mil eventos?</b> Conheça o Crescimento.</p><Button className="full" onClick={() => setMode('signup')}>Começar teste de 7 dias <ArrowRight size={18}/></Button><small>Sem cartão de crédito.</small></article><article className="price-card featured"><span className="plan-badge">PARA QUEM ESTÁ CRESCENDO</span><div><span>CRESCIMENTO</span><h3>R$ <b>149,90</b><small>/mês</small></h3><p>Para acompanhar mais sites e mais movimento.</p></div><ul><li><Check size={17}/>Até 3 sites</li><li><Check size={17}/>Até 100 mil eventos por mês</li><li><Check size={17}/>Dashboard e relatório semanal</li><li><Check size={17}/>Google Analytics ou Rastreador Analizi</li><li><Check size={17}/>Exportação de dados</li></ul><Button className="full" onClick={() => setMode('signup')}>Começar teste de 7 dias <ArrowRight size={18}/></Button><small>Sem cartão de crédito.</small></article></div></section><section className="landing-cta"><BrandLogo inverse/><h2>Conheça seu site. Conheça seu público.</h2><p>Comece agora e veja seu negócio com mais clareza.</p><Button onClick={() => setMode('signup')}>Testar 7 dias grátis <ArrowRight size={18}/></Button></section></main><footer className="landing-footer"><BrandLogo /><span>© 2026 Analizi. Feito para negócios que querem crescer.</span><button onClick={() => setMode('login')}>Entrar</button></footer></div> }
+  return <div className="landing"><header className="landing-nav"><BrandLogo /><nav><a href="#funcionalidades">Funcionalidades</a><a href="#como-funciona">Como funciona</a><a href="#preco">Preço</a></nav><div><Button variant="ghost" onClick={() => setMode('login')}>Entrar</Button><Button onClick={() => setMode('signup')}>Teste grátis</Button></div></header><main><section className="landing-hero"><div><span className="eyebrow">ANALYTICS SIMPLES PARA NEGÓCIOS REAIS</span><h1>Seu site fala. O Analizi traduz.</h1><p>Descubra o que atrai pessoas, o que gera contatos e onde melhorar — sem precisar entender de analytics.</p><div className="hero-actions"><Button onClick={() => setMode('signup')}>Testar 7 dias grátis <ArrowRight size={18}/></Button><Button variant="secondary" onClick={() => setMode('login')}>Já tenho uma conta</Button></div><small>Sem cartão de crédito. Cancele quando quiser.</small></div><div className="hero-product"><div className="product-bar"><span/><span/><span/></div><div className="product-head"><span>Visão geral</span><b>Últimos 7 dias</b></div><div className="product-metrics"><div><small>Visualizações de páginas</small><b>852</b><i>+18%</i></div><div><small>Contatos iniciados</small><b>38</b><i>+6%</i></div><div><small>Taxa de saída</small><b>32,4%</b><em>quanto menor, melhor</em></div></div><div className="mini-chart"><span/><span/><span/><span/><span/><span/><span/></div><div className="product-insight"><Sparkles size={18}/><span><b>Seu site está crescendo</b><small>As visualizações aumentaram 18% nesta semana.</small></span></div></div></section><section className="landing-proof"><span>FEITO PARA QUEM QUER DECIDIR COM CLAREZA</span><div><b>Sites mais compreensíveis.</b><b>Decisões mais seguras.</b><b>Negócios mais próximos dos clientes.</b></div></section><section id="funcionalidades" className="landing-section"><div className="section-intro"><span className="eyebrow">TUDO O QUE IMPORTA</span><h2>Menos telas técnicas. Mais respostas úteis.</h2><p>O Analizi organiza as informações do seu site em uma visão que faz sentido para a rotina do seu negócio.</p></div><div className="feature-grid"><article><div className="feature-icon blue"><Globe2 size={22}/></div><h3>Entenda seus visitantes</h3><p>Veja de onde as pessoas chegam e quais páginas despertam mais interesse.</p></article><article><div className="feature-icon pink"><Sparkles size={22}/></div><h3>Receba insights claros</h3><p>Identifique mudanças importantes sem interpretar gráficos complexos.</p></article><article><div className="feature-icon orange"><MousePointerClick size={22}/></div><h3>Acompanhe os contatos</h3><p>Saiba quais páginas geram contatos pelo WhatsApp e novos cadastros.</p></article><article><div className="feature-icon blue"><CircleCheck size={22}/></div><h3>Melhore a experiência</h3><p>Use a Taxa de saída para encontrar páginas que precisam de atenção.</p></article></div></section><section id="como-funciona" className="steps-section"><div className="section-intro"><span className="eyebrow">COMECE EM MINUTOS</span><h2>Como funciona</h2></div><div className="steps-grid"><article><i>01</i><h3>Conecte seu site</h3><p>Use o Google Analytics que você já tem ou instale o rastreador Analizi.</p></article><article><i>02</i><h3>Acompanhe o essencial</h3><p>Veja usuários, origens, páginas e contatos em uma visão simples.</p></article><article><i>03</i><h3>Faça escolhas melhores</h3><p>Transforme dados em melhorias reais para o seu site e negócio.</p></article></div></section><section className="benefits-section"><div><span className="eyebrow">FEITO PARA PEQUENOS NEGÓCIOS</span><h2>Uma ferramenta que respeita seu tempo.</h2><ul><li><Check size={18}/>Em português e sem jargões técnicos</li><li><Check size={18}/>Acesse seus dados de qualquer lugar</li><li><Check size={18}/>Dados organizados e isolados por negócio</li><li><Check size={18}/>Relatório semanal direto no seu e-mail</li></ul></div><aside><span className="eyebrow">DESTAQUE</span><h3>Não espere uma planilha para saber como foi sua semana.</h3><p>Receba um resumo objetivo dos resultados e uma oportunidade para melhorar.</p><Sparkles size={34}/></aside></section><section id="preco" className="pricing-section"><span className="eyebrow">PLANOS SIMPLES PARA CRESCER COM VOCÊ</span><h2>Comece a entender seu site hoje.</h2><p className="pricing-subtitle">Os relatórios são os mesmos. Você escolhe a quantidade de sites, eventos e se precisa exportar os dados.</p><div className="pricing-grid"><article className="price-card"><div><span>ESSENCIAL</span><h3>R$ <b>39,90</b><small>/mês</small></h3><p>Para acompanhar um site com clareza.</p></div><ul><li><Check size={17}/>1 site</li><li><Check size={17}/>Até 20 mil eventos por mês</li><li><Check size={17}/>Dashboard e relatório semanal</li><li><Check size={17}/>Google Analytics ou Rastreador Analizi</li><li><Check size={17}/>Sem exportação de dados</li></ul><p className="plan-notice"><b>Mais de 1 site?</b> Conheça o Crescimento.</p><Button className="full" onClick={() => setMode('signup')}>Começar teste de 7 dias <ArrowRight size={18}/></Button><small>Sem cartão de crédito.</small></article><article className="price-card featured"><span className="plan-badge">PARA QUEM ESTÁ CRESCENDO</span><div><span>CRESCIMENTO</span><h3>R$ <b>79,00</b><small>/mês</small></h3><p>Para acompanhar mais sites e mais movimento.</p></div><ul><li><Check size={17}/>Até 2 sites</li><li><Check size={17}/>Até 100 mil eventos por mês</li><li><Check size={17}/>Dashboard e relatório semanal</li><li><Check size={17}/>Google Analytics ou Rastreador Analizi</li><li><Check size={17}/>Exportação de dados e Heatmap</li></ul><Button className="full" onClick={() => setMode('signup')}>Começar teste de 7 dias <ArrowRight size={18}/></Button><small>Sem cartão de crédito.</small></article></div></section><section className="landing-cta"><BrandLogo inverse/><h2>Conheça seu site. Conheça seu público.</h2><p>Comece agora e veja seu negócio com mais clareza.</p><Button onClick={() => setMode('signup')}>Testar 7 dias grátis <ArrowRight size={18}/></Button></section></main><footer className="landing-footer"><BrandLogo /><span>© 2026 Analizi. Feito para negócios que querem crescer.</span><button onClick={() => setMode('login')}>Entrar</button></footer></div> }
 
 function ConnectionStatus() {
   const { currentSite } = useBusiness();
@@ -1086,85 +1086,652 @@ function Pages() {
   );
 }
 
+interface SiteMember {
+  user_id: string
+  role: 'owner' | 'admin' | 'viewer'
+  creator_role?: string | null
+  created_at: string
+  full_name: string
+  email: string
+}
+
+interface SiteInvitation {
+  id: string
+  email: string
+  role: 'admin' | 'viewer'
+  status: string
+  created_at?: string
+}
+
+const ROLE_DESCRIPTIONS: Record<'owner' | 'admin' | 'viewer', { label: string; badgeClass: string; permissions: string }> = {
+  owner: {
+    label: 'Proprietário(a)',
+    badgeClass: 'owner',
+    permissions: 'Acesso total · Gerencia plano, sites, integrações e equipe'
+  },
+  admin: {
+    label: 'Administrador(a)',
+    badgeClass: 'admin',
+    permissions: 'Acesso total · Visualiza painéis, edita configurações e gerencia equipe'
+  },
+  viewer: {
+    label: 'Visualizador(a)',
+    badgeClass: 'viewer',
+    permissions: 'Somente leitura · Visualiza relatórios, métricas, páginas e insights'
+  }
+}
+
+function formatExpirationDate(iso?: string | null, planId?: string): string {
+  if (planId === 'admin') {
+    if (!iso || iso.startsWith('2099')) return 'Vitalício · Sem expiração (Plano Admin)'
+  }
+  if (!iso) return 'Renovação automática mensal'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 'Renovação automática mensal'
+  if (d.getUTCFullYear() >= 2090) return 'Vitalício · Sem expiração (Plano Admin)'
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(d)
+}
+
+function formatSubscriptionStatus(status?: string): { label: string; badgeClass: string } {
+  switch (status) {
+    case 'trialing':
+      return { label: 'Período de teste', badgeClass: 'trial' }
+    case 'past_due':
+      return { label: 'Pagamento pendente', badgeClass: 'warning' }
+    case 'canceled':
+      return { label: 'Cancelada', badgeClass: 'danger' }
+    default:
+      return { label: 'Ativa', badgeClass: 'active' }
+  }
+}
+
 function TeamSettings({ setPage }: { setPage: (page: Page) => void }) {
-  const { currentBusiness } = useBusiness();
-  const businessId = currentBusiness?.id || '';
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'viewer' | 'admin'>('viewer');
-  const [invites, setInvites] = useState<Array<{ id: string, email: string, role: string, status: string }>>([]);
-  const [message, setMessage] = useState('');
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    const load = async () => {
-      if (!supabase || !businessId) return;
-      const { data } = await supabase.from('business_invitations').select('id,email,role,status').eq('business_id', businessId).order('created_at', { ascending: false });
-      setInvites(data ?? []);
-    };
-    void load();
-  }, [businessId]);
-  const invite = async () => {
-    setMessage('');
-    if (!businessId) { setMessage('Não foi possível identificar seu negócio.'); return; }
-    const address = email.trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(address)) { setMessage('Informe um e-mail válido.'); return; }
-    setLoading(true);
-    const { data: { user } } = await supabase!.auth.getUser();
-    const { data, error } = await supabase!.from('business_invitations').upsert({ business_id: businessId, email: address, role, invited_by: user?.id }, { onConflict: 'business_id,email' }).select('id,email,role,status').single();
-    if (error) setMessage(error.message);
-    else if (data) {
-      setInvites(current => [data, ...current.filter(item => item.id !== data.id)]);
-      setEmail('');
-      setMessage('Convite salvo. O envio por e-mail será ativado assim que o serviço de e-mail for conectado.');
+  const {
+    currentBusiness,
+    currentSite,
+    effectivePlan,
+    subscriptionStatus,
+    subscriptionExpiresAt,
+    totalSitesCount,
+    setNewSiteModalOpen
+  } = useBusiness()
+
+  const businessId = currentBusiness?.id || ''
+  const siteDisplayName = currentSite?.name || currentBusiness?.name || 'Meu site'
+  const siteDomain = currentSite?.domain || currentBusiness?.website_url || ''
+
+  const [currentUserId, setCurrentUserId] = useState<string>('')
+  const [members, setMembers] = useState<SiteMember[]>([])
+  const [invites, setInvites] = useState<SiteInvitation[]>([])
+  const [loadingMembers, setLoadingMembers] = useState(false)
+
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<'viewer' | 'admin'>('viewer')
+  const [message, setMessage] = useState('')
+  const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
+  const [loadingInvite, setLoadingInvite] = useState(false)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+
+  const loadPeopleAndAccess = async () => {
+    if (!supabase || !businessId) return
+    setLoadingMembers(true)
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) setCurrentUserId(user.id)
+
+      // 1. Busca membros vinculados ao negócio/site atual
+      const { data: memberRows } = await supabase
+        .from('business_members')
+        .select('user_id, role, creator_role, created_at')
+        .eq('business_id', businessId)
+        .order('created_at', { ascending: true })
+
+      if (memberRows && memberRows.length > 0) {
+        const userIds = memberRows.map((m) => m.user_id)
+        const { data: profileRows } = await supabase
+          .from('profiles')
+          .select('id, full_name, email')
+          .in('id', userIds)
+
+        const profileMap = new Map(
+          (profileRows || []).map((p) => [p.id, { full_name: p.full_name || '', email: p.email || '' }])
+        )
+
+        const enriched: SiteMember[] = memberRows.map((m) => {
+          const prof = profileMap.get(m.user_id)
+          const isCurrentUser = user && m.user_id === user.id
+          return {
+            user_id: m.user_id,
+            role: (m.role as 'owner' | 'admin' | 'viewer') || 'viewer',
+            creator_role: m.creator_role,
+            created_at: m.created_at,
+            full_name: prof?.full_name || (isCurrentUser ? user.user_metadata?.full_name || 'Você' : 'Membro da equipe'),
+            email: prof?.email || (isCurrentUser ? user.email || '' : '')
+          }
+        })
+        setMembers(enriched)
+      } else {
+        setMembers([])
+      }
+
+      // 2. Busca convites pendentes ou enviados para este site
+      const { data: inviteRows } = await supabase
+        .from('business_invitations')
+        .select('id, email, role, status, created_at')
+        .eq('business_id', businessId)
+        .order('created_at', { ascending: false })
+
+      setInvites(
+        (inviteRows || [])
+          .filter((inv) => inv.status !== 'accepted')
+          .map((inv) => ({
+            id: inv.id,
+            email: inv.email,
+            role: (inv.role as 'admin' | 'viewer') || 'viewer',
+            status: inv.status,
+            created_at: inv.created_at
+          }))
+      )
+    } finally {
+      setLoadingMembers(false)
     }
-    setLoading(false);
-  };
-  return <>
-    <div className="source-header">
-      <button className="back-link" onClick={() => setPage('settings')}><ArrowLeft size={16}/> Configurações</button>
-      <div>
-        <span className="eyebrow">EQUIPE E PERMISSÕES</span>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Users size={26} style={{ color: '#ff3cac' }} /> Acesso ao negócio: {currentBusiness?.name || 'Seu negócio'}
-        </h1>
-        <p className="subtitle">Convide pessoas para visualizar os painéis deste negócio.</p>
+  }
+
+  useEffect(() => {
+    void loadPeopleAndAccess()
+  }, [businessId])
+
+  const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
+    setMessage(text)
+    setFeedbackType(type)
+  }
+
+  const handleUpdateMemberRole = async (targetUserId: string, nextRole: 'owner' | 'admin' | 'viewer') => {
+    if (!supabase || !businessId) return
+    setUpdatingId(targetUserId)
+    setMessage('')
+    try {
+      const { error } = await supabase
+        .from('business_members')
+        .update({ role: nextRole })
+        .eq('business_id', businessId)
+        .eq('user_id', targetUserId)
+
+      if (error) {
+        showFeedback(error.message || 'Não foi possível atualizar a permissão.', 'error')
+      } else {
+        setMembers((prev) =>
+          prev.map((m) => (m.user_id === targetUserId ? { ...m, role: nextRole } : m))
+        )
+        showFeedback('Permissão da pessoa atualizada com sucesso.')
+      }
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const handleRemoveMember = async (member: SiteMember) => {
+    if (!supabase || !businessId) return
+    const ownersCount = members.filter((m) => m.role === 'owner').length
+    if (member.role === 'owner' && ownersCount <= 1) {
+      showFeedback('O site precisa ter pelo menos um proprietário ativo.', 'error')
+      return
+    }
+    if (!window.confirm(`Deseja realmente remover o acesso de ${member.full_name || member.email} a este site?`)) {
+      return
+    }
+    setUpdatingId(member.user_id)
+    setMessage('')
+    try {
+      const { error } = await supabase
+        .from('business_members')
+        .delete()
+        .eq('business_id', businessId)
+        .eq('user_id', member.user_id)
+
+      if (error) {
+        showFeedback(error.message || 'Não foi possível remover o acesso.', 'error')
+      } else {
+        setMembers((prev) => prev.filter((m) => m.user_id !== member.user_id))
+        showFeedback(`Acesso de ${member.full_name || member.email} removido.`)
+      }
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const handleUpdateInviteRole = async (inviteId: string, nextRole: 'admin' | 'viewer') => {
+    if (!supabase) return
+    setUpdatingId(inviteId)
+    setMessage('')
+    try {
+      const { error } = await supabase
+        .from('business_invitations')
+        .update({ role: nextRole })
+        .eq('id', inviteId)
+
+      if (error) {
+        showFeedback(error.message || 'Não foi possível alterar a permissão do convite.', 'error')
+      } else {
+        setInvites((prev) => prev.map((inv) => (inv.id === inviteId ? { ...inv, role: nextRole } : inv)))
+        showFeedback('Permissão do convite atualizada.')
+      }
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const handleRemoveInvite = async (inv: SiteInvitation) => {
+    if (!supabase) return
+    if (!window.confirm(`Deseja cancelar e excluir o convite enviado para ${inv.email}?`)) {
+      return
+    }
+    setUpdatingId(inv.id)
+    setMessage('')
+    try {
+      const { error } = await supabase
+        .from('business_invitations')
+        .delete()
+        .eq('id', inv.id)
+
+      if (error) {
+        showFeedback(error.message || 'Não foi possível excluir o convite.', 'error')
+      } else {
+        setInvites((prev) => prev.filter((item) => item.id !== inv.id))
+        showFeedback(`Convite para ${inv.email} excluído.`)
+      }
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const invite = async () => {
+    setMessage('')
+    if (!businessId) {
+      showFeedback('Não foi possível identificar o site selecionado.', 'error')
+      return
+    }
+    const address = email.trim().toLowerCase()
+    if (!/^\S+@\S+\.\S+$/.test(address)) {
+      showFeedback('Informe um e-mail válido.', 'error')
+      return
+    }
+    setLoadingInvite(true)
+    try {
+      const { data: { user } } = await supabase!.auth.getUser()
+
+      // Verifica se já existe um perfil cadastrado com esse e-mail para vinculá-lo imediatamente ao site
+      const { data: existingProfile } = await supabase!
+        .from('profiles')
+        .select('id, full_name, email')
+        .ilike('email', address)
+        .maybeSingle()
+
+      if (existingProfile?.id) {
+        const { error: memberErr } = await supabase!
+          .from('business_members')
+          .upsert(
+            { business_id: businessId, user_id: existingProfile.id, role },
+            { onConflict: 'business_id,user_id' }
+          )
+
+        if (memberErr) {
+          showFeedback(memberErr.message, 'error')
+        } else {
+          setEmail('')
+          showFeedback(`${existingProfile.full_name || address} já possui conta no Analizi e foi adicionado(a) diretamente com acesso a este site!`)
+          await loadPeopleAndAccess()
+        }
+        return
+      }
+
+      const { data, error } = await supabase!
+        .from('business_invitations')
+        .upsert(
+          { business_id: businessId, email: address, role, invited_by: user?.id, status: 'pending' },
+          { onConflict: 'business_id,email' }
+        )
+        .select('id,email,role,status,created_at')
+        .single()
+
+      if (error) {
+        showFeedback(error.message, 'error')
+      } else if (data) {
+        setInvites((current) => [
+          {
+            id: data.id,
+            email: data.email,
+            role: (data.role as 'admin' | 'viewer') || 'viewer',
+            status: data.status,
+            created_at: data.created_at
+          },
+          ...current.filter((item) => item.id !== data.id)
+        ])
+        setEmail('')
+        showFeedback('Convite salvo! Assim que a pessoa entrar com este e-mail Google, o acesso ao site será liberado automaticamente.')
+      }
+    } finally {
+      setLoadingInvite(false)
+    }
+  }
+
+  const subBadge = formatSubscriptionStatus(subscriptionStatus)
+  const expText = formatExpirationDate(subscriptionExpiresAt, effectivePlan.id)
+
+  return (
+    <>
+      <div className="source-header meu-site-header">
+        <div>
+          <button className="back-link" onClick={() => setPage('settings')}>
+            <ArrowLeft size={16} /> Configurações
+          </button>
+          <span className="eyebrow">MEU SITE · EQUIPE & ASSINATURA</span>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Globe size={27} style={{ color: '#ff3cac' }} /> Meu Site: {siteDisplayName}
+          </h1>
+          <p className="subtitle">
+            Gerencie as pessoas com acesso a <b>{siteDomain || siteDisplayName}</b>, suas permissões no Analizi e os detalhes do seu plano.
+          </p>
+        </div>
+
+        <Button onClick={() => setNewSiteModalOpen(true)}>
+          <Plus size={17} /> Adicionar novo site
+        </Button>
       </div>
-    </div>
-    <section className="team-card">
-      <h2>Convidar uma pessoa</h2>
-      <p>Quem for convidado poderá entrar com o Google usando este mesmo e-mail.</p>
-      <div className="team-invite-form">
-        <label>E-mail<input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nome@empresa.com.br" type="email" /></label>
-        <label>Nível de acesso<select value={role} onChange={(event) => setRole(event.target.value as 'viewer' | 'admin')}><option value="viewer">Visualizador</option><option value="admin">Administrador</option></select></label>
-        <Button onClick={invite} disabled={loading}>{loading ? 'Salvando...' : 'Adicionar convite'}</Button>
-      </div>
-      {message && <p className="form-feedback">{message}</p>}
-    </section>
-    <section className="team-card">
-      <h2>Convites</h2>
-      {invites.length ? <div className="team-invites">{invites.map((invite) => <div key={invite.id}><span><b>{invite.email}</b><small>{invite.role === 'admin' ? 'Administrador' : 'Visualizador'}</small></span><em>{invite.status === 'pending' ? 'Pendente' : invite.status}</em></div>)}</div> : <p className="empty-team">Você ainda não convidou ninguém para este negócio.</p>}
-    </section>
-  </>;
+
+      {/* Seção 1: Plano, Assinatura, Expiração e Botão de Novos Sites */}
+      <section className="team-card plan-subscription-card">
+        <div className="plan-card-top">
+          <div className="plan-card-title-group">
+            <div className="plan-icon-badge">
+              <Crown size={22} />
+            </div>
+            <div>
+              <div className="plan-title-row">
+                <h2>Plano & Assinatura</h2>
+                <span className={`sub-status-pill ${subBadge.badgeClass}`}>{subBadge.label}</span>
+                {effectivePlan.id === 'admin' && (
+                  <span className="sub-status-pill admin-pill">
+                    <Sparkles size={12} /> Todas as funções liberadas
+                  </span>
+                )}
+              </div>
+              <p>{effectivePlan.description}</p>
+            </div>
+          </div>
+
+          <div className="plan-card-actions">
+            <Button onClick={() => setNewSiteModalOpen(true)}>
+              <Plus size={17} /> Adicionar novo site
+            </Button>
+          </div>
+        </div>
+
+        <div className="plan-metrics-grid">
+          <div className="plan-metric-item">
+            <span className="plan-metric-label">PLANO ATUAL</span>
+            <strong className="plan-metric-value highlight">{effectivePlan.name}</strong>
+            <small>{effectivePlan.priceLabel}</small>
+          </div>
+
+          <div className="plan-metric-item">
+            <span className="plan-metric-label">STATUS DA ASSINATURA</span>
+            <strong className="plan-metric-value">{subBadge.label}</strong>
+            <small>
+              {effectivePlan.allFeaturesUnlocked
+                ? 'Acesso completo a todos os recursos'
+                : 'Recursos essenciais ativos'}
+            </small>
+          </div>
+
+          <div className="plan-metric-item">
+            <span className="plan-metric-label">EXPIRAÇÃO DA ASSINATURA ATUAL</span>
+            <strong className="plan-metric-value">
+              <Calendar size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'text-bottom', color: '#ff8a3d' }} />
+              {expText}
+            </strong>
+            <small>Ciclo vigente da conta</small>
+          </div>
+
+          <div className="plan-metric-item">
+            <span className="plan-metric-label">LIMITE DE SITES DO PLANO</span>
+            <strong className="plan-metric-value">
+              {totalSitesCount} / {effectivePlan.id === 'admin' ? 'N sites (Ilimitado)' : `${effectivePlan.maxSites} site(s)`}
+            </strong>
+            <small>
+              Plano R$ 39,90 (1 site) · R$ 79 (2 sites) · Admin (N sites)
+            </small>
+          </div>
+        </div>
+
+        <div className="plan-features-strip">
+          {effectivePlan.features.map((feat) => (
+            <span key={feat} className="plan-feature-tag">
+              <Check size={14} /> {feat}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* Seção 2: Pessoas relacionadas a este site e suas permissões */}
+      <section className="team-card">
+        <div className="section-heading">
+          <div>
+            <h2>Pessoas relacionadas a este site</h2>
+            <p>
+              Veja quem tem acesso a <b>{siteDisplayName}</b> ({siteDomain}), consulte suas permissões no Analizi, edite o nível de acesso ou remova a pessoa.
+            </p>
+          </div>
+          <span className="members-count-badge">
+            {members.length + invites.length} {members.length + invites.length === 1 ? 'pessoa' : 'pessoas'}
+          </span>
+        </div>
+
+        {message && (
+          <p className={`form-feedback ${feedbackType === 'error' ? 'error' : ''}`} style={{ marginTop: 14 }}>
+            {message}
+          </p>
+        )}
+
+        <div className="site-people-list">
+          <div className="site-people-head">
+            <span>Pessoa</span>
+            <span>Permissões no Analizi</span>
+            <span>Nível de acesso</span>
+            <span>Ações</span>
+          </div>
+
+          {loadingMembers && members.length === 0 ? (
+            <p className="empty-team">Carregando pessoas vinculadas a este site...</p>
+          ) : (
+            members.map((member) => {
+              const roleMeta = ROLE_DESCRIPTIONS[member.role] || ROLE_DESCRIPTIONS.viewer
+              const isSelf = member.user_id === currentUserId
+              const isBusy = updatingId === member.user_id
+              const initials = (member.full_name || member.email || 'U')
+                .split(' ')
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((part) => part[0])
+                .join('')
+                .toUpperCase()
+
+              return (
+                <div className="site-person-row" key={member.user_id}>
+                  <div className="site-person-identity">
+                    <span className="site-person-avatar">{initials}</span>
+                    <div>
+                      <b>
+                        {member.full_name || member.email}
+                        {isSelf && <em className="you-tag">Você</em>}
+                      </b>
+                      <small>{member.email || 'Acesso autenticado via Google'}</small>
+                    </div>
+                  </div>
+
+                  <div className="site-person-permissions">
+                    <span className={`role-badge ${roleMeta.badgeClass}`}>{roleMeta.label}</span>
+                    <small>{roleMeta.permissions}</small>
+                  </div>
+
+                  <div className="site-person-role-edit">
+                    <select
+                      aria-label={`Editar permissão de ${member.full_name || member.email}`}
+                      value={member.role}
+                      disabled={isBusy}
+                      onChange={(e) =>
+                        handleUpdateMemberRole(member.user_id, e.target.value as 'owner' | 'admin' | 'viewer')
+                      }
+                    >
+                      <option value="owner">Proprietário(a)</option>
+                      <option value="admin">Administrador(a)</option>
+                      <option value="viewer">Visualizador(a)</option>
+                    </select>
+                  </div>
+
+                  <div className="site-person-actions">
+                    <button
+                      type="button"
+                      className="person-remove-btn"
+                      disabled={isBusy}
+                      onClick={() => handleRemoveMember(member)}
+                      title="Excluir acesso desta pessoa"
+                    >
+                      <Trash2 size={15} />
+                      <span>Excluir acesso</span>
+                    </button>
+                  </div>
+                </div>
+              )
+            })
+          )}
+
+          {/* Convites pendentes exibidos na mesma relação com opção de editar permissão ou excluir */}
+          {invites.map((inv) => {
+            const roleMeta = ROLE_DESCRIPTIONS[inv.role] || ROLE_DESCRIPTIONS.viewer
+            const isBusy = updatingId === inv.id
+            return (
+              <div className="site-person-row pending-invite" key={inv.id}>
+                <div className="site-person-identity">
+                  <span className="site-person-avatar invite">@</span>
+                  <div>
+                    <b>
+                      {inv.email}
+                      <em className="invite-status-tag">Convite pendente</em>
+                    </b>
+                    <small>Aguardando primeiro acesso com este e-mail Google</small>
+                  </div>
+                </div>
+
+                <div className="site-person-permissions">
+                  <span className={`role-badge ${roleMeta.badgeClass}`}>{roleMeta.label}</span>
+                  <small>{roleMeta.permissions}</small>
+                </div>
+
+                <div className="site-person-role-edit">
+                  <select
+                    aria-label={`Editar permissão do convite para ${inv.email}`}
+                    value={inv.role}
+                    disabled={isBusy}
+                    onChange={(e) =>
+                      handleUpdateInviteRole(inv.id, e.target.value as 'admin' | 'viewer')
+                    }
+                  >
+                    <option value="admin">Administrador(a)</option>
+                    <option value="viewer">Visualizador(a)</option>
+                  </select>
+                </div>
+
+                <div className="site-person-actions">
+                  <button
+                    type="button"
+                    className="person-remove-btn"
+                    disabled={isBusy}
+                    onClick={() => handleRemoveInvite(inv)}
+                    title="Cancelar e excluir acesso convidado"
+                  >
+                    <Trash2 size={15} />
+                    <span>Excluir acesso</span>
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+
+          {!loadingMembers && members.length === 0 && invites.length === 0 && (
+            <p className="empty-team">Nenhuma pessoa encontrada para este site.</p>
+          )}
+        </div>
+      </section>
+
+      {/* Seção 3: Slot mantido de Convidar uma pessoa */}
+      <section className="team-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <UserPlus size={19} style={{ color: '#ff3cac' }} />
+          <h2 style={{ margin: 0 }}>Convidar uma pessoa</h2>
+        </div>
+        <p>Quem for convidado poderá entrar com o Google usando este mesmo e-mail para acessar os dados de <b>{siteDisplayName}</b>.</p>
+        <div className="team-invite-form">
+          <label>
+            E-mail
+            <input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="nome@empresa.com.br"
+              type="email"
+            />
+          </label>
+          <label>
+            Permissão no Analizi
+            <select value={role} onChange={(event) => setRole(event.target.value as 'viewer' | 'admin')}>
+              <option value="viewer">Visualizador (Somente leitura)</option>
+              <option value="admin">Administrador (Acesso total)</option>
+            </select>
+          </label>
+          <Button onClick={invite} disabled={loadingInvite}>
+            {loadingInvite ? 'Salvando...' : 'Convidar pessoa'}
+          </Button>
+        </div>
+      </section>
+    </>
+  )
 }
 
 function Settings({ setPage }: { setPage: (page: Page) => void }) {
-  const { currentBusiness, currentSite } = useBusiness();
+  const { currentBusiness, currentSite, effectivePlan } = useBusiness()
+  const siteLabel = currentSite?.name || currentBusiness?.name || 'Seu site'
   const items = [
-    [currentBusiness?.name ? `Negócio: ${currentBusiness.name}` : 'Seu negócio', 'Dados e membros deste negócio', 'team'],
-    ['Fonte de dados', currentSite?.domain ? `Configurar Google Analytics ou Rastreador para ${currentSite.domain}` : 'Configure Google Analytics ou Rastreador Analizi', 'data-sources'],
+    [
+      `Meu Site (${siteLabel})`,
+      'Pessoas relacionadas ao site, permissões no Analizi, plano, assinatura e novos sites',
+      'team'
+    ],
+    [
+      'Fonte de dados',
+      currentSite?.domain
+        ? `Configurar Google Analytics ou Rastreador para ${currentSite.domain}`
+        : 'Configure Google Analytics ou Rastreador Analizi',
+      'data-sources'
+    ],
     ['Relatório semanal', 'Ativado · enviado toda segunda-feira', undefined],
-    ['Plano', 'Analizi · R$ 79,90/mês', undefined]
-  ] as const;
-  return <>
-    <PageHeader title="Configurações" subtitle="Gerencie seu negócio, dados e preferências."/>
-    <section className="settings-list">
-      {items.map(([title, desc, target]) => (
-        <button key={title} onClick={() => target && setPage(target)} className="setting-row">
-          <span><b>{title}</b><small>{desc}</small></span>
-          <ArrowRight size={18}/>
-        </button>
-      ))}
-    </section>
-  </>;
+    ['Plano & Assinatura', `${effectivePlan.name} · ${effectivePlan.priceLabel}`, 'team']
+  ] as const
+  return (
+    <>
+      <PageHeader title="Configurações" subtitle="Gerencie seu site, acessos, dados e assinatura." />
+      <section className="settings-list">
+        {items.map(([title, desc, target]) => (
+          <button key={title} onClick={() => target && setPage(target)} className="setting-row">
+            <span>
+              <b>{title}</b>
+              <small>{desc}</small>
+            </span>
+            <ArrowRight size={18} />
+          </button>
+        ))}
+      </section>
+    </>
+  )
 }
 
 function SourceHeader({

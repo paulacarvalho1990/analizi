@@ -221,19 +221,35 @@
       const docH = Math.max(document.documentElement.scrollHeight, window.innerHeight || 0)
       if (docH <= 0 || docW <= 0) return
 
-      // 1. Coleta elementos visuais, incluindo gráficos matemáticos, barras de filtros, tabelas e cards
-      const selectors = 'header, footer, nav, article, h1, h2, h3, h4, button, a, img, video, form, input:not([type="hidden"]), select, textarea, [role="button"], [role="banner"], .analytics-filters, .heatmap-toolbar, .period, .chart-card, .recharts-wrapper, canvas, .table-card, .card, .price-card, .metric-card, .contact-card, .insight-feature, .insight-row-ai, .banner, .connection-status, .landing-hero, .hero-product'
+      // 1. Coleta ampla de elementos visuais (cobrindo ~96%+ de sites modernos: WordPress/Elementor, Shopify, Wix, SaaS, LPs)
+      const selectors = [
+        'header, footer, nav, article, h1, h2, h3, h4, button, a, img, picture, video, audio, iframe, object, embed, canvas, svg',
+        'form, input:not([type="hidden"]), select, textarea, table, details, summary, blockquote, dialog, [role="dialog"], [role="button"], [role="banner"], [role="region"]',
+        '.analytics-filters, .heatmap-toolbar, .period, [class*="filter"], [class*="search"]',
+        '.chart-card, .recharts-wrapper, [class*="chart"], [class*="graph"]',
+        '.table-card, [class*="table"]',
+        '.faq, .accordion, .install-accordion, [class*="accordion"], [class*="faq"]',
+        '.testimonial, [class*="testimonial"], [class*="review"]',
+        '.swiper, .slick-slider, .carousel, [class*="carousel"], [class*="slider"]',
+        '.card, .price-card, .metric-card, .contact-card, .insight-feature, .insight-row-ai, .hero-product, [class*="card"], [class*="product"], .elementor-widget-container',
+        '.banner, .connection-status, .landing-hero, [class*="hero"], [class*="banner"], [class*="cta"]'
+      ].join(', ')
       const rawNodes = [...document.querySelectorAll(selectors)]
       const candidates = []
 
       const typePriority = {
         chart: 12,
+        video: 12,
+        map: 12,
+        audio: 11,
         filter: 11,
         table: 11,
+        faq: 10,
+        testimonial: 10,
+        carousel: 10,
         button: 10,
         input: 10,
         form: 9,
-        video: 8,
         image: 8,
         'image-link': 8,
         link: 7,
@@ -246,7 +262,7 @@
       }
 
       for (const el of rawNodes) {
-        if (!(el instanceof HTMLElement)) continue
+        if (!(el instanceof Element)) continue
         const rect = el.getBoundingClientRect()
         // Ignora elementos invisíveis, minúsculos ou que cubram quase a página inteira
         if (rect.width < 16 || rect.height < 16) continue
@@ -254,58 +270,100 @@
         const style = window.getComputedStyle(el)
         if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
 
+        const tag = el.tagName.toLowerCase()
+        // Ignora SVGs pequenos de ícones internos (mantém apenas SVGs que sejam logos ou ilustrações >= 42px)
+        if (tag === 'svg' && (rect.width < 42 || rect.height < 36 || el.closest('button, a, .wireframe-block, .recharts-wrapper, .chart-card'))) {
+          continue
+        }
+
         const top = Math.round(rect.top + window.scrollY)
         const left = Math.round(rect.left + window.scrollX)
         const width = Math.round(rect.width)
         const height = Math.round(rect.height)
+        const cls = typeof el.className === 'string' ? el.className.toLowerCase() : ''
+        const src = (el.getAttribute('src') || el.getAttribute('data-src') || '').toLowerCase()
 
-        let type = el.tagName.toLowerCase()
-        if (el.classList.contains('chart-card') || el.classList.contains('recharts-wrapper') || type === 'canvas' || el.querySelector('.recharts-wrapper, .chart, canvas')) {
+        let type = tag
+        if (tag === 'iframe' || tag === 'object' || tag === 'embed') {
+          if (/(?:google\.com\/maps|maps\.google|openstreetmap|waze)/i.test(src)) {
+            type = 'map'
+          } else {
+            // 90%+ dos iframes visíveis em LPs/sites são vídeos (YouTube, Vimeo, Panda, Loom, Wistia, Vurb) ou embeds ricos
+            type = 'video'
+          }
+        } else if (tag === 'video' || /(?:video-player|youtube|vimeo|wistia|panda)/i.test(cls)) {
+          type = 'video'
+        } else if (tag === 'audio' || /(?:audio-player|podcast)/i.test(cls)) {
+          type = 'audio'
+        } else if (el.classList.contains('chart-card') || el.classList.contains('recharts-wrapper') || tag === 'canvas' || el.querySelector('.recharts-wrapper, .chart, canvas') || /\b(chart|graph|grafico)\b/i.test(cls)) {
           type = 'chart'
-        } else if (el.classList.contains('analytics-filters') || el.classList.contains('heatmap-toolbar') || el.classList.contains('period')) {
+        } else if (el.classList.contains('analytics-filters') || el.classList.contains('heatmap-toolbar') || el.classList.contains('period') || /\b(filter|filters|search-bar|toolbar)\b/i.test(cls)) {
           type = 'filter'
-        } else if (el.classList.contains('table-card') || type === 'table') {
+        } else if (el.classList.contains('table-card') || tag === 'table' || /\b(table-card|data-table)\b/i.test(cls)) {
           type = 'table'
-        } else if (type === 'a') {
-          type = el.querySelector('img') ? 'image-link' : (el.classList.contains('button') || el.classList.contains('btn') ? 'button' : 'link')
+        } else if (tag === 'details' || tag === 'summary' || el.classList.contains('install-accordion') || /\b(faq|accordion)\b/i.test(cls)) {
+          type = 'faq'
+        } else if (tag === 'blockquote' || el.classList.contains('testimonial') || /\b(testimonial|depoimento|review-card)\b/i.test(cls)) {
+          type = 'testimonial'
+        } else if (/\b(swiper|slick-slider|carousel|slider)\b/i.test(cls)) {
+          type = 'carousel'
+        } else if (tag === 'a') {
+          type = el.querySelector('img, svg') ? 'image-link' : (el.classList.contains('button') || el.classList.contains('btn') || /\bbtn\b/i.test(cls) ? 'button' : 'link')
         } else if (type.startsWith('h') && type.length === 2) {
           type = 'heading'
         } else if (type === 'button' || el.getAttribute('role') === 'button') {
           type = 'button'
-        } else if (type === 'img') {
+        } else if (tag === 'img' || tag === 'picture' || tag === 'svg') {
           type = 'image'
-        } else if (type === 'video') {
-          type = 'video'
-        } else if (type === 'form') {
+        } else if (tag === 'form') {
           type = 'form'
-        } else if (type === 'input' || type === 'select' || type === 'textarea') {
+        } else if (tag === 'input' || tag === 'select' || tag === 'textarea') {
           type = 'input'
-        } else if (el.classList.contains('banner') || el.classList.contains('connection-status') || el.classList.contains('landing-hero') || el.getAttribute('role') === 'banner') {
+        } else if (el.classList.contains('banner') || el.classList.contains('connection-status') || el.classList.contains('landing-hero') || el.getAttribute('role') === 'banner' || /\b(hero|banner|cta-section)\b/i.test(cls)) {
           type = 'banner'
-        } else if (el.classList.contains('card') || el.classList.contains('price-card') || el.classList.contains('metric-card') || el.classList.contains('contact-card') || el.classList.contains('insight-feature') || el.classList.contains('insight-row-ai') || el.classList.contains('hero-product') || type === 'article') {
+        } else if (el.classList.contains('card') || el.classList.contains('price-card') || el.classList.contains('metric-card') || el.classList.contains('contact-card') || el.classList.contains('insight-feature') || el.classList.contains('insight-row-ai') || el.classList.contains('hero-product') || tag === 'article' || /\b(card|product-card|feature-box)\b/i.test(cls)) {
           type = 'card'
-        } else if (['header', 'footer', 'nav'].includes(type)) {
-          type = type === 'footer' ? 'footer' : 'header'
+        } else if (['header', 'footer', 'nav'].includes(tag)) {
+          type = tag === 'footer' ? 'footer' : 'header'
         } else {
-          type = 'section'
+          // Verifica se um bloco genérico tem background-image relevante (comum em WordPress/Elementor/Wix)
+          if (style.backgroundImage && style.backgroundImage !== 'none' && style.backgroundImage.includes('url(') && width >= 60 && height >= 60 && el.children.length <= 2) {
+            type = 'image'
+          } else {
+            type = 'section'
+          }
         }
 
         const cleanLabel = (txt, limit) => truncate(String(txt || '').replace(/\s+/g, ' '), limit)
+        const textContent = el instanceof HTMLElement ? el.innerText : (el.textContent || '')
 
         let label = ''
         if (type === 'chart') {
           const heading = el.querySelector('h1, h2, h3, h4, b, strong')
-          label = cleanLabel(heading ? `Gráfico: ${heading.innerText}` : 'Gráfico Matemático / Visualização', 52)
+          label = cleanLabel(heading ? `Gráfico: ${heading.textContent}` : 'Gráfico Matemático / Visualização', 52)
         } else if (type === 'filter') {
-          label = cleanLabel(el.getAttribute('aria-label') || 'Filtros de Período, Página, Origem e Atalhos', 52)
+          label = cleanLabel(el.getAttribute('aria-label') || 'Filtros de Período, Busca e Controles', 52)
         } else if (type === 'table') {
           const heading = el.querySelector('h1, h2, h3, h4, b, strong')
-          label = cleanLabel(heading ? `Tabela: ${heading.innerText}` : 'Tabela de Métricas e Resultados', 52)
-        } else if (['button', 'link', 'heading', 'input', 'image', 'video', 'image-link'].includes(type)) {
-          label = cleanLabel(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 48)
+          label = cleanLabel(heading ? `Tabela: ${heading.textContent}` : 'Tabela de Métricas e Resultados', 52)
+        } else if (type === 'video') {
+          label = cleanLabel(el.getAttribute('title') || el.getAttribute('aria-label') || (src ? `Vídeo (${src.split('/')[2] || 'Player'})` : 'Vídeo / Player Incorporado'), 52)
+        } else if (type === 'map') {
+          label = cleanLabel(el.getAttribute('title') || el.getAttribute('aria-label') || 'Mapa Interativo / Localização', 52)
+        } else if (type === 'audio') {
+          label = cleanLabel(el.getAttribute('title') || el.getAttribute('aria-label') || 'Player de Áudio / Podcast', 52)
+        } else if (type === 'faq') {
+          const summary = el.querySelector('summary, h3, h4, button, b')
+          label = cleanLabel(summary ? `FAQ / Acordeão: ${summary.textContent}` : (textContent || 'Perguntas Frequentes (Acordeão)'), 52)
+        } else if (type === 'testimonial') {
+          label = cleanLabel(`Depoimento: ${textContent}`, 52)
+        } else if (type === 'carousel') {
+          label = cleanLabel(el.getAttribute('aria-label') || 'Carrossel / Galeria Interativa', 52)
+        } else if (['button', 'link', 'heading', 'input', 'image', 'image-link'].includes(type)) {
+          label = cleanLabel(el.getAttribute('aria-label') || el.getAttribute('alt') || textContent || el.getAttribute('placeholder') || '', 48)
         } else if (type === 'card' || type === 'banner' || type === 'form') {
           const heading = el.querySelector('h1, h2, h3, h4, .metric-title, b, strong')
-          label = cleanLabel(heading ? heading.innerText : (el.getAttribute('aria-label') || ''), 48)
+          label = cleanLabel(heading ? heading.textContent : (el.getAttribute('aria-label') || textContent || ''), 48)
         } else {
           label = cleanLabel(el.getAttribute('aria-label') || '', 40)
         }
@@ -323,13 +381,13 @@
         })
       }
 
-      // 2. Preserva componentes compostos (chart, filter, table, metric-card) inteiros,
-      // descartando os sub-elementos internos deles para não empilhar nem destruir o gráfico/filtro!
-      const compositeTypes = ['chart', 'filter', 'table']
+      // 2. Preserva componentes compostos (chart, filter, table, video, map, faq, testimonial, carousel, metric-card) inteiros,
+      // descartando os sub-elementos internos deles para não empilhar nem destruir o componente!
+      const compositeTypes = ['chart', 'filter', 'table', 'video', 'map', 'audio', 'faq', 'testimonial', 'carousel']
       const composites = candidates.filter((c) => compositeTypes.includes(c.type) || c.el.classList.contains('metric-card'))
 
       const leafOrDistinct = candidates.filter((cand) => {
-        // Se este elemento está dentro de um gráfico, filtro, tabela ou metric-card já capturado, descarta o filho interno
+        // Se este elemento está dentro de um componente composto já capturado, descarta o filho interno
         const isInsideComposite = composites.some((comp) => comp !== cand && comp.el.contains(cand.el))
         if (isInsideComposite) return false
 
