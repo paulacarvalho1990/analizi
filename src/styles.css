@@ -456,24 +456,24 @@ body { background:var(--background); color:var(--foreground); }
   margin-left: auto;
 }
 .metric-info-icon {
-  color: #8da199;
+  color: #94a3b8;
   transition: color 0.2s ease, transform 0.2s ease;
 }
 .metric-info-wrapper:hover .metric-info-icon,
 .metric-info-wrapper:focus .metric-info-icon {
-  color: #167a68;
+  color: #3b82f6;
   transform: scale(1.15);
 }
 .metric-tooltip-popover {
   position: absolute;
   bottom: calc(100% + 8px);
   right: -10px;
-  background: #123d37;
-  color: #f0f7f5;
+  background: #0b1f4b;
+  color: #f8fafc;
   padding: 13px 15px;
   border-radius: 12px;
-  box-shadow: 0 14px 32px rgba(18, 61, 55, 0.38), 0 4px 10px rgba(0, 0, 0, 0.15);
-  width: 265px;
+  box-shadow: 0 16px 36px rgba(11, 31, 75, 0.45), 0 4px 12px rgba(0, 0, 0, 0.2);
+  width: 270px;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
@@ -481,7 +481,12 @@ body { background:var(--background); color:var(--foreground); }
   z-index: 1000;
   text-align: left;
   line-height: 1.4;
-  border: 1px solid #276258;
+  border: 1px solid #1e3d83;
+}
+[data-theme="dark"] .metric-tooltip-popover {
+  background: #14171f;
+  border-color: #2e3545;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
 }
 .metric-info-wrapper:hover .metric-tooltip-popover,
 .metric-info-wrapper:focus-within .metric-tooltip-popover {
@@ -492,9 +497,9 @@ body { background:var(--background); color:var(--foreground); }
 .metric-tooltip-title {
   font-size: 13px;
   font-weight: 750;
-  color: #5eb49f;
+  color: #60a5fa;
   margin-bottom: 8px;
-  border-bottom: 1px solid rgba(94, 180, 159, 0.25);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.25);
   padding-bottom: 6px;
   display: flex;
   align-items: center;
@@ -510,72 +515,77 @@ body { background:var(--background); color:var(--foreground); }
   display: block;
   font-size: 10px;
   font-weight: 800;
-  color: #92b7ad;
+  color: #93c5fd;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 2px;
 }
 .metric-tooltip-section p {
-  color: #e1f0eb;
+  color: #e2e8f0;
   font-size: 11px;
   margin: 0;
   line-height: 1.4;
 }
 .metric-tooltip-section.tip {
-  background: rgba(94, 180, 159, 0.15);
-  border-left: 3px solid #5eb49f;
+  background: rgba(255, 138, 61, 0.12);
+  border-left: 3px solid #ff8a3d;
   padding: 7px 10px;
   border-radius: 6px;
   margin-top: 7px;
 }
 .metric-tooltip-section.tip b {
-  color: #a8dfd3;
+  color: #fdba74;
 }
 .metric-tooltip-section.tip p {
-  color: #e6f7f2;
+  color: #ffedd5;
 }
 
 /* Legenda no rodapé dos cards de métricas em Sentence case */
 .metric-caption {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 10.5px;
+  font-weight: 500;
   letter-spacing: normal;
-  color: #627b73;
+  color: var(--muted-foreground, #6b7280);
   text-transform: none;
   margin-top: auto;
   padding-top: 8px;
-  border-top: 1px dashed #e2ece8;
+  border-top: 1px dashed var(--border, #e5e7eb);
   line-height: 1.35;
 }
 [data-theme="dark"] .metric-caption {
-  color: #8da69e;
+  color: #9ca3af;
   border-top-color: rgba(255, 255, 255, 0.08);
 }
 
 /* Subtítulo explicativo dos cabeçalhos dos gráficos em Sentence case */
 .chart-header-caption {
   font-size: 11px !important;
-  font-weight: 550;
+  font-weight: 500;
   letter-spacing: normal;
-  color: #627b73 !important;
+  color: var(--muted-foreground, #6b7280) !important;
   text-transform: none !important;
   margin-top: 4px;
   line-height: 1.35;
 }
 [data-theme="dark"] .chart-header-caption {
-  color: #8da69e !important;
+  color: #9ca3af !important;
 }
 
 /* Tooltip customizado rico dos gráficos Recharts na paleta Analizi */
 .chart-rich-tooltip {
-  background: #123d37;
-  color: #f0f7f5;
+  background: #0b1f4b;
+  color: #f8fafc;
   padding: 11px 14px;
   border-radius: 11px;
-  box-shadow: 0 12px 28px rgba(18, 61, 55, 0.38);
-  border: 1px solid #276258;
+  box-shadow: 0 14px 32px rgba(11, 31, 75, 0.45);
+  border: 1px solid #1e3d83;
   font-size: 12px;
   min-width: 175px;
+}
+[data-theme="dark"] .chart-rich-tooltip {
+  background: #14171f;
+  border-color: #2e3545;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.6);
 }
 .chart-rich-tooltip .tooltip-title {
   font-weight: 750;
@@ -585,7 +595,7 @@ body { background:var(--background); color:var(--foreground); }
 }
 .chart-rich-tooltip .tooltip-path {
   font-size: 10px;
-  color: #92b7ad;
+  color: #93c5fd;
   margin-bottom: 6px;
 }
 .chart-rich-tooltip .tooltip-stat {
@@ -593,34 +603,34 @@ body { background:var(--background); color:var(--foreground); }
   justify-content: space-between;
   gap: 12px;
   font-size: 11px;
-  color: #d7ebe4;
+  color: #cbd5e1;
   margin-top: 3px;
 }
 .chart-rich-tooltip .tooltip-stat b {
-  color: #5eb49f;
+  color: #60a5fa;
   font-weight: 700;
 }
 .chart-rich-tooltip .tooltip-stat.highlight b {
-  color: #ff8a3d;
+  color: #ff3cac;
 }
 .chart-rich-tooltip .tooltip-share {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   font-size: 10px;
-  color: #92b7ad;
+  color: #94a3b8;
   border-top: 1px dashed rgba(255, 255, 255, 0.12);
   padding-top: 4px;
   margin-top: 5px;
 }
 .chart-rich-tooltip .tooltip-share b {
-  color: #ffffff;
+  color: #ff8a3d;
 }
 .chart-data-label {
-  fill: #32574f;
+  fill: #1e293b;
 }
 [data-theme="dark"] .chart-data-label {
-  fill: #c6ddd6;
+  fill: #f1f5f9;
 }
 
 /* =========================================================================
