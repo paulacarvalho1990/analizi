@@ -168,20 +168,39 @@
     return attrData
   }
   let lastEventAt = now()
-  const context = () => {
+  let lastTrackedPath = location.pathname
+  let lastTrackedTitle = truncate(document.title, 512)
+  const context = (overridePath, overrideTitle) => {
     const referrerUrl = cleanUrl(document.referrer)
     const referrerHost = referrerUrl ? new URL(referrerUrl).hostname.replace(/^www\./, '') : ''
     return {
       trackerSiteId: siteId, visitorId, sessionId, sessionNumber,
-      pagePath: location.pathname, pageTitle: truncate(document.title, 512), pageUrl: cleanUrl(location.href),
+      pagePath: overridePath || location.pathname,
+      pageTitle: overrideTitle !== undefined ? overrideTitle : truncate(document.title, 512),
+      pageUrl: cleanUrl(location.href),
       pageHostname: location.hostname, referrerHost, referrerUrl, language: navigator.language,
       ...parseUserAgent(), ...attribution(),
     }
   }
-  const send = (eventName, metadata = {}) => {
-    const elapsed = Math.max(0, now() - lastEventAt)
-    lastEventAt = now(); set(session, activityKey, String(lastEventAt))
-    const payload = JSON.stringify({ events: [{ id: randomId(), occurredAt: new Date().toISOString(), eventName, engagementTimeMs: elapsed, isConversion: eventName === 'sign_up' || eventName === 'whatsapp_contact', metadata, ...context() }] })
+  const send = (eventName, metadata = {}, options = {}) => {
+    const isVisible = document.visibilityState !== 'hidden'
+    const consumeTime = options.consumeTime !== false
+    const elapsed = consumeTime ? Math.max(0, now() - lastEventAt) : 0
+    if (consumeTime && isVisible) {
+      lastEventAt = now()
+      set(session, activityKey, String(lastEventAt))
+    }
+    const payload = JSON.stringify({
+      events: [{
+        id: randomId(),
+        occurredAt: new Date().toISOString(),
+        eventName,
+        engagementTimeMs: elapsed,
+        isConversion: eventName === 'sign_up' || eventName === 'whatsapp_contact',
+        metadata,
+        ...context(options.pagePath, options.pageTitle),
+      }]
+    })
     if (navigator.sendBeacon) navigator.sendBeacon(endpoint, new Blob([payload], { type: 'text/plain' }))
     else fetch(endpoint, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: payload, keepalive: true }).catch(() => {})
   }
@@ -347,13 +366,14 @@
         blocks: accepted
       }
 
-      send('page_layout', { layout: layoutData })
+      send('page_layout', { layout: layoutData }, { consumeTime: false })
       set(session, sentKey, '1')
     } catch {}
   }
 
-  // --- Heatmap Econômico: 2. Monitoramento de Scroll Depth (Zero tráfego durante o scroll) ---
+  // --- Heatmap Econômico: 2. Monitoramento de Scroll Depth e Tempo de Atenção ---
   let maxScrollPct = 0
+  let sentScrollForCurrentPage = false
   const updateScrollDepth = () => {
     try {
       const scrollY = window.scrollY || document.documentElement.scrollTop || 0
@@ -369,25 +389,35 @@
   window.addEventListener('scroll', updateScrollDepth, { passive: true })
   updateScrollDepth()
 
-  const sendScrollDepth = () => {
-    if (maxScrollPct <= 0) return
+  const sendScrollDepth = (overridePath, overrideTitle) => {
+    const elapsedSinceLast = Math.max(0, now() - lastEventAt)
+    // Envia se houve rolagem nova nesta página OU se há tempo de atenção relevante (>= 1s) a registrar ao sair da página/aba
+    if (sentScrollForCurrentPage && elapsedSinceLast < 1000) return
     const brackets = []
-    if (maxScrollPct >= 25) brackets.push('25%')
-    if (maxScrollPct >= 50) brackets.push('50%')
-    if (maxScrollPct >= 75) brackets.push('75%')
-    if (maxScrollPct >= 95) brackets.push('100%')
+    if (!sentScrollForCurrentPage) {
+      if (maxScrollPct >= 25) brackets.push('25%')
+      if (maxScrollPct >= 50) brackets.push('50%')
+      if (maxScrollPct >= 75) brackets.push('75%')
+      if (maxScrollPct >= 95) brackets.push('100%')
+      sentScrollForCurrentPage = true
+    }
 
     send('scroll_depth', {
       max_percentage: maxScrollPct,
       depth_brackets: brackets
-    })
-    maxScrollPct = 0 // Evita duplo envio
+    }, { pagePath: overridePath, pageTitle: overrideTitle })
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') sendScrollDepth()
+    if (document.visibilityState === 'hidden') {
+      sendScrollDepth()
+    } else if (document.visibilityState === 'visible') {
+      // Reinicia o relógio quando o usuário volta para a aba, sem somar tempo em segundo plano
+      lastEventAt = now()
+      set(session, activityKey, String(lastEventAt))
+    }
   })
-  window.addEventListener('pagehide', sendScrollDepth)
+  window.addEventListener('pagehide', () => sendScrollDepth())
 
   const schedulePageLayoutCapture = () => {
     const path = location.pathname
@@ -402,13 +432,16 @@
   }
 
   // Monitora navegação SPA (History API / popstate) para disparar page_view + page_layout (1x por sessão por página)
-  let lastTrackedPath = location.pathname
   const handleRouteChange = () => {
     const newPath = location.pathname
     if (newPath && newPath !== lastTrackedPath) {
-      // Envia o scroll_depth acumulado da página anterior antes de trocar
-      sendScrollDepth()
+      // Envia o scroll_depth e o tempo de atenção acumulado da página anterior antes de trocar
+      sendScrollDepth(lastTrackedPath, lastTrackedTitle)
       lastTrackedPath = newPath
+      lastTrackedTitle = truncate(document.title, 512)
+      maxScrollPct = 0
+      sentScrollForCurrentPage = false
+      lastEventAt = now()
       send('page_view')
       updateScrollDepth()
       schedulePageLayoutCapture()
