@@ -4,6 +4,7 @@ import {
   Image as ImageIcon, Video, Type, CheckSquare, Layout, Sparkles, Navigation,
   CreditCard, Flag, TextCursorInput, Link as LinkIcon
 } from 'lucide-react'
+import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
 
 interface LayoutBlock {
@@ -325,30 +326,42 @@ export function Heatmap() {
         </div>
       ) : (
         <>
-          {/* Resumo do Scroll */}
+          {/* Resumo do Scroll no padrão dos cards de métricas das outras páginas */}
           {activeLayer === 'scroll' && data?.scrollRetention && (
-            <div className="heatmap-scroll-summary">
-              <div className="scroll-stat-card">
-                <span>TOPO (ATÉ 25%)</span>
-                <strong>{data.scrollRetention['25%']?.percentage || 100}%</strong>
-                <small>dos visitantes visualizaram</small>
-              </div>
-              <div className="scroll-stat-card">
-                <span>DOBRA MÉDIA (50%)</span>
-                <strong>{data.scrollRetention['50%']?.percentage || 0}%</strong>
-                <small>continuaram rolando</small>
-              </div>
-              <div className="scroll-stat-card">
-                <span>CONTEÚDO BAIXO (75%)</span>
-                <strong>{data.scrollRetention['75%']?.percentage || 0}%</strong>
-                <small>chegaram ao terço final</small>
-              </div>
-              <div className="scroll-stat-card">
-                <span>FIM DA PÁGINA (100%)</span>
-                <strong>{data.scrollRetention['100%']?.percentage || 0}%</strong>
-                <small>leram a página até o fim</small>
-              </div>
-            </div>
+            <section className="metrics">
+              <MetricCard
+                title="Topo (até 25%)"
+                value={`${data.scrollRetention['25%']?.percentage || 100}%`}
+                caption="Visualizaram o topo"
+                tooltipWhat="Porcentagem de visitantes que viram a dobra inicial da página."
+                tooltipWhy="Mede a taxa de permanência imediata de quem acessa o seu site."
+                tooltipTip="Garanta que sua proposta de valor e CTA principal estejam visíveis aqui."
+              />
+              <MetricCard
+                title="Dobra média (50%)"
+                value={`${data.scrollRetention['50%']?.percentage || 0}%`}
+                caption="Continuaram rolando"
+                tooltipWhat="Percentual de visitantes que rolaram até a metade do conteúdo."
+                tooltipWhy="Indica se a introdução e o início do site foram atraentes o suficiente para gerar interesse."
+                tooltipTip="Adicione tópicos dinâmicos ou prévia de benefícios para engajar a leitura."
+              />
+              <MetricCard
+                title="Conteúdo baixo (75%)"
+                value={`${data.scrollRetention['75%']?.percentage || 0}%`}
+                caption="Chegaram ao terço final"
+                tooltipWhat="Visitantes que consumiram a maior parte das informações da página."
+                tooltipWhy="Representa um público altamente qualificado e com interesse real na oferta."
+                tooltipTip="Posicione depoimentos e garantias nesta área para eliminar dúvidas finais."
+              />
+              <MetricCard
+                title="Fim da página (100%)"
+                value={`${data.scrollRetention['100%']?.percentage || 0}%`}
+                caption="Leram até o fim"
+                tooltipWhat="Percentual de visitantes que rolaram a página inteira até o rodapé."
+                tooltipWhy="Mostra o engajamento máximo e a profundidade de leitura dos usuários mais atentos."
+                tooltipTip="Não deixe o rodapé vazio: coloque um botão de contato ou formulário de fechamento."
+              />
+            </section>
           )}
 
           {/* Área do Wireframe + Heatmap */}
