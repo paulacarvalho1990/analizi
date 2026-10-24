@@ -374,7 +374,7 @@ function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) { return <d
 
 function ConnectionStatus() {
   const { currentSite } = useBusiness();
-  const [state, setState] = useState<'loading' | 'none' | 'pending' | 'warning_24h' | 'ready'>('loading');
+  const [state, setState] = useState<'loading' | 'none' | 'pending' | 'warning_24h' | 'inactive_24h' | 'ready'>('loading');
   const [updatedAt, setUpdatedAt] = useState('');
 
   useEffect(() => {
@@ -403,18 +403,9 @@ function ConnectionStatus() {
           return;
         }
 
-        if (item.status === 'connected' || item.last_synced_at) {
-          if (isMounted) {
-            setState('ready');
-            if (item.last_synced_at) {
-              setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.last_synced_at)));
-            }
-          }
-          return;
-        }
+        let hasEvents = item.status === 'connected' || Boolean(item.last_synced_at);
+        let lastEventAt: string | null = item.last_synced_at || null;
 
-        let hasEvents = false;
-        let lastEventAt: string | null = null;
         if (currentSite.tracker_site_id) {
           try {
             const check = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${currentSite.tracker_site_id}/status`);
@@ -422,7 +413,7 @@ function ConnectionStatus() {
               const checkData = await check.json() as { configured?: boolean; received?: boolean; lastEventAt?: string | null };
               if (checkData.received) {
                 hasEvents = true;
-                lastEventAt = checkData.lastEventAt || new Date().toISOString();
+                if (checkData.lastEventAt) lastEventAt = checkData.lastEventAt;
               }
             }
           } catch {
@@ -430,23 +421,35 @@ function ConnectionStatus() {
           }
         }
 
-        if (hasEvents) {
-          const nowIso = new Date().toISOString();
-          void supabase
-            .from('data_sources')
-            .update({
-              status: 'connected',
-              connected_at: item.connected_at || nowIso,
-              last_synced_at: lastEventAt || nowIso
-            })
-            .eq('id', item.id);
+        if (hasEvents && lastEventAt) {
+          const lastEventTime = new Date(lastEventAt).getTime();
+          const hoursSinceLastEvent = (Date.now() - lastEventTime) / (1000 * 60 * 60);
+
+          if (item.status === 'pending') {
+            const nowIso = new Date().toISOString();
+            void supabase
+              .from('data_sources')
+              .update({
+                status: 'connected',
+                connected_at: item.connected_at || nowIso,
+                last_synced_at: lastEventAt
+              })
+              .eq('id', item.id);
+          }
 
           if (isMounted) {
-            setState('ready');
-            if (lastEventAt) {
-              setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lastEventAt)));
+            setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lastEventAt)));
+            if (hoursSinceLastEvent >= 24) {
+              setState('inactive_24h');
+            } else {
+              setState('ready');
             }
           }
+          return;
+        }
+
+        if (hasEvents && !lastEventAt) {
+          if (isMounted) setState('ready');
           return;
         }
 
@@ -483,6 +486,14 @@ function ConnectionStatus() {
       <article className="connection-status danger">
         <b>NENHUM EVENTO DETECTADO APÓS 24 HORAS.</b>
         <p>Seu site foi configurado há mais de 24 horas, mas ainda não recebemos visitas. Verifique se o código do rastreador foi publicado corretamente.</p>
+      </article>
+    );
+  }
+  if (state === 'inactive_24h') {
+    return (
+      <article className="connection-status warning">
+        <b>SEM DADOS RECEBIDOS NAS ÚLTIMAS 24 HORAS.</b>
+        <p>{updatedAt ? `A última atividade registrada foi em ${updatedAt}.` : 'Nenhuma atividade recente detectada.'} Verifique se o seu site continua no ar e com a tag do Analizi instalada.</p>
       </article>
     );
   }
