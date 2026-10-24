@@ -437,3 +437,14 @@ body { background:var(--background); color:var(--foreground); }
   color: var(--muted-foreground);
 }
 
+/* Customização e legibilidade do gráfico de Origem dos Acessos */
+.origin-chart-container .recharts-cartesian-axis-tick text {
+  font-size: 11px !important;
+  font-weight: 600;
+  fill: #59766e;
+}
+[data-theme="dark"] .origin-chart-container .recharts-cartesian-axis-tick text {
+  fill: var(--muted-foreground, #94a3b8);
+}
+
+
