@@ -7,6 +7,8 @@ export interface BusinessItem {
   slug: string
   website_url?: string | null
   segment?: string | null
+  subsegment?: string | null
+  segment_detail?: string | null
 }
 
 export interface SiteItem {
@@ -82,7 +84,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
         // Busca todos os businesses aos quais o usuário tem acesso (RLS ativa)
         const { data: bizData, error: bizError } = await supabase
           .from('businesses')
-          .select('id, name, slug, website_url, segment')
+          .select('id, name, slug, website_url, segment, subsegment, segment_detail')
           .order('name', { ascending: true })
 
         if (!bizError && bizData && bizData.length > 0) {

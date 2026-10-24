@@ -14,6 +14,7 @@ interface AssetFetcher {
 interface Env {
   ANALIZI_EVENTS: D1Database
   ASSETS: AssetFetcher
+  DEEPINFRA_API_KEY?: string
 }
 
 const ALLOWED_EVENTS = new Set([
@@ -231,7 +232,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   const results = await env.ANALIZI_EVENTS.batch([
     env.ANALIZI_EVENTS.prepare(`select count(distinct visitor_id) users, count(distinct session_id) sessions, sum(event_name='page_view') pageViews, count(distinct case when event_name in ('whatsapp_contact','sign_up') then session_id end) contactSessions, sum(event_name in ('whatsapp_contact','sign_up')) contacts, sum(event_name='whatsapp_contact') whatsappContacts, sum(event_name='sign_up') signUps, sum(event_name='first_visit') newUsers, round(avg(engagement_time_ms)/1000) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql}`).bind(...currentValues),
     env.ANALIZI_EVENTS.prepare(`select coalesce(source,'direto') name, count(*) value from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql} group by coalesce(source,'direto') order by value desc limit 6`).bind(...currentValues),
-    env.ANALIZI_EVENTS.prepare(`select coalesce(page_path,'/') path, max(page_title) title, sum(event_name='page_view') views, round(avg(engagement_time_ms)/1000) attentionSeconds, round(100.0 * sum(event_name='page_view' and page_path in (select page_path from events x where x.tracker_site_id=events.tracker_site_id and x.session_id=events.session_id order by occurred_at desc limit 1)) / nullif(sum(event_name='page_view'),0),1) exitRate from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql} group by coalesce(page_path,'/') order by views desc limit 250`).bind(...currentValues),
+    env.ANALIZI_EVENTS.prepare(`select coalesce(page_path,'/') path, max(page_title) title, sum(event_name='page_view') views, round(avg(engagement_time_ms)/1000) attentionSeconds, round(100.0 * sum(event_name='page_view' and events.id = (select x.id from events x where x.tracker_site_id=events.tracker_site_id and x.session_id=events.session_id and x.event_name='page_view' order by occurred_at desc, id desc limit 1) and not exists (select 1 from events i where i.tracker_site_id=events.tracker_site_id and i.session_id=events.session_id and (i.event_name in ('button_click','whatsapp_contact','sign_up','login') or i.is_conversion=1))) / nullif(sum(event_name='page_view'),0),1) exitRate from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql} group by coalesce(page_path,'/') order by views desc limit 250`).bind(...currentValues),
     env.ANALIZI_EVENTS.prepare(`select ${groupExpression} date, count(distinct session_id) sessions, count(distinct visitor_id) users, sum(event_name='page_view') pageViews, count(distinct case when event_name in ('whatsapp_contact','sign_up') then session_id end) contacts from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql} group by ${groupExpression} order by date`).bind(...currentValues),
     env.ANALIZI_EVENTS.prepare(`select coalesce(source,'direto') source, coalesce(page_path,'/') path, sum(event_name='page_view') views, count(distinct visitor_id) users from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql} group by source,path order by views desc limit 250`).bind(...currentValues),
     env.ANALIZI_EVENTS.prepare(`select date(occurred_at) date, event_name type, coalesce(page_path,'/') path, count(*) contacts from events where tracker_site_id=? and event_name in ('whatsapp_contact','sign_up') and occurred_at >= ? and occurred_at < ?${filterSql} group by date(occurred_at), event_name, coalesce(page_path,'/') order by date, contacts desc limit 250`).bind(...currentValues),
@@ -244,6 +245,277 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   return json({ totals: results[0]?.results?.[0] ?? {}, sources: results[1]?.results ?? [], pages: results[2]?.results ?? [], daily: results[3]?.results ?? [], sourcePages: results[4]?.results ?? [], contactDetails: results[5]?.results ?? [], clickDetails: results[6]?.results ?? [], previousTotals: results[7]?.results?.[0] ?? {}, pageComparison: results[8]?.results ?? [], filterPages: results[9]?.results ?? [], filterSources: results[10]?.results ?? [], periodDays: period, start, end, group })
 }
 
+export interface AIInsight {
+  key: string
+  type: 'traffic_growth' | 'traffic_drop' | 'lead_conversion' | 'top_channel' | 'page_engagement' | 'opportunity'
+  title: string
+  status: 'positive' | 'warning' | 'neutral'
+  badge: string
+  finding: string
+  action: string
+  projection: string
+}
+
+async function generateAIInsights(request: Request, env: Env): Promise<Response> {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'POST, OPTIONS',
+        'access-control-allow-headers': 'content-type'
+      }
+    })
+  }
+  if (request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
+
+  let body: {
+    trackerSiteId?: string
+    business?: {
+      name?: string
+      segment?: string
+      subsegment?: string
+      segmentDetail?: string
+      websiteUrl?: string
+    }
+    metrics?: {
+      periodDays?: number
+      totals?: Record<string, unknown>
+      previousTotals?: Record<string, unknown>
+      sources?: Array<{ name: string; value: number | string }>
+      pages?: Array<{ path: string; views: number | string; attentionSeconds?: number; exitRate?: number }>
+      daily?: Array<Record<string, unknown>>
+    }
+  }
+
+  try {
+    body = await request.json()
+  } catch {
+    return json({ error: 'Payload JSON inválido.' }, 400)
+  }
+
+  const { business, metrics } = body
+  const apiKey = env.DEEPINFRA_API_KEY
+
+  const bName = business?.name || 'Seu Negócio'
+  const bSeg = business?.segment || 'Serviços'
+  const bSub = business?.subsegment || ''
+  const bDet = business?.segmentDetail ? ` (${business.segmentDetail})` : ''
+  const period = metrics?.periodDays || 7
+
+  const t = metrics?.totals || {}
+  const p = metrics?.previousTotals || {}
+  const views = Number(t.pageViews || 0)
+  const prevViews = Number(p.pageViews || 0)
+  const users = Number(t.users || 0)
+  const contacts = Number(t.contacts || 0)
+  const whatsapp = Number(t.whatsappContacts || 0)
+  const attention = Number(t.attentionSeconds || 0)
+
+  const topSource = metrics?.sources?.[0]?.name || 'direto'
+  const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
+  const topPage = metrics?.pages?.[0]?.path || '/'
+  const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
+
+  const buildRuleBasedFallback = (): AIInsight[] => {
+    const list: AIInsight[] = []
+    const growth = prevViews > 0 ? Math.round(((views - prevViews) / prevViews) * 100) : null
+
+    if (growth !== null && growth >= 0) {
+      list.push({
+        key: 'traffic_growth',
+        type: 'traffic_growth',
+        title: 'Seu público está aumentando',
+        status: 'positive',
+        badge: 'Crescimento de Acessos',
+        finding: `Você teve ${views} visualizações nos últimos ${period} dias, um avanço de ${growth}% em comparação com o período anterior.`,
+        action: 'Mantenha a frequência nas divulgações que geraram esses acessos e garanta que o link de contato no site esteja bem visível.',
+        projection: `Se mantiver esse ritmo, o site deve alcançar mais de ${Math.round(views * 1.2)} visitas no próximo ciclo.`
+      })
+    } else if (growth !== null && growth < 0) {
+      list.push({
+        key: 'traffic_drop',
+        type: 'traffic_drop',
+        title: 'Atenção ao recuo de visitas',
+        status: 'warning',
+        badge: 'Alerta de Tráfego',
+        finding: `O número de visualizações caiu ${Math.abs(growth)}% em relação ao período anterior (total de ${views} acessos).`,
+        action: 'Avalie compartilhar novidades ou links úteis nas suas redes ou canais de WhatsApp para reativar o interesse de clientes.',
+        projection: 'Sem novas ações de atração, o volume de contatos pode reduzir nas próximas semanas.'
+      })
+    } else {
+      list.push({
+        key: 'traffic_growth',
+        type: 'traffic_growth',
+        title: 'Primeiros dados consolidados',
+        status: 'positive',
+        badge: 'Movimento Inicial',
+        finding: `Foram registradas ${views} visualizações e ${users} pessoas únicas no período.`,
+        action: 'Continue compartilhando o site com clientes e parceiros para consolidar a base de acessos.',
+        projection: 'Com mais alguns dias de coleta, poderemos apontar o canal que traz mais retorno para você.'
+      })
+    }
+
+    if (contacts > 0 || whatsapp > 0) {
+      list.push({
+        key: 'lead_conversion',
+        type: 'lead_conversion',
+        title: 'O site está gerando contatos reais',
+        status: 'positive',
+        badge: 'Oportunidades de Negócio',
+        finding: `Foram iniciadas ${contacts} ações de contato no período (sendo ${whatsapp} diretamente pelo WhatsApp).`,
+        action: 'Responda prontamente às mensagens recebidas. Se puder, pergunte ao cliente onde ele conheceu sua empresa para validar os canais.',
+        projection: 'Manter a agilidade na resposta aumenta em até 50% as chances de fechar negócio a partir do site.'
+      })
+    } else if (views > 20) {
+      list.push({
+        key: 'lead_conversion',
+        type: 'lead_conversion',
+        title: 'Visitantes chegam, mas não chamam',
+        status: 'warning',
+        badge: 'Oportunidade de Contato',
+        finding: `O site recebeu ${views} visualizações, mas ainda não registrou cliques em botões de contato ou WhatsApp.`,
+        action: 'Adicione um botão de WhatsApp visível no rodapé ou cabeçalho convidando o visitante para tirar dúvidas.',
+        projection: `Negócios de ${bSub || bSeg} com botão visível costumam transformar cerca de 3% a 6% das visitas em mensagens diretas.`
+      })
+    }
+
+    if (topSource && topSourceVal > 0) {
+      const share = views > 0 ? Math.round((topSourceVal / views) * 100) : 0
+      list.push({
+        key: 'top_channel',
+        type: 'top_channel',
+        title: `Principal canal: "${topSource}"`,
+        status: 'neutral',
+        badge: 'Origem de Destaque',
+        finding: `O canal "${topSource}" foi responsável por ${share}% de todo o tráfego recebido no período.`,
+        action: 'Fortaleça a presença nesse canal e crie links específicos para saber quais postagens dão mais resultado.',
+        projection: 'Diversificar um segundo canal (como Google Meu Negócio ou Instagram) evita depender de apenas uma fonte.'
+      })
+    }
+
+    list.push({
+      key: 'opportunity',
+      type: 'opportunity',
+      title: `Oportunidade para ${bSub || bSeg}`,
+      status: 'neutral',
+      badge: 'Recomendação Prática',
+      finding: `A página mais visitada foi "${topPage}" com ${topPageViews} visualizações. O tempo médio de retenção foi de ${attention} segundos.`,
+      action: `Revise a página "${topPage}" para que a proposta de valor e a forma de entrar em contato apareçam antes de o usuário precisar rolar muito a tela.`,
+      projection: 'Melhorias de clareza na primeira dobra costumam dobrar o tempo de permanência de novos visitantes.'
+    })
+
+    return list
+  }
+
+  if (!apiKey) {
+    return json({
+      insights: buildRuleBasedFallback(),
+      model: 'rule-based',
+      generatedAt: new Date().toISOString()
+    })
+  }
+
+  const prompt = `Você é um analista de negócios e web analytics sênior do Analizi. Seu cliente é um pequeno ou médio empreendedor (leigo em tecnologia e termos como UTM, bounce rate, tracking).
+
+DADOS DO CLIENTE E NEGÓCIO:
+- Nome da Empresa: ${bName}
+- Categoria Principal: ${bSeg}
+- Tipo / Subsegmento: ${bSub}${bDet}
+- Período avaliado: últimos ${period} dias
+- Visualizações atuais: ${views} (período anterior: ${prevViews})
+- Usuários únicos: ${users}
+- Contatos/Leads totais: ${contacts}
+- Contatos via WhatsApp: ${whatsapp}
+- Tempo de atenção médio: ${attention} segundos
+- Principal canal de tráfego: "${topSource}" (${topSourceVal} acessos)
+- Página mais acessada: "${topPage}" (${topPageViews} visualizações)
+
+TAREFA:
+Gere exatamente 4 insights pré-definidos padronizados em JSON, sem jargões técnicos:
+1. "traffic_growth" ou "traffic_drop": análise de visitas com comparação de período.
+2. "lead_conversion": foco em conversões, contatos ou WhatsApp.
+3. "top_channel": canal principal e recomendação de atração.
+4. "opportunity": recomendação orientada ao tipo de negócio "${bSub || bSeg}" e à página mais visitada.
+
+Formato esperado estritamente em JSON:
+{
+  "insights": [
+    {
+      "key": "traffic_growth",
+      "type": "traffic_growth",
+      "title": "Título simples de até 6 palavras",
+      "status": "positive",
+      "badge": "Crescimento de Acessos",
+      "finding": "1 a 2 frases explicando o que aconteceu de forma simples",
+      "action": "1 ação prática e direta que o dono do site pode fazer hoje",
+      "projection": "1 projeção realista do que esperar se tomar a ação"
+    }
+  ]
+}`
+
+  try {
+    const aiResponse = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/Llama-3.3-70B-Instruct',
+        messages: [
+          {
+            role: 'system',
+            content: 'Você é um assistente de inteligência de negócios. Responda APENAS um JSON válido seguindo a estrutura solicitada sem blocos de texto fora do JSON.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        response_format: { type: 'json_object' }
+      })
+    })
+
+    if (!aiResponse.ok) {
+      console.error('DeepInfra status error:', aiResponse.status)
+      return json({
+        insights: buildRuleBasedFallback(),
+        model: 'fallback-rules',
+        generatedAt: new Date().toISOString()
+      })
+    }
+
+    const aiData = await aiResponse.json() as {
+      choices?: Array<{ message?: { content?: string } }>
+    }
+    const rawContent = aiData.choices?.[0]?.message?.content || '{}'
+    const parsed = JSON.parse(rawContent) as { insights?: AIInsight[] }
+
+    if (Array.isArray(parsed.insights) && parsed.insights.length > 0) {
+      return json({
+        insights: parsed.insights,
+        model: 'meta-llama/Llama-3.3-70B-Instruct',
+        generatedAt: new Date().toISOString()
+      })
+    }
+
+    return json({
+      insights: buildRuleBasedFallback(),
+      model: 'fallback-rules',
+      generatedAt: new Date().toISOString()
+    })
+  } catch (err) {
+    console.error('Falha ao processar requisição DeepInfra:', err)
+    return json({
+      insights: buildRuleBasedFallback(),
+      model: 'fallback-rules',
+      generatedAt: new Date().toISOString()
+    })
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
@@ -253,6 +525,7 @@ export default {
     if (statusMatch) return trackerStatus(statusMatch[1], env)
     const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)
     if (analyticsMatch) return analytics(analyticsMatch[1], env, url.searchParams)
+    if (url.pathname === '/v1/ai-insights') return generateAIInsights(request, env)
     return env.ASSETS.fetch(request)
   },
 }
