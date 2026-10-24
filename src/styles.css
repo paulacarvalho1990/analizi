@@ -132,12 +132,30 @@ body { background:var(--background); color:var(--foreground); }
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   color: #ff3cac;
   background: rgba(255, 60, 172, 0.08);
-  border: 1px solid rgba(255, 60, 172, 0.2);
+  border: 1px solid rgba(255, 60, 172, 0.25);
   border-radius: 20px;
   padding: 5px 12px;
+}
+.insights-cycle-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #167a68;
+  background: #e6f6f1;
+  border: 1px solid #c2e9de;
+  border-radius: 20px;
+  padding: 5px 10px;
+}
+[data-theme="dark"] .insights-cycle-badge {
+  background: #0f2e22;
+  border-color: #1b533d;
+  color: #86efac;
 }
 .insights-refresh-btn {
   display: inline-flex;

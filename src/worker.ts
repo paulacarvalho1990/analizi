@@ -270,6 +270,265 @@ export interface AIInsight {
   projection: string
 }
 
+function getWeekCycle(d = new Date()): string {
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+  const dayNum = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
+}
+
+function determineTemporalScope(
+  periodDays: number,
+  totals: Record<string, unknown>,
+  previousTotals: Record<string, unknown>
+): 'semanal' | 'mensal' | 'anual' {
+  if (periodDays >= 180) return 'anual'
+  if (periodDays >= 28) return 'mensal'
+
+  const currentViews = Number(totals.pageViews || 0)
+  const prevViews = Number(previousTotals.pageViews || 0)
+  const diffPct = prevViews > 0 ? Math.abs(((currentViews - prevViews) / prevViews) * 100) : 0
+
+  if (diffPct > 80 && currentViews > 100) {
+    return 'mensal'
+  }
+  return 'semanal'
+}
+
+function buildRuleBasedFallback(
+  business: { name?: string; segment?: string; subsegment?: string; segmentDetail?: string },
+  metrics: {
+    periodDays?: number
+    totals?: Record<string, unknown>
+    previousTotals?: Record<string, unknown>
+    sources?: Array<{ name: string; value: number | string }>
+    pages?: Array<{ path: string; views: number | string; attentionSeconds?: number; exitRate?: number }>
+  },
+  scope: 'semanal' | 'mensal' | 'anual'
+): AIInsight[] {
+  const bSeg = business?.segment || 'Serviços'
+  const bSub = business?.subsegment || ''
+  const period = metrics?.periodDays || 7
+
+  const t = metrics?.totals || {}
+  const p = metrics?.previousTotals || {}
+  const views = Number(t.pageViews || 0)
+  const prevViews = Number(p.pageViews || 0)
+  const users = Number(t.users || 0)
+  const contacts = Number(t.contacts || 0)
+  const whatsapp = Number(t.whatsappContacts || 0)
+  const attention = Number(t.attentionSeconds || 0)
+
+  const topSource = metrics?.sources?.[0]?.name || 'direto'
+  const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
+  const topPage = metrics?.pages?.[0]?.path || '/'
+  const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
+
+  const list: AIInsight[] = []
+  const growth = prevViews > 0 ? Math.round(((views - prevViews) / prevViews) * 100) : null
+  const scopeLabel = scope === 'anual' ? 'no acumulado anual' : scope === 'mensal' ? 'no ciclo mensal' : `nos últimos ${period} dias`
+
+  if (growth !== null && growth >= 0) {
+    list.push({
+      key: 'traffic_growth',
+      type: 'traffic_growth',
+      title: 'Público em trajetória de alta',
+      status: 'positive',
+      badge: `Tendência ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
+      finding: `Foram registradas ${views} visualizações ${scopeLabel}, crescendo ${growth}% sobre o ciclo anterior.`,
+      action: 'Mantenha a frequência das ações que geraram esse fluxo e confirme se os links de contato estão fáceis de achar.',
+      projection: `Mantendo a consistência, a projeção é alcançar mais de ${Math.round(views * 1.2)} acessos no próximo ciclo.`
+    })
+  } else if (growth !== null && growth < 0) {
+    list.push({
+      key: 'traffic_drop',
+      type: 'traffic_drop',
+      title: 'Atenção ao recuo de visitas',
+      status: 'warning',
+      badge: `Alerta ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
+      finding: `Houve uma redução de ${Math.abs(growth)}% nas visualizações ${scopeLabel} (total de ${views} visitas).`,
+      action: 'Envie um comunicado, novidade ou oferta via WhatsApp ou redes sociais para trazer clientes antigos de volta ao site.',
+      projection: 'Ações de reativação nessa semana evitam queda nos contatos para o próximo mês.'
+    })
+  } else {
+    list.push({
+      key: 'traffic_growth',
+      type: 'traffic_growth',
+      title: 'Dados consolidados com sucesso',
+      status: 'positive',
+      badge: `Consolidado ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
+      finding: `Seu site contabilizou ${views} visualizações de ${users} pessoas únicas no período analisado.`,
+      action: 'Continue divulgando seu domínio em todos os pontos de contato para acelerar a formação de histórico estatístico.',
+      projection: 'Com mais dados acumulados, as projeções ficarão ainda mais personalizadas para seu nicho.'
+    })
+  }
+
+  if (contacts > 0 || whatsapp > 0) {
+    list.push({
+      key: 'lead_conversion',
+      type: 'lead_conversion',
+      title: 'Geração ativa de oportunidades',
+      status: 'positive',
+      badge: 'Contatos & Vendas',
+      finding: `O site gerou ${contacts} oportunidades no ciclo, das quais ${whatsapp} buscaram contato direto pelo WhatsApp.`,
+      action: 'Mantenha o tempo de resposta rápido e anote a principal dúvida dos clientes para responder já no site.',
+      projection: 'Responder em menos de 10 minutos chega a triplicar a conversão de interessados em clientes pagantes.'
+    })
+  } else if (views > 20) {
+    list.push({
+      key: 'lead_conversion',
+      type: 'lead_conversion',
+      title: 'Visitantes navegam sem chamar',
+      status: 'warning',
+      badge: 'Foco em Conversão',
+      finding: `O site somou ${views} visualizações, mas não registrou cliques de contato ou início de conversa.`,
+      action: 'Insira uma chamada clara com botão de WhatsApp convidando para tirar dúvidas ou solicitar orçamento.',
+      projection: `No segmento de ${bSub || bSeg}, sites com botão flutuante convertem de 3% a 7% dos visitantes.`
+    })
+  }
+
+  if (topSource && topSourceVal > 0) {
+    const share = views > 0 ? Math.round((topSourceVal / views) * 100) : 0
+    list.push({
+      key: 'top_channel',
+      type: 'top_channel',
+      title: `Principal fonte: ${topSource}`,
+      status: 'neutral',
+      badge: 'Canal de Destaque',
+      finding: `O canal "${topSource}" originou ${share}% de todas as visitas do ciclo analisado.`,
+      action: 'Dobre a atenção nas publicações desse canal e teste links com identificação para medir quais postagens trazem mais retorno.',
+      projection: 'Estruturar um canal complementar reduz a dependência de uma única rede social.'
+    })
+  }
+
+  list.push({
+    key: 'opportunity',
+    type: 'opportunity',
+    title: `Oportunidade para ${bSub || bSeg}`,
+    status: 'neutral',
+    badge: 'Diagnóstico Estratégico',
+    finding: `A página mais visitada foi "${topPage}" (${topPageViews} acessos, média de ${attention}s de retenção).`,
+    action: `Garanta que o que você faz e a forma de entrar em contato apareçam na primeira tela da página "${topPage}".`,
+    projection: 'Ajustes no início da página diminuem saídas precoces e aumentam o número de orçamentos.'
+  })
+
+  return list
+}
+
+async function runDeepInfraAnalysis(
+  apiKey: string,
+  business: { name?: string; segment?: string; subsegment?: string; segmentDetail?: string },
+  metrics: {
+    periodDays?: number
+    totals?: Record<string, unknown>
+    previousTotals?: Record<string, unknown>
+    sources?: Array<{ name: string; value: number | string }>
+    pages?: Array<{ path: string; views: number | string; attentionSeconds?: number; exitRate?: number }>
+  },
+  scope: 'semanal' | 'mensal' | 'anual'
+): Promise<AIInsight[] | null> {
+  const bName = business?.name || 'Seu Negócio'
+  const bSeg = business?.segment || 'Serviços'
+  const bSub = business?.subsegment || ''
+  const bDet = business?.segmentDetail ? ` (${business.segmentDetail})` : ''
+  const period = metrics?.periodDays || 7
+
+  const t = metrics?.totals || {}
+  const p = metrics?.previousTotals || {}
+  const views = Number(t.pageViews || 0)
+  const prevViews = Number(p.pageViews || 0)
+  const users = Number(t.users || 0)
+  const contacts = Number(t.contacts || 0)
+  const whatsapp = Number(t.whatsappContacts || 0)
+  const attention = Number(t.attentionSeconds || 0)
+
+  const topSource = metrics?.sources?.[0]?.name || 'direto'
+  const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
+  const topPage = metrics?.pages?.[0]?.path || '/'
+  const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
+
+  const prompt = `Você é o IZI INTELLIGENCE, o analista sênior de negócios do Analizi. Seu cliente é um pequeno ou médio empreendedor sem conhecimento técnico em métricas e web analytics.
+
+CONTEXTO TEMPORAL E ESTATÍSTICO:
+- Escopo da análise: ${scope.toUpperCase()} (leitura de tendências ${scope}s com base no comportamento e volume estatístico dos dados).
+- Período avaliado: últimos ${period} dias (comparado com o ciclo anterior correspondente).
+
+DADOS DO CLIENTE E NEGÓCIO:
+- Nome da Empresa: ${bName}
+- Categoria Principal: ${bSeg}
+- Tipo / Subsegmento: ${bSub}${bDet}
+- Visualizações atuais: ${views} (ciclo anterior: ${prevViews})
+- Usuários únicos: ${users}
+- Contatos/Leads totais: ${contacts}
+- Contatos via WhatsApp: ${whatsapp}
+- Tempo de atenção médio: ${attention} segundos
+- Principal canal de tráfego: "${topSource}" (${topSourceVal} acessos)
+- Página mais acessada: "${topPage}" (${topPageViews} visualizações)
+
+TAREFA OBRIGATÓRIA:
+Gere exatamente 4 insights pré-definidos padronizados em JSON, adaptados ao escopo ${scope}:
+1. "traffic_growth" ou "traffic_drop": análise de crescimento ou queda com diagnóstico estatístico e amigável.
+2. "lead_conversion": foco em conversões, contatos ou WhatsApp.
+3. "top_channel": análise de onde vem o público e estratégia de atração.
+4. "opportunity": recomendação direcionada ao tipo de negócio "${bSub || bSeg}" e à página mais visitada.
+
+Responda ESTRITAMENTE um objeto JSON no formato:
+{
+  "insights": [
+    {
+      "key": "traffic_growth|traffic_drop",
+      "type": "traffic_growth|traffic_drop",
+      "title": "Título simples de até 6 palavras",
+      "status": "positive|warning|neutral",
+      "badge": "Ex: Tendência Semanal ou Alerta Mensal",
+      "finding": "1 a 2 frases explicando o que aconteceu de forma simples",
+      "action": "1 ação prática e direta que o dono do site pode fazer hoje",
+      "projection": "1 projeção realista do que esperar se tomar a ação"
+    }
+  ]
+}`
+
+  try {
+    const aiResponse = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'meta-llama/Llama-3.3-70B-Instruct',
+        messages: [
+          {
+            role: 'system',
+            content: 'Você é o IZI INTELLIGENCE. Responda APENAS um JSON válido seguindo a estrutura solicitada sem textos adicionais.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        response_format: { type: 'json_object' }
+      })
+    })
+
+    if (!aiResponse.ok) {
+      console.error('DeepInfra error status:', aiResponse.status)
+      return null
+    }
+
+    const aiData = (await aiResponse.json()) as { choices?: Array<{ message?: { content?: string } }> }
+    const rawContent = aiData.choices?.[0]?.message?.content || '{}'
+    const parsed = JSON.parse(rawContent) as { insights?: AIInsight[] }
+    return Array.isArray(parsed.insights) && parsed.insights.length > 0 ? parsed.insights : null
+  } catch (err) {
+    console.error('Falha na chamada DeepInfra:', err)
+    return null
+  }
+}
+
 async function generateAIInsights(request: Request, env: Env): Promise<Response> {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -285,6 +544,7 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
 
   let body: {
     trackerSiteId?: string
+    forceRefresh?: boolean
     business?: {
       name?: string
       segment?: string
@@ -308,225 +568,173 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
     return json({ error: 'Payload JSON inválido.' }, 400)
   }
 
-  const { business, metrics } = body
-  const apiKey = env.DEEPINFRA_API_KEY
+  const { trackerSiteId, forceRefresh, business, metrics } = body
+  const safeSiteId = trackerId(trackerSiteId)
+  const currentWeek = getWeekCycle()
 
-  const bName = business?.name || 'Seu Negócio'
-  const bSeg = business?.segment || 'Serviços'
-  const bSub = business?.subsegment || ''
-  const bDet = business?.segmentDetail ? ` (${business.segmentDetail})` : ''
-  const period = metrics?.periodDays || 7
+  // 1. Checa se já existe análise salva no D1 para a semana atual (a menos que seja forceRefresh explícito)
+  if (safeSiteId && !forceRefresh) {
+    try {
+      const existing = (await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare(
+          'select week_cycle, temporal_scope, insights_json, model, created_at from site_insights where tracker_site_id = ? and week_cycle = ? limit 1'
+        ).bind(safeSiteId, currentWeek)
+      ])) as Array<{
+        results?: Array<{
+          week_cycle: string
+          temporal_scope: string
+          insights_json: string
+          model: string
+          created_at: string
+        }>
+      }>
 
-  const t = metrics?.totals || {}
-  const p = metrics?.previousTotals || {}
-  const views = Number(t.pageViews || 0)
-  const prevViews = Number(p.pageViews || 0)
-  const users = Number(t.users || 0)
-  const contacts = Number(t.contacts || 0)
-  const whatsapp = Number(t.whatsappContacts || 0)
-  const attention = Number(t.attentionSeconds || 0)
-
-  const topSource = metrics?.sources?.[0]?.name || 'direto'
-  const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
-  const topPage = metrics?.pages?.[0]?.path || '/'
-  const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
-
-  const buildRuleBasedFallback = (): AIInsight[] => {
-    const list: AIInsight[] = []
-    const growth = prevViews > 0 ? Math.round(((views - prevViews) / prevViews) * 100) : null
-
-    if (growth !== null && growth >= 0) {
-      list.push({
-        key: 'traffic_growth',
-        type: 'traffic_growth',
-        title: 'Seu público está aumentando',
-        status: 'positive',
-        badge: 'Crescimento de Acessos',
-        finding: `Você teve ${views} visualizações nos últimos ${period} dias, um avanço de ${growth}% em comparação com o período anterior.`,
-        action: 'Mantenha a frequência nas divulgações que geraram esses acessos e garanta que o link de contato no site esteja bem visível.',
-        projection: `Se mantiver esse ritmo, o site deve alcançar mais de ${Math.round(views * 1.2)} visitas no próximo ciclo.`
-      })
-    } else if (growth !== null && growth < 0) {
-      list.push({
-        key: 'traffic_drop',
-        type: 'traffic_drop',
-        title: 'Atenção ao recuo de visitas',
-        status: 'warning',
-        badge: 'Alerta de Tráfego',
-        finding: `O número de visualizações caiu ${Math.abs(growth)}% em relação ao período anterior (total de ${views} acessos).`,
-        action: 'Avalie compartilhar novidades ou links úteis nas suas redes ou canais de WhatsApp para reativar o interesse de clientes.',
-        projection: 'Sem novas ações de atração, o volume de contatos pode reduzir nas próximas semanas.'
-      })
-    } else {
-      list.push({
-        key: 'traffic_growth',
-        type: 'traffic_growth',
-        title: 'Primeiros dados consolidados',
-        status: 'positive',
-        badge: 'Movimento Inicial',
-        finding: `Foram registradas ${views} visualizações e ${users} pessoas únicas no período.`,
-        action: 'Continue compartilhando o site com clientes e parceiros para consolidar a base de acessos.',
-        projection: 'Com mais alguns dias de coleta, poderemos apontar o canal que traz mais retorno para você.'
-      })
+      const row = existing[0]?.results?.[0]
+      if (row && row.insights_json) {
+        const cachedInsights = JSON.parse(row.insights_json) as AIInsight[]
+        return json({
+          insights: cachedInsights,
+          model: 'IZI INTELLIGENCE',
+          scope: row.temporal_scope || 'semanal',
+          weekCycle: row.week_cycle,
+          cached: true,
+          generatedAt: row.created_at
+        })
+      }
+    } catch (d1Err) {
+      console.error('Falha ao consultar cache D1 de insights:', d1Err)
     }
-
-    if (contacts > 0 || whatsapp > 0) {
-      list.push({
-        key: 'lead_conversion',
-        type: 'lead_conversion',
-        title: 'O site está gerando contatos reais',
-        status: 'positive',
-        badge: 'Oportunidades de Negócio',
-        finding: `Foram iniciadas ${contacts} ações de contato no período (sendo ${whatsapp} diretamente pelo WhatsApp).`,
-        action: 'Responda prontamente às mensagens recebidas. Se puder, pergunte ao cliente onde ele conheceu sua empresa para validar os canais.',
-        projection: 'Manter a agilidade na resposta aumenta em até 50% as chances de fechar negócio a partir do site.'
-      })
-    } else if (views > 20) {
-      list.push({
-        key: 'lead_conversion',
-        type: 'lead_conversion',
-        title: 'Visitantes chegam, mas não chamam',
-        status: 'warning',
-        badge: 'Oportunidade de Contato',
-        finding: `O site recebeu ${views} visualizações, mas ainda não registrou cliques em botões de contato ou WhatsApp.`,
-        action: 'Adicione um botão de WhatsApp visível no rodapé ou cabeçalho convidando o visitante para tirar dúvidas.',
-        projection: `Negócios de ${bSub || bSeg} com botão visível costumam transformar cerca de 3% a 6% das visitas em mensagens diretas.`
-      })
-    }
-
-    if (topSource && topSourceVal > 0) {
-      const share = views > 0 ? Math.round((topSourceVal / views) * 100) : 0
-      list.push({
-        key: 'top_channel',
-        type: 'top_channel',
-        title: `Principal canal: "${topSource}"`,
-        status: 'neutral',
-        badge: 'Origem de Destaque',
-        finding: `O canal "${topSource}" foi responsável por ${share}% de todo o tráfego recebido no período.`,
-        action: 'Fortaleça a presença nesse canal e crie links específicos para saber quais postagens dão mais resultado.',
-        projection: 'Diversificar um segundo canal (como Google Meu Negócio ou Instagram) evita depender de apenas uma fonte.'
-      })
-    }
-
-    list.push({
-      key: 'opportunity',
-      type: 'opportunity',
-      title: `Oportunidade para ${bSub || bSeg}`,
-      status: 'neutral',
-      badge: 'Recomendação Prática',
-      finding: `A página mais visitada foi "${topPage}" com ${topPageViews} visualizações. O tempo médio de retenção foi de ${attention} segundos.`,
-      action: `Revise a página "${topPage}" para que a proposta de valor e a forma de entrar em contato apareçam antes de o usuário precisar rolar muito a tela.`,
-      projection: 'Melhorias de clareza na primeira dobra costumam dobrar o tempo de permanência de novos visitantes.'
-    })
-
-    return list
   }
 
-  if (!apiKey) {
-    return json({
-      insights: buildRuleBasedFallback(),
-      model: 'rule-based',
-      generatedAt: new Date().toISOString()
-    })
+  // 2. Determina escopo temporal (semanal, mensal ou anual) a partir do histórico e tendências
+  const scope = determineTemporalScope(
+    metrics?.periodDays || 7,
+    metrics?.totals || {},
+    metrics?.previousTotals || {}
+  )
+
+  // 3. Executa a análise com DeepInfra ou fallback
+  let generated: AIInsight[] | null = null
+  if (env.DEEPINFRA_API_KEY) {
+    generated = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, business || {}, metrics || {}, scope)
   }
 
-  const prompt = `Você é um analista de negócios e web analytics sênior do Analizi. Seu cliente é um pequeno ou médio empreendedor (leigo em tecnologia e termos como UTM, bounce rate, tracking).
+  const finalInsights = generated || buildRuleBasedFallback(business || {}, metrics || {}, scope)
+  const nowIso = new Date().toISOString()
 
-DADOS DO CLIENTE E NEGÓCIO:
-- Nome da Empresa: ${bName}
-- Categoria Principal: ${bSeg}
-- Tipo / Subsegmento: ${bSub}${bDet}
-- Período avaliado: últimos ${period} dias
-- Visualizações atuais: ${views} (período anterior: ${prevViews})
-- Usuários únicos: ${users}
-- Contatos/Leads totais: ${contacts}
-- Contatos via WhatsApp: ${whatsapp}
-- Tempo de atenção médio: ${attention} segundos
-- Principal canal de tráfego: "${topSource}" (${topSourceVal} acessos)
-- Página mais acessada: "${topPage}" (${topPageViews} visualizações)
-
-TAREFA:
-Gere exatamente 4 insights pré-definidos padronizados em JSON, sem jargões técnicos:
-1. "traffic_growth" ou "traffic_drop": análise de visitas com comparação de período.
-2. "lead_conversion": foco em conversões, contatos ou WhatsApp.
-3. "top_channel": canal principal e recomendação de atração.
-4. "opportunity": recomendação orientada ao tipo de negócio "${bSub || bSeg}" e à página mais visitada.
-
-Formato esperado estritamente em JSON:
-{
-  "insights": [
-    {
-      "key": "traffic_growth",
-      "type": "traffic_growth",
-      "title": "Título simples de até 6 palavras",
-      "status": "positive",
-      "badge": "Crescimento de Acessos",
-      "finding": "1 a 2 frases explicando o que aconteceu de forma simples",
-      "action": "1 ação prática e direta que o dono do site pode fazer hoje",
-      "projection": "1 projeção realista do que esperar se tomar a ação"
+  // 4. Salva no D1 na tabela site_insights congelando para a semana atual
+  if (safeSiteId) {
+    try {
+      const insightId = `ins_${safeSiteId}_${currentWeek}`
+      await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare(`
+          insert into site_insights (id, tracker_site_id, week_cycle, temporal_scope, insights_json, model, metadata_json, created_at)
+          values (?, ?, ?, ?, ?, 'IZI INTELLIGENCE', ?, ?)
+          on conflict(tracker_site_id, week_cycle) do update set
+            temporal_scope = excluded.temporal_scope,
+            insights_json = excluded.insights_json,
+            model = excluded.model,
+            metadata_json = excluded.metadata_json,
+            created_at = excluded.created_at
+        `).bind(
+          insightId,
+          safeSiteId,
+          currentWeek,
+          scope,
+          JSON.stringify(finalInsights),
+          JSON.stringify({ businessSegment: business?.segment, subsegment: business?.subsegment }),
+          nowIso
+        )
+      ])
+    } catch (saveErr) {
+      console.error('Falha ao persistir insights no D1:', saveErr)
     }
-  ]
-}`
+  }
 
-  try {
-    const aiResponse = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'meta-llama/Llama-3.3-70B-Instruct',
-        messages: [
-          {
-            role: 'system',
-            content: 'Você é um assistente de inteligência de negócios. Responda APENAS um JSON válido seguindo a estrutura solicitada sem blocos de texto fora do JSON.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.3,
-        response_format: { type: 'json_object' }
-      })
-    })
+  return json({
+    insights: finalInsights,
+    model: 'IZI INTELLIGENCE',
+    scope,
+    weekCycle: currentWeek,
+    cached: false,
+    generatedAt: nowIso
+  })
+}
 
-    if (!aiResponse.ok) {
-      console.error('DeepInfra status error:', aiResponse.status)
-      return json({
-        insights: buildRuleBasedFallback(),
-        model: 'fallback-rules',
-        generatedAt: new Date().toISOString()
-      })
+async function runScheduledWeeklyInsights(env: Env): Promise<void> {
+  const currentWeek = getWeekCycle()
+  const today = isoDate(new Date())
+  const start7 = shiftDate(today, -6)
+  const prevStart7 = shiftDate(start7, -7)
+
+  // Busca todos os sites ativos no D1
+  const sitesResult = (await env.ANALIZI_EVENTS.batch([
+    env.ANALIZI_EVENTS.prepare('select tracker_site_id from tracker_sites where is_active = 1')
+  ])) as Array<{ results?: Array<{ tracker_site_id: string }> }>
+
+  const sites = sitesResult[0]?.results ?? []
+  for (const site of sites) {
+    const sId = site.tracker_site_id
+    try {
+      const check = (await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare(
+          'select 1 from site_insights where tracker_site_id = ? and week_cycle = ? limit 1'
+        ).bind(sId, currentWeek)
+      ])) as Array<{ results?: Array<Record<string, unknown>> }>
+
+      if (check[0]?.results?.length) continue
+
+      const stats = (await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare(
+          `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts, sum(event_name='whatsapp_contact') whatsappContacts, round(avg(engagement_time_ms)/1000) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ?`
+        ).bind(sId, start7, today),
+        env.ANALIZI_EVENTS.prepare(
+          `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?`
+        ).bind(sId, prevStart7, start7),
+        env.ANALIZI_EVENTS.prepare(
+          `select coalesce(source,'direto') name, count(*) value from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(source,'direto') order by value desc limit 1`
+        ).bind(sId, start7, today),
+        env.ANALIZI_EVENTS.prepare(
+          `select coalesce(page_path,'/') path, sum(event_name='page_view') views, round(avg(engagement_time_ms)/1000) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(page_path,'/') order by views desc limit 1`
+        ).bind(sId, start7, today)
+      ])) as Array<{ results?: Array<Record<string, unknown>> }>
+
+      const totals = stats[0]?.results?.[0] || {}
+      const previousTotals = stats[1]?.results?.[0] || {}
+      const sources = stats[2]?.results || []
+      const pages = stats[3]?.results || []
+
+      const metrics = {
+        periodDays: 7,
+        totals,
+        previousTotals,
+        sources: sources as Array<{ name: string; value: number | string }>,
+        pages: pages as Array<{ path: string; views: number | string; attentionSeconds?: number }>
+      }
+
+      const scope = determineTemporalScope(7, totals, previousTotals)
+      let insights: AIInsight[] | null = null
+      if (env.DEEPINFRA_API_KEY) {
+        insights = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, {}, metrics, scope)
+      }
+      const finalInsights = insights || buildRuleBasedFallback({}, metrics, scope)
+      const nowIso = new Date().toISOString()
+      const insightId = `ins_${sId}_${currentWeek}`
+
+      await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare(`
+          insert into site_insights (id, tracker_site_id, week_cycle, temporal_scope, insights_json, model, metadata_json, created_at)
+          values (?, ?, ?, ?, ?, 'IZI INTELLIGENCE', '{}', ?)
+          on conflict(tracker_site_id, week_cycle) do update set
+            temporal_scope = excluded.temporal_scope,
+            insights_json = excluded.insights_json,
+            model = excluded.model,
+            created_at = excluded.created_at
+        `).bind(insightId, sId, currentWeek, scope, JSON.stringify(finalInsights), nowIso)
+      ])
+    } catch (e) {
+      console.error(`Erro no cron semanal para o site ${sId}:`, e)
     }
-
-    const aiData = await aiResponse.json() as {
-      choices?: Array<{ message?: { content?: string } }>
-    }
-    const rawContent = aiData.choices?.[0]?.message?.content || '{}'
-    const parsed = JSON.parse(rawContent) as { insights?: AIInsight[] }
-
-    if (Array.isArray(parsed.insights) && parsed.insights.length > 0) {
-      return json({
-        insights: parsed.insights,
-        model: 'meta-llama/Llama-3.3-70B-Instruct',
-        generatedAt: new Date().toISOString()
-      })
-    }
-
-    return json({
-      insights: buildRuleBasedFallback(),
-      model: 'fallback-rules',
-      generatedAt: new Date().toISOString()
-    })
-  } catch (err) {
-    console.error('Falha ao processar requisição DeepInfra:', err)
-    return json({
-      insights: buildRuleBasedFallback(),
-      model: 'fallback-rules',
-      generatedAt: new Date().toISOString()
-    })
   }
 }
 
@@ -541,5 +749,8 @@ export default {
     if (analyticsMatch) return analytics(analyticsMatch[1], env, url.searchParams)
     if (url.pathname === '/v1/ai-insights') return generateAIInsights(request, env)
     return env.ASSETS.fetch(request)
+  },
+  async scheduled(_event: unknown, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
+    ctx.waitUntil(runScheduledWeeklyInsights(env))
   },
 }
