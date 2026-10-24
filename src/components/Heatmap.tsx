@@ -672,6 +672,35 @@ export function Heatmap() {
             </section>
           )}
 
+          {/* Legenda de Cores do Mapa de Cliques */}
+          {activeLayer === 'clicks' && (
+            <div className="heatmap-color-legend" aria-label="Legenda de intensidade de cliques">
+              <div className="heatmap-legend-title">
+                <Flame size={15} />
+                <b>Intensidade de Cliques:</b>
+              </div>
+              <div className="heatmap-legend-scale">
+                <span className="heatmap-legend-label">Menos cliques (Frio)</span>
+                <div className="heatmap-legend-gradient" />
+                <span className="heatmap-legend-label">Mais cliques (Quente)</span>
+              </div>
+              <div className="heatmap-legend-stops">
+                <span className="legend-stop">
+                  <i style={{ background: 'hsl(180, 100%, 45%)' }} /> Baixa
+                </span>
+                <span className="legend-stop">
+                  <i style={{ background: 'hsl(120, 100%, 42%)' }} /> Moderada
+                </span>
+                <span className="legend-stop">
+                  <i style={{ background: 'hsl(50, 100%, 48%)' }} /> Alta
+                </span>
+                <span className="legend-stop">
+                  <i style={{ background: 'hsl(0, 100%, 50%)' }} /> Máxima ({maxClickCount} {maxClickCount === 1 ? 'clique' : 'cliques'})
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Indicador de Largura e Scroll Horizontal */}
           <div className="heatmap-scroll-hint">
             <MoveHorizontal size={15} />
