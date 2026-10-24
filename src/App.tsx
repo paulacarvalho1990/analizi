@@ -245,8 +245,6 @@ function Insights() {
         </div>
       </div>
 
-      <AnalyticsFilters analytics={analytics} />
-
       {loadingAI && !insights.length ? (
         <section className="insights-loading-state">
           <Sparkles size={28} className="spin" />
