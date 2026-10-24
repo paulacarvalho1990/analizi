@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleCheck, Copy, ExternalLink, Globe2, Link2, MoreHorizontal, MousePointerClick, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Lightbulb, RefreshCw, Copy, ExternalLink, Globe2, Link2, MoreHorizontal, MousePointerClick, ShieldCheck, Sparkles } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard } from './components/Metrics'
@@ -16,12 +16,308 @@ function MetricChart({ analytics }: { analytics: AnalyticsData | null }) { const
 function OriginChart({ analytics }: { analytics: AnalyticsData | null }) { return <article className="chart-card"><div className="section-heading"><div><h3>Origens dos acessos</h3><p>De onde as pessoas chegaram ao site</p></div></div><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={analytics?.sources ?? []} layout="vertical" margin={{ left: 24, right: 12 }}><defs><linearGradient id="originBarGradient" x1="0" x2="1"><stop offset="0" stopColor="#ff3cac"/><stop offset="1" stopColor="#ff8a3d"/></linearGradient></defs><CartesianGrid horizontal={false} stroke="#E8EFEC"/><XAxis type="number" hide/><YAxis type="category" dataKey="name" axisLine={false} tickLine={false} width={72}/><Tooltip/><Bar dataKey="value" name="Acessos" fill="url(#originBarGradient)" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer></div></article> }
 function Dashboard() { const analytics = useAnalytics(); const [dailyPage, setDailyPage] = useState(0); const t = analytics?.totals; const p = analytics?.previousTotals; const daily = analytics?.daily ?? []; const visibleDays = daily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE); const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—'; const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI'; return <><PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} /><AnalyticsFilters analytics={analytics}/><div className="period"><span className="source-badge"><span className="source-badge-dot" />{badge}</span></div><section className="metrics"><MetricCard title="Visualizações de página" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} /><MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} /><MetricCard title="Tempo de atenção" value={attention} note="média por visita" /><MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} /><MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} /></section><div className="dashboard-split"><MetricChart analytics={analytics} /><article className="table-card compact-table daily-table"><div className="section-heading"><div><h3>Métricas por dia</h3><p>Atividade diária</p></div></div><div className="daily-head"><span>Data</span><span>Views</span><span>Usuários</span><span>Contatos</span></div>{visibleDays.map(day => <div className="daily-row" key={day.date}><span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span><span>{day.pageViews}</span><span>{day.users}</span><span>{day.contacts}</span></div>)}{!daily.length && <p className="empty-state">Ainda não recebemos acessos neste período.</p>}<TablePagination page={dailyPage} total={daily.length} setPage={setDailyPage}/></article></div></> }
 function Audience() { const analytics = useAnalytics(); const [sourcePage, setSourcePage] = useState(0); const sourcePages = analytics?.sourcePages ?? []; const p = analytics?.previousTotals; const visibleSources = sourcePages.slice(sourcePage * ITEMS_PER_PAGE, (sourcePage + 1) * ITEMS_PER_PAGE); const topSource = analytics?.sources?.[0]; const topShare = analytics?.totals?.pageViews && topSource ? `${Math.round((Number(topSource.value) / Number(analytics.totals.pageViews)) * 100)}%` : '—'; return <><PageHeader title="Seu público" subtitle="Entenda de onde vêm as pessoas que chegam ao seu site." /><AnalyticsFilters analytics={analytics}/><section className="metrics"><MetricCard title="Sessões" value={String(analytics?.totals.sessions ?? '—')} {...comparison(analytics?.totals.sessions, p?.sessions)} /><MetricCard title="Usuários" value={String(analytics?.totals.users ?? '—')} {...comparison(analytics?.totals.users, p?.users)} /><MetricCard title="Novos usuários" value={String(analytics?.totals.newUsers ?? '—')} {...comparison(analytics?.totals.newUsers, p?.newUsers)} /><MetricCard title="Origem principal" value={topSource?.name || '—'} note={topSource ? `${topShare} do tráfego` : 'sem dados'} /></section><div className="audience-split"><OriginChart analytics={analytics}/><article className="table-card compact-table source-pages-table"><div className="section-heading"><div><h3>Origem por página</h3><p>Onde o tráfego de cada canal desembarcou</p></div></div><div className="source-pages-head"><span>Canal</span><span>Página de destino</span><span>Views</span><span>Usuários</span></div>{visibleSources.map(item => <div className="source-pages-row" key={`${item.source}-${item.path}`}><span><b>{item.source}</b></span><span>{item.path}</span><span>{item.views}</span><span>{item.users}</span></div>)}{!sourcePages.length && <p className="empty-state">Ainda não recebemos dados de origens de tráfego.</p>}<TablePagination page={sourcePage} total={sourcePages.length} setPage={setSourcePage}/></article></div></> }
-function Results() { const analytics = useAnalytics(); const [contactPage, setContactPage] = useState(0); const [clickPage, setClickPage] = useState(0); const t = analytics?.totals; const p = analytics?.previousTotals; const contactDetails = analytics?.contactDetails ?? []; const clickDetails = analytics?.clickDetails ?? []; const visibleContacts = contactDetails.slice(contactPage * ITEMS_PER_PAGE, (contactPage + 1) * ITEMS_PER_PAGE); const visibleClicks = clickDetails.slice(clickPage * ITEMS_PER_PAGE, (clickPage + 1) * ITEMS_PER_PAGE); const contactRate = t?.sessions ? `${((Number(t.contactSessions || 0) / Number(t.sessions)) * 100).toFixed(1).replace('.', ',')}%` : '—'; return <><PageHeader title="Resultados" subtitle="Acompanhe as oportunidades e contatos gerados pelo seu site."/><AnalyticsFilters analytics={analytics}/><section className="metrics"><MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)}/><MetricCard title="WhatsApp" value={String(t?.whatsappContacts ?? '—')} {...comparison(t?.whatsappContacts, p?.whatsappContacts)}/><MetricCard title="Cadastros" value={String(t?.signUps ?? '—')} {...comparison(t?.signUps, p?.signUps)}/><MetricCard title="Taxa de contato" value={contactRate} note="sessões com ação"/></section><div className="results-tables"><article className="table-card compact-table results-detail-table"><div className="section-heading"><div><h3>Contatos confirmados</h3><p>Ações de contato registradas</p></div></div><div className="contact-detail-head"><span>Data</span><span>Tipo</span><span>Página</span><span>Total</span></div>{visibleContacts.map((item, index) => <div className="contact-detail-row" key={`${item.date}-${item.type}-${item.path}-${index}`}><span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span><span>{item.type === 'whatsapp_contact' ? 'WhatsApp' : 'Cadastro'}</span><span>{item.path}</span><span>{item.contacts}</span></div>)}{!contactDetails.length && <p className="empty-state">Nenhum contato foi registrado no período.</p>}<TablePagination page={contactPage} total={contactDetails.length} setPage={setContactPage}/></article><article className="table-card compact-table click-detail-table"><div className="section-heading"><div><h3>Cliques em botões</h3><p>Cliques em botões e links com identificação capturados pelo rastreador</p></div></div><div className="click-detail-head"><span>Data</span><span>Texto do botão</span><span>ID</span><span>Destino / Href</span><span>Cliques</span></div>{visibleClicks.map((item, index) => <div className="click-detail-row" key={`${item.date}-${item.label}-${item.buttonId}-${item.destination}-${index}`}><span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span><span><b>{item.label}</b></span><span>{item.buttonId ? <small>#{item.buttonId}</small> : '—'}</span><span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span><span>{item.clicks}</span></div>)}{!clickDetails.length && <p className="empty-state">Nenhum clique em botão foi registrado no período.</p>}<TablePagination page={clickPage} total={clickDetails.length} setPage={setClickPage}/></article></div></> }
-function Insights() { const analytics = useAnalytics(); const t = analytics?.totals; const date = new Intl.DateTimeFormat('pt-BR').format(new Date()); const [readKeys, setReadKeys] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem('analizi-viewed-insights') || '[]') } catch { return [] } }); const toggleRead = (key: string) => { setReadKeys((current) => { const next = current.includes(key) ? current.filter(item => item !== key) : [...current, key]; localStorage.setItem('analizi-viewed-insights', JSON.stringify(next)); return next }) }; const items = [['Visitas registradas', `${t?.pageViews ?? 0} visualizações no período selecionado.`, 'positive'], ['Público alcançado', `${t?.users ?? 0} usuários acessaram o site.`, 'positive'], ['Novas pessoas', `${t?.newUsers ?? 0} primeiras visitas identificadas.`, 'positive'], ['Sessões', `${t?.sessions ?? 0} sessões iniciadas.`, 'positive'], ['Contatos iniciados', `${t?.contacts ?? 0} ações de contato registradas.`, 'positive'], ['WhatsApp', `${t?.whatsappContacts ?? 0} contatos pelo WhatsApp.`, 'positive'], ['Cadastros', `${t?.signUps ?? 0} cadastros iniciados.`, 'positive'], ['Tempo de atenção', `${t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '0s'} de atenção média por visita.`, 'positive'], ['Principal origem', `${analytics?.sources?.[0]?.name ?? 'Sem origem definida'} trouxe mais acessos no período.`, 'positive'], ['Página mais vista', `${analytics?.pages?.[0]?.path ?? 'Sem páginas'} foi a mais acessada.`, 'positive']]; return <><PageHeader title="Insights" subtitle={`Resumo das principais movimentações nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`}/><AnalyticsFilters analytics={analytics}/><section className="insights-list">{items.map(([title, body, type]) => { const read = readKeys.includes(title); return <article className={`insight-row ${type} ${read ? 'viewed' : ''}`} key={title}><div className="icon-circle"><CircleCheck size={21}/></div><div><span className="eyebrow">GERADO EM {date}</span><h3>{title}</h3><p>{body}</p></div><button className="insight-read" onClick={() => toggleRead(title)} title={read ? 'Marcar como não lido' : 'Marcar como lido'}><span /></button></article> })}</section></> }
+function isLeadClick(item: { intent?: string, isContactLead?: number, label: string, destination?: string }): boolean {
+  if (item.isContactLead === 1) return true;
+  if (item.intent && item.intent !== 'geral' && item.intent !== 'outro') return true;
+  const href = item.destination || '';
+  if (/(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|^tel:|^mailto:)/i.test(href)) return true;
+  const label = item.label || '';
+  return /\b(fale\s*(com|conosco)|entre\s*em\s*contato|contato|whats(?:app)?|agend[ea]|marc[ae]\s*(uma\s*)?(consulta|reuni[aã]o)|solicite|pedir|pe[cç]a\s*(um\s*)?or[cç]amento|or[cç]amento|quero\s*(saber|agendar|falar|receber)|ligue|telefone|enviar\s*(mensagem|formul[aá]rio)|tirar\s*d[uú]vidas|falar\s*com\s*(um\s*)?(especialista|consultor)|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?|cadastre-se|inscreva-se)\b/i.test(label);
+}
+
+function Results() {
+  const analytics = useAnalytics();
+  const [contactPage, setContactPage] = useState(0);
+  const [leadClickPage, setLeadClickPage] = useState(0);
+  const [generalClickPage, setGeneralClickPage] = useState(0);
+  const t = analytics?.totals;
+  const p = analytics?.previousTotals;
+  const contactDetails = analytics?.contactDetails ?? [];
+  const allClicks = analytics?.clickDetails ?? [];
+  const leadClicks = allClicks.filter(item => isLeadClick(item));
+  const generalClicks = allClicks.filter(item => !isLeadClick(item));
+
+  const visibleContacts = contactDetails.slice(contactPage * ITEMS_PER_PAGE, (contactPage + 1) * ITEMS_PER_PAGE);
+  const visibleLeadClicks = leadClicks.slice(leadClickPage * ITEMS_PER_PAGE, (leadClickPage + 1) * ITEMS_PER_PAGE);
+  const visibleGeneralClicks = generalClicks.slice(generalClickPage * ITEMS_PER_PAGE, (generalClickPage + 1) * ITEMS_PER_PAGE);
+  const contactRate = t?.sessions ? `${((Number(t.contactSessions || 0) / Number(t.sessions)) * 100).toFixed(1).replace('.', ',')}%` : '—';
+
+  return (
+    <>
+      <PageHeader title="Resultados" subtitle="Acompanhe as oportunidades e contatos gerados pelo seu site." />
+      <AnalyticsFilters analytics={analytics} />
+      <section className="metrics">
+        <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
+        <MetricCard title="WhatsApp" value={String(t?.whatsappContacts ?? '—')} {...comparison(t?.whatsappContacts, p?.whatsappContacts)} />
+        <MetricCard title="Cadastros" value={String(t?.signUps ?? '—')} {...comparison(t?.signUps, p?.signUps)} />
+        <MetricCard title="Taxa de contato" value={contactRate} note="sessões com ação" />
+      </section>
+
+      <div className="results-tables">
+        <article className="table-card compact-table results-detail-table">
+          <div className="section-heading">
+            <div>
+              <h3>Contatos confirmados</h3>
+              <p>Ações de contato registradas</p>
+            </div>
+          </div>
+          <div className="contact-detail-head">
+            <span>Data</span>
+            <span>Tipo</span>
+            <span>Página</span>
+            <span>Total</span>
+          </div>
+          {visibleContacts.map((item, index) => (
+            <div className="contact-detail-row" key={`${item.date}-${item.type}-${item.path}-${index}`}>
+              <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
+              <span>{item.type === 'whatsapp_contact' ? 'WhatsApp' : 'Cadastro'}</span>
+              <span>{item.path}</span>
+              <span>{item.contacts}</span>
+            </div>
+          ))}
+          {!contactDetails.length && <p className="empty-state">Nenhum contato foi registrado no período.</p>}
+          <TablePagination page={contactPage} total={contactDetails.length} setPage={setContactPage} />
+        </article>
+
+        <article className="table-card compact-table click-detail-table">
+          <div className="section-heading">
+            <div>
+              <h3>Cliques com intenção de contato</h3>
+              <p>Cliques em botões de WhatsApp, telefone e formulários</p>
+            </div>
+          </div>
+          <div className="click-detail-head">
+            <span>Data</span>
+            <span>Botão</span>
+            <span>Página</span>
+            <span>Destino</span>
+            <span>Cliques</span>
+          </div>
+          {visibleLeadClicks.map((item, index) => (
+            <div className="click-detail-row" key={`${item.date}-${item.label}-${item.path}-${index}`}>
+              <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
+              <span><b>{item.label}</b>{item.buttonId ? <small>#{item.buttonId}</small> : null}</span>
+              <span>{item.path}</span>
+              <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
+              <span>{item.clicks}</span>
+            </div>
+          ))}
+          {!leadClicks.length && <p className="empty-state">Nenhum clique de contato foi identificado no período.</p>}
+          <TablePagination page={leadClickPage} total={leadClicks.length} setPage={setLeadClickPage} />
+        </article>
+      </div>
+
+      <article className="table-card general-clicks-table" style={{ marginTop: '24px' }}>
+        <div className="section-heading">
+          <div>
+            <h3>Cliques em botões diversos</h3>
+            <p>Todos os cliques capturados em botões e links navegacionais pelo rastreador</p>
+          </div>
+        </div>
+        <div className="general-clicks-head">
+          <span>Data</span>
+          <span>Texto do botão</span>
+          <span>ID do botão</span>
+          <span>Destino / Href</span>
+          <span>Cliques</span>
+        </div>
+        {visibleGeneralClicks.map((item, index) => (
+          <div className="general-clicks-row" key={`${item.date}-${item.label}-${item.buttonId}-${item.destination}-${index}`}>
+            <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
+            <span><b>{item.label}</b></span>
+            <span>{item.buttonId ? <small>#{item.buttonId}</small> : '—'}</span>
+            <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
+            <span>{item.clicks}</span>
+          </div>
+        ))}
+        {!generalClicks.length && <p className="empty-state">Nenhum clique em botões diversos foi registrado no período.</p>}
+        <TablePagination page={generalClickPage} total={generalClicks.length} setPage={setGeneralClickPage} />
+      </article>
+    </>
+  );
+}
+interface GeneratedInsight {
+  key: string
+  type: string
+  title: string
+  status: 'positive' | 'warning' | 'neutral'
+  badge: string
+  finding: string
+  action: string
+  projection: string
+}
+
+function Insights() {
+  const analytics = useAnalytics();
+  const { currentBusiness, currentSite } = useBusiness();
+  const date = new Intl.DateTimeFormat('pt-BR').format(new Date());
+
+  const [insights, setInsights] = useState<GeneratedInsight[]>([]);
+  const [loadingAI, setLoadingAI] = useState(false);
+  const [modelLabel, setModelLabel] = useState<string>('');
+
+  const [readKeys, setReadKeys] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('analizi-viewed-insights') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const toggleRead = (key: string) => {
+    setReadKeys((current) => {
+      const next = current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
+      localStorage.setItem('analizi-viewed-insights', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const fetchInsights = async () => {
+    if (!analytics || !currentSite) return;
+    setLoadingAI(true);
+    try {
+      const res = await fetch('/v1/ai-insights', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          trackerSiteId: currentSite.tracker_site_id,
+          business: {
+            name: currentBusiness?.name,
+            segment: currentBusiness?.segment,
+            subsegment: currentBusiness?.subsegment,
+            segmentDetail: currentBusiness?.segment_detail,
+            websiteUrl: currentBusiness?.website_url || currentSite.domain
+          },
+          metrics: {
+            periodDays: analytics.periodDays ?? 7,
+            totals: analytics.totals,
+            previousTotals: analytics.previousTotals,
+            sources: analytics.sources,
+            pages: analytics.pages,
+            daily: analytics.daily
+          }
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json() as { insights?: GeneratedInsight[]; model?: string };
+        if (data.insights && data.insights.length > 0) {
+          setInsights(data.insights);
+          if (data.model) setModelLabel(data.model);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao gerar insights:', err);
+    } finally {
+      setLoadingAI(false);
+    }
+  };
+
+  useEffect(() => {
+    if (analytics && currentSite) {
+      fetchInsights();
+    }
+  }, [currentSite?.id, analytics?.periodDays, analytics?.totals?.pageViews]);
+
+  return (
+    <>
+      <div className="insights-header-bar">
+        <PageHeader
+          title="Insights & Recomendações"
+          subtitle={`Diagnósticos automáticos e planos de ação para os últimos ${analytics?.periodDays ?? selectedDays()} dias.`}
+        />
+        <div className="insights-actions">
+          {modelLabel && (
+            <span className="insights-model-badge" title="Modelo de IA utilizado">
+              <Sparkles size={13} /> {modelLabel.includes('70B') ? 'Llama 3.3 70B' : 'IA Analizi'}
+            </span>
+          )}
+          <Button
+            variant="secondary"
+            className="insights-refresh-btn"
+            disabled={loadingAI}
+            onClick={fetchInsights}
+          >
+            <RefreshCw size={15} className={loadingAI ? 'spin' : ''} />
+            {loadingAI ? 'Analisando...' : 'Atualizar análise'}
+          </Button>
+        </div>
+      </div>
+
+      <AnalyticsFilters analytics={analytics} />
+
+      {loadingAI && !insights.length ? (
+        <section className="insights-loading-state">
+          <Sparkles size={28} className="spin" />
+          <p>O Analizi está cruzando o comportamento do seu público com o seu segmento...</p>
+        </section>
+      ) : (
+        <section className="insights-list">
+          {insights.map((item) => {
+            const read = readKeys.includes(item.key || item.title);
+            const isPos = item.status === 'positive';
+            const isWarn = item.status === 'warning';
+
+            return (
+              <article
+                className={`insight-row-ai ${item.status} ${read ? 'viewed' : ''}`}
+                key={item.key || item.title}
+              >
+                <div className={`icon-circle ${isWarn ? 'warning' : isPos ? 'positive' : 'neutral'}`}>
+                  {isWarn ? (
+                    <AlertTriangle size={20} />
+                  ) : isPos ? (
+                    <CircleCheck size={20} />
+                  ) : (
+                    <Lightbulb size={20} />
+                  )}
+                </div>
+
+                <div className="insight-ai-content">
+                  <div className="insight-ai-head">
+                    <span className="insight-ai-badge">{item.badge}</span>
+                    <span className="insight-ai-date">Avaliado em {date}</span>
+                  </div>
+
+                  <h3>{item.title}</h3>
+
+                  <div className="insight-ai-block observation">
+                    <strong>O que os dados mostram:</strong>
+                    <p>{item.finding}</p>
+                  </div>
+
+                  <div className="insight-ai-grid">
+                    <div className="insight-ai-box action">
+                      <span className="box-title">O que fazer agora:</span>
+                      <p>{item.action}</p>
+                    </div>
+
+                    <div className="insight-ai-box projection">
+                      <span className="box-title">Projeção esperada:</span>
+                      <p>{item.projection}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  className="insight-read"
+                  onClick={() => toggleRead(item.key || item.title)}
+                  title={read ? 'Marcar como não lido' : 'Marcar como resolvido'}
+                >
+                  <span />
+                </button>
+              </article>
+            );
+          })}
+        </section>
+      )}
+    </>
+  );
+}
 
 type AuthPage = 'landing' | 'login' | 'signup' | 'consent' | 'onboarding-business' | 'onboarding-source' | 'app'
 interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, attentionSeconds?: number, contactSessions?: number }
-interface AnalyticsData { totals: AnalyticsTotals, previousTotals?: AnalyticsTotals, sources: Array<{ name: string, value: string | number }>, pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>, daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>, sourcePages?: Array<{ source: string, path: string, views: number, users: number }>, contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>, clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, clicks: number, sessions: number }>, filterPages?: Array<{ path: string }>, filterSources?: Array<{ source: string }>, periodDays?: number, sourceKind?: string }
+interface AnalyticsData { totals: AnalyticsTotals, previousTotals?: AnalyticsTotals, sources: Array<{ name: string, value: string | number }>, pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>, daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>, sourcePages?: Array<{ source: string, path: string, views: number, users: number }>, contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>, clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>, filterPages?: Array<{ path: string }>, filterSources?: Array<{ source: string }>, periodDays?: number, sourceKind?: string }
 interface AnalyticsFilter { start: string, end: string, group: 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year', page: string, source: string }
 
 function pageFromPath(): Page { const path = window.location.pathname; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/insights') return 'insights'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
