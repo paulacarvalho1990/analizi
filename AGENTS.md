@@ -89,7 +89,25 @@ Este documento define as regras estritas de operação do Git para qualquer dese
 
 ---
 
-## 4. Checklist Pré-Merge e Pré-Push
+## 4. Política de Staging e Deploy Contínuo
+
+> [!TIP]
+> **O Worker atual é considerado ambiente de STAGING.**
+> **Regra de Staging**: Sempre que algo for commitado e validado (`npm run build` aprovado sem erros), o deploy em staging pode ser executado imediatamente.
+
+- Script de deploy de staging:
+  ```bash
+  npm run deploy:staging
+  ```
+- O deploy atualiza o Cloudflare Worker de staging (`https://analizi.carvalhopaula1990.workers.dev`) servindo os assets compilados do Vite e as rotas `/v1/*`.
+- Após validar e commitar em staging, realize o push da branch para o GitHub:
+  ```bash
+  git push origin develop
+  ```
+
+---
+
+## 5. Checklist Pré-Merge e Pré-Push
 
 Antes de realizar merge na `develop` ou enviar commits para o repositório remoto:
 1. `git status` — Confirme que não há arquivos pendentes ou esquecidos.

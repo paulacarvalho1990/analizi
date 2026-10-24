@@ -63,3 +63,18 @@ Adote o padrão Conventional Commits:
 - Sempre verifique `git status` antes de iniciar qualquer trabalho.
 - Se houver pendências locais desconhecidas:
   - Utilize `git stash push -u -m "backup-tela-X"` ou isole em uma branch `wip/*`.
+
+---
+
+## 4. Política de Staging e Deploy
+
+O Worker principal do Cloudflare atua como ambiente de **STAGING**.
+- **Regra de Staging**: Sempre que uma alteração for commitada e validada (`npm run build` aprovado sem erros), o deploy em staging pode ser executado diretamente via:
+  ```bash
+  npm run deploy:staging
+  ```
+- URL de Staging: `https://analizi.carvalhopaula1990.workers.dev`
+- Após validar e commitar, envie para o repositório remoto:
+  ```bash
+  git push origin develop
+  ```
