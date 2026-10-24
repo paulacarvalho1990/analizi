@@ -447,7 +447,7 @@ body { background:var(--background); color:var(--foreground); }
   fill: var(--muted-foreground, #94a3b8);
 }
 
-/* Tooltip Popover para cards de métricas e gráficos na paleta Analizi */
+/* Tooltip Popover para cards de métricas e gráficos na paleta Analizi (Rosa escuro base, Laranja e Azul) */
 .metric-info-wrapper {
   position: relative;
   display: inline-flex;
@@ -456,24 +456,24 @@ body { background:var(--background); color:var(--foreground); }
   margin-left: auto;
 }
 .metric-info-icon {
-  color: #94a3b8;
+  color: #9ca3af;
   transition: color 0.2s ease, transform 0.2s ease;
 }
 .metric-info-wrapper:hover .metric-info-icon,
 .metric-info-wrapper:focus .metric-info-icon {
-  color: #3b82f6;
+  color: #ff3cac;
   transform: scale(1.15);
 }
 .metric-tooltip-popover {
   position: absolute;
   bottom: calc(100% + 8px);
   right: -10px;
-  background: #0b1f4b;
-  color: #f8fafc;
+  background: #2b1122;
+  color: #fdf2f8;
   padding: 13px 15px;
   border-radius: 12px;
-  box-shadow: 0 16px 36px rgba(11, 31, 75, 0.45), 0 4px 12px rgba(0, 0, 0, 0.2);
-  width: 270px;
+  box-shadow: 0 16px 36px rgba(43, 17, 34, 0.5), 0 4px 14px rgba(0, 0, 0, 0.25);
+  width: 275px;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
@@ -481,12 +481,12 @@ body { background:var(--background); color:var(--foreground); }
   z-index: 1000;
   text-align: left;
   line-height: 1.4;
-  border: 1px solid #1e3d83;
+  border: 1px solid #5a1e41;
 }
 [data-theme="dark"] .metric-tooltip-popover {
-  background: #14171f;
-  border-color: #2e3545;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+  background: #220e1b;
+  border-color: #632349;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65);
 }
 .metric-info-wrapper:hover .metric-tooltip-popover,
 .metric-info-wrapper:focus-within .metric-tooltip-popover {
@@ -497,9 +497,9 @@ body { background:var(--background); color:var(--foreground); }
 .metric-tooltip-title {
   font-size: 13px;
   font-weight: 750;
-  color: #60a5fa;
+  color: #ff8a3d;
   margin-bottom: 8px;
-  border-bottom: 1px solid rgba(96, 165, 250, 0.25);
+  border-bottom: 1px solid rgba(255, 138, 61, 0.25);
   padding-bottom: 6px;
   display: flex;
   align-items: center;
@@ -515,19 +515,19 @@ body { background:var(--background); color:var(--foreground); }
   display: block;
   font-size: 10px;
   font-weight: 800;
-  color: #93c5fd;
+  color: #60a5fa;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin-bottom: 2px;
 }
 .metric-tooltip-section p {
-  color: #e2e8f0;
+  color: #fce7f3;
   font-size: 11px;
   margin: 0;
   line-height: 1.4;
 }
 .metric-tooltip-section.tip {
-  background: rgba(255, 138, 61, 0.12);
+  background: rgba(255, 138, 61, 0.14);
   border-left: 3px solid #ff8a3d;
   padding: 7px 10px;
   border-radius: 6px;
@@ -537,7 +537,7 @@ body { background:var(--background); color:var(--foreground); }
   color: #fdba74;
 }
 .metric-tooltip-section.tip p {
-  color: #ffedd5;
+  color: #fff7ed;
 }
 
 /* Legenda no rodapé dos cards de métricas em Sentence case */
@@ -573,19 +573,19 @@ body { background:var(--background); color:var(--foreground); }
 
 /* Tooltip customizado rico dos gráficos Recharts na paleta Analizi */
 .chart-rich-tooltip {
-  background: #0b1f4b;
-  color: #f8fafc;
+  background: #2b1122;
+  color: #fdf2f8;
   padding: 11px 14px;
   border-radius: 11px;
-  box-shadow: 0 14px 32px rgba(11, 31, 75, 0.45);
-  border: 1px solid #1e3d83;
+  box-shadow: 0 14px 32px rgba(43, 17, 34, 0.5);
+  border: 1px solid #5a1e41;
   font-size: 12px;
   min-width: 175px;
 }
 [data-theme="dark"] .chart-rich-tooltip {
-  background: #14171f;
-  border-color: #2e3545;
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.6);
+  background: #220e1b;
+  border-color: #632349;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.65);
 }
 .chart-rich-tooltip .tooltip-title {
   font-weight: 750;
@@ -595,7 +595,7 @@ body { background:var(--background); color:var(--foreground); }
 }
 .chart-rich-tooltip .tooltip-path {
   font-size: 10px;
-  color: #93c5fd;
+  color: #f472b6;
   margin-bottom: 6px;
 }
 .chart-rich-tooltip .tooltip-stat {
@@ -603,7 +603,7 @@ body { background:var(--background); color:var(--foreground); }
   justify-content: space-between;
   gap: 12px;
   font-size: 11px;
-  color: #cbd5e1;
+  color: #fce7f3;
   margin-top: 3px;
 }
 .chart-rich-tooltip .tooltip-stat b {
@@ -611,15 +611,15 @@ body { background:var(--background); color:var(--foreground); }
   font-weight: 700;
 }
 .chart-rich-tooltip .tooltip-stat.highlight b {
-  color: #ff3cac;
+  color: #ff8a3d;
 }
 .chart-rich-tooltip .tooltip-share {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   font-size: 10px;
-  color: #94a3b8;
-  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  color: #f9a8d4;
+  border-top: 1px dashed rgba(255, 255, 255, 0.15);
   padding-top: 4px;
   margin-top: 5px;
 }
