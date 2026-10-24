@@ -221,12 +221,15 @@
       const docH = Math.max(document.documentElement.scrollHeight, window.innerHeight || 0)
       if (docH <= 0 || docW <= 0) return
 
-      // 1. Coleta elementos visuais e ignora contêineres gigantes de estrutura (main/section genérica)
-      const selectors = 'header, footer, nav, article, h1, h2, h3, h4, button, a, img, video, form, input:not([type="hidden"]), select, textarea, [role="button"], [role="banner"], .card, .price-card, .metric-card, .chart-card, .table-card, .banner, .landing-hero, .hero-product'
+      // 1. Coleta elementos visuais, incluindo gráficos matemáticos, barras de filtros, tabelas e cards
+      const selectors = 'header, footer, nav, article, h1, h2, h3, h4, button, a, img, video, form, input:not([type="hidden"]), select, textarea, [role="button"], [role="banner"], .analytics-filters, .heatmap-toolbar, .period, .chart-card, .recharts-wrapper, canvas, .table-card, .card, .price-card, .metric-card, .contact-card, .insight-feature, .insight-row-ai, .banner, .connection-status, .landing-hero, .hero-product'
       const rawNodes = [...document.querySelectorAll(selectors)]
       const candidates = []
 
       const typePriority = {
+        chart: 12,
+        filter: 11,
+        table: 11,
         button: 10,
         input: 10,
         form: 9,
@@ -235,7 +238,7 @@
         'image-link': 8,
         link: 7,
         heading: 7,
-        card: 5,
+        card: 6,
         banner: 4,
         header: 3,
         footer: 3,
@@ -247,7 +250,7 @@
         const rect = el.getBoundingClientRect()
         // Ignora elementos invisíveis, minúsculos ou que cubram quase a página inteira
         if (rect.width < 16 || rect.height < 16) continue
-        if (rect.height > docH * 0.7 && rect.height > 900) continue
+        if (rect.height > docH * 0.75 && rect.height > 1000) continue
         const style = window.getComputedStyle(el)
         if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
 
@@ -257,7 +260,13 @@
         const height = Math.round(rect.height)
 
         let type = el.tagName.toLowerCase()
-        if (type === 'a') {
+        if (el.classList.contains('chart-card') || el.classList.contains('recharts-wrapper') || type === 'canvas' || el.querySelector('.recharts-wrapper, .chart, canvas')) {
+          type = 'chart'
+        } else if (el.classList.contains('analytics-filters') || el.classList.contains('heatmap-toolbar') || el.classList.contains('period')) {
+          type = 'filter'
+        } else if (el.classList.contains('table-card') || type === 'table') {
+          type = 'table'
+        } else if (type === 'a') {
           type = el.querySelector('img') ? 'image-link' : (el.classList.contains('button') || el.classList.contains('btn') ? 'button' : 'link')
         } else if (type.startsWith('h') && type.length === 2) {
           type = 'heading'
@@ -271,9 +280,9 @@
           type = 'form'
         } else if (type === 'input' || type === 'select' || type === 'textarea') {
           type = 'input'
-        } else if (el.classList.contains('banner') || el.classList.contains('landing-hero') || el.getAttribute('role') === 'banner') {
+        } else if (el.classList.contains('banner') || el.classList.contains('connection-status') || el.classList.contains('landing-hero') || el.getAttribute('role') === 'banner') {
           type = 'banner'
-        } else if (el.classList.contains('card') || el.classList.contains('price-card') || el.classList.contains('metric-card') || el.classList.contains('chart-card') || el.classList.contains('table-card') || el.classList.contains('hero-product') || type === 'article') {
+        } else if (el.classList.contains('card') || el.classList.contains('price-card') || el.classList.contains('metric-card') || el.classList.contains('contact-card') || el.classList.contains('insight-feature') || el.classList.contains('insight-row-ai') || el.classList.contains('hero-product') || type === 'article') {
           type = 'card'
         } else if (['header', 'footer', 'nav'].includes(type)) {
           type = type === 'footer' ? 'footer' : 'header'
@@ -284,10 +293,18 @@
         const cleanLabel = (txt, limit) => truncate(String(txt || '').replace(/\s+/g, ' '), limit)
 
         let label = ''
-        if (['button', 'link', 'heading', 'input', 'image', 'video', 'image-link'].includes(type)) {
+        if (type === 'chart') {
+          const heading = el.querySelector('h1, h2, h3, h4, b, strong')
+          label = cleanLabel(heading ? `Gráfico: ${heading.innerText}` : 'Gráfico Matemático / Visualização', 52)
+        } else if (type === 'filter') {
+          label = cleanLabel(el.getAttribute('aria-label') || 'Filtros de Período, Página, Origem e Atalhos', 52)
+        } else if (type === 'table') {
+          const heading = el.querySelector('h1, h2, h3, h4, b, strong')
+          label = cleanLabel(heading ? `Tabela: ${heading.innerText}` : 'Tabela de Métricas e Resultados', 52)
+        } else if (['button', 'link', 'heading', 'input', 'image', 'video', 'image-link'].includes(type)) {
           label = cleanLabel(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 48)
         } else if (type === 'card' || type === 'banner' || type === 'form') {
-          const heading = el.querySelector('h1, h2, h3, h4, b, strong')
+          const heading = el.querySelector('h1, h2, h3, h4, .metric-title, b, strong')
           label = cleanLabel(heading ? heading.innerText : (el.getAttribute('aria-label') || ''), 48)
         } else {
           label = cleanLabel(el.getAttribute('aria-label') || '', 40)
@@ -306,15 +323,23 @@
         })
       }
 
-      // 2. Descarta contêineres genéricos que já possuem múltiplos filhos capturados dentro deles
+      // 2. Preserva componentes compostos (chart, filter, table, metric-card) inteiros,
+      // descartando os sub-elementos internos deles para não empilhar nem destruir o gráfico/filtro!
+      const compositeTypes = ['chart', 'filter', 'table']
+      const composites = candidates.filter((c) => compositeTypes.includes(c.type) || c.el.classList.contains('metric-card'))
+
       const leafOrDistinct = candidates.filter((cand) => {
+        // Se este elemento está dentro de um gráfico, filtro, tabela ou metric-card já capturado, descarta o filho interno
+        const isInsideComposite = composites.some((comp) => comp !== cand && comp.el.contains(cand.el))
+        if (isInsideComposite) return false
+
         if (['section', 'header', 'footer', 'banner', 'card'].includes(cand.type)) {
           const childrenInside = candidates.filter((other) => other !== cand && cand.el.contains(other.el))
-          // Se um contêiner já tem elementos mais específicos dentro dele, descarta o contêiner para não empilhar caixas
           if (childrenInside.length >= 1 && ['section', 'banner', 'header'].includes(cand.type)) {
             return false
           }
-          if (childrenInside.length >= 2 && cand.type === 'card') {
+          // Mantém cards de métricas e cards normais a menos que sejam wrappers de página inteira com muitos blocos
+          if (childrenInside.length > 4 && cand.type === 'card' && !cand.el.classList.contains('metric-card')) {
             return false
           }
         }
