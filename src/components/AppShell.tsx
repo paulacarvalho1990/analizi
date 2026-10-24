@@ -1,7 +1,7 @@
 import { BarChart3, FileText, Flame, Lightbulb, LogOut, Menu, Moon, Settings, Sun, Target, Users } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { BrandLogo } from './BrandLogo'
-import { WorkspaceSelector } from './WorkspaceSelector'
+import { WorkspaceSelector, NewSiteModal } from './WorkspaceSelector'
 
 export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
 
@@ -13,7 +13,7 @@ export const PAGE_TITLES: Record<Page, string> = {
   heatmap: 'Heatmap & Comportamento | Analizi',
   insights: 'Insights de IA | Analizi',
   settings: 'Configurações | Analizi',
-  team: 'Acesso ao Negócio | Analizi',
+  team: 'Meu Site | Analizi',
   'data-sources': 'Fontes de Dados | Analizi',
   'ga4-setup': 'Conectar Google Analytics | Analizi',
   'tracker-setup': 'Instalar Rastreador | Analizi',
@@ -73,6 +73,7 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
         <Menu size={22} />
       </header>
       <main className="main-content">{children}</main>
+      <NewSiteModal onSiteCreated={() => navigate('tracker-setup')} />
       <nav className="mobile-nav">
         {nav.map(([id, label, Icon]) => (
           <button key={id} onClick={() => navigate(id)} className={page === id ? 'active' : ''}>
