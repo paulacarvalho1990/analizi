@@ -49,12 +49,17 @@ export function Heatmap() {
   const [data, setData] = useState<HeatmapPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const targetSiteId = currentSite?.tracker_site_id || (currentSite?.id?.startsWith('ANLZ') ? currentSite.id : '')
+
   const fetchHeatmap = async (page = selectedPage, dev = device) => {
-    if (!currentSite?.id) return
+    if (!targetSiteId) {
+      setData(null)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/v1/heatmap/${currentSite.id}?page=${encodeURIComponent(page)}&device=${dev}&period=30`)
+      const res = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/heatmap/${targetSiteId}?page=${encodeURIComponent(page)}&device=${dev}&period=30`)
       if (!res.ok) throw new Error('Falha ao carregar dados do heatmap.')
       const json: HeatmapPayload = await res.json()
       setData(json)
@@ -69,10 +74,10 @@ export function Heatmap() {
   }
 
   useEffect(() => {
-    if (currentSite?.id) {
+    if (targetSiteId) {
       fetchHeatmap(selectedPage, device)
     }
-  }, [currentSite?.id, selectedPage, device])
+  }, [targetSiteId, selectedPage, device])
 
   const layout = data?.layout
   const blocks = layout?.blocks || []
