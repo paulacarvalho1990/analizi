@@ -1,10 +1,10 @@
 /* Analizi Tracker v1 — coleta anônima e sem conteúdo de formulários. */
 (() => {
-  const script = document.currentScript || [...document.scripts].find((item) => item.src.includes('tracker.js'))
+  const script = document.currentScript || [...document.scripts].find((item) => item.dataset?.site || /(?:tracker|izi|app-client)\.js/i.test(item.src))
   const siteId = script?.dataset.site
   if (!siteId || !/^ANLZ[A-Z0-9]{5}-A$/.test(siteId)) return
 
-  const endpoint = new URL('/v1/events', script.src).toString()
+  const endpoint = new URL('/v1/sync', script.src).toString()
   const now = () => Date.now()
   const storage = (kind) => {
     try { return window[kind] } catch { return null }
@@ -168,8 +168,42 @@
     return attrData
   }
   let lastEventAt = now()
+  let engagedCarryMs = 0
+  let isEngagedActive = document.visibilityState !== 'hidden' && (typeof document.hasFocus !== 'function' || document.hasFocus())
   let lastTrackedPath = location.pathname
   let lastTrackedTitle = truncate(document.title, 512)
+
+  const pauseEngagementClock = () => {
+    if (isEngagedActive) {
+      engagedCarryMs += Math.max(0, now() - lastEventAt)
+      isEngagedActive = false
+    }
+  }
+
+  const resumeEngagementClock = () => {
+    if (!isEngagedActive && document.visibilityState !== 'hidden') {
+      lastEventAt = now()
+      isEngagedActive = true
+      set(session, activityKey, String(lastEventAt))
+    }
+  }
+
+  const consumeEngagementMs = () => {
+    const activeDelta = isEngagedActive ? Math.max(0, now() - lastEventAt) : 0
+    const total = engagedCarryMs + activeDelta
+    engagedCarryMs = 0
+    lastEventAt = now()
+    if (isEngagedActive) {
+      set(session, activityKey, String(lastEventAt))
+    }
+    return total
+  }
+
+  const peekEngagementMs = () => {
+    const activeDelta = isEngagedActive ? Math.max(0, now() - lastEventAt) : 0
+    return engagedCarryMs + activeDelta
+  }
+
   const context = (overridePath, overrideTitle) => {
     const referrerUrl = cleanUrl(document.referrer)
     const referrerHost = referrerUrl ? new URL(referrerUrl).hostname.replace(/^www\./, '') : ''
@@ -183,13 +217,8 @@
     }
   }
   const send = (eventName, metadata = {}, options = {}) => {
-    const isVisible = document.visibilityState !== 'hidden'
     const consumeTime = options.consumeTime !== false
-    const elapsed = consumeTime ? Math.max(0, now() - lastEventAt) : 0
-    if (consumeTime && isVisible) {
-      lastEventAt = now()
-      set(session, activityKey, String(lastEventAt))
-    }
+    const elapsed = consumeTime ? consumeEngagementMs() : 0
     const payload = JSON.stringify({
       events: [{
         id: randomId(),
@@ -473,7 +502,7 @@
   updateScrollDepth()
 
   const sendScrollDepth = (overridePath, overrideTitle) => {
-    const elapsedSinceLast = Math.max(0, now() - lastEventAt)
+    const elapsedSinceLast = peekEngagementMs()
     // Envia se houve rolagem nova nesta página OU se há tempo de atenção relevante (>= 1s) a registrar ao sair da página/aba
     if (sentScrollForCurrentPage && elapsedSinceLast < 1000) return
     const brackets = []
@@ -491,16 +520,25 @@
     }, { pagePath: overridePath, pageTitle: overrideTitle })
   }
 
+  // Padrão GA4 (engagement_time_msec): acumula tempo somente com aba visível e janela em foco
+  window.addEventListener('blur', () => {
+    pauseEngagementClock()
+  })
+  window.addEventListener('focus', () => {
+    resumeEngagementClock()
+  })
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+      pauseEngagementClock()
       sendScrollDepth()
     } else if (document.visibilityState === 'visible') {
-      // Reinicia o relógio quando o usuário volta para a aba, sem somar tempo em segundo plano
-      lastEventAt = now()
-      set(session, activityKey, String(lastEventAt))
+      resumeEngagementClock()
     }
   })
-  window.addEventListener('pagehide', () => sendScrollDepth())
+  window.addEventListener('pagehide', () => {
+    pauseEngagementClock()
+    sendScrollDepth()
+  })
 
   const schedulePageLayoutCapture = () => {
     const path = location.pathname
@@ -524,6 +562,7 @@
       lastTrackedTitle = truncate(document.title, 512)
       maxScrollPct = 0
       sentScrollForCurrentPage = false
+      engagedCarryMs = 0
       lastEventAt = now()
       send('page_view')
       updateScrollDepth()

@@ -362,7 +362,7 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
   );
 }
 
-function Dashboard() { const analytics = useAnalytics(); const [dailyPage, setDailyPage] = useState(0); const t = analytics?.totals; const p = analytics?.previousTotals; const daily = analytics?.daily ?? []; const visibleDays = daily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE); const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—'; const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI'; return <><PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} /><AnalyticsFilters analytics={analytics}/><div className="period"><span className="source-badge"><span className="source-badge-dot" />{badge}</span></div><section className="metrics"><MetricCard title="Visualizações de páginas" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} /><MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} /><MetricCard title="Tempo de atenção" value={attention} note="média por visita" /><MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} /><MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} /></section><div className="dashboard-split"><MetricChart analytics={analytics} /><article className="table-card compact-table daily-table"><div className="section-heading"><div><h3>Métricas por dia</h3><p>Atividade diária</p></div></div><div className="daily-head"><span>Data</span><span>Visualizações de páginas</span><span>Usuários</span><span>Contatos</span></div>{visibleDays.map(day => <div className="daily-row" key={day.date}><span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span><span>{day.pageViews}</span><span>{day.users}</span><span>{day.contacts}</span></div>)}{!daily.length && <p className="empty-state">Ainda não recebemos acessos neste período.</p>}<TablePagination page={dailyPage} total={daily.length} setPage={setDailyPage}/></article></div></> }
+function Dashboard() { const analytics = useAnalytics(); const [dailyPage, setDailyPage] = useState(0); const t = analytics?.totals; const p = analytics?.previousTotals; const daily = analytics?.daily ?? []; const visibleDays = daily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE); const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—'; const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI'; return <><PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} /><AnalyticsFilters analytics={analytics}/><div className="period"><span className="source-badge"><span className="source-badge-dot" />{badge}</span></div><section className="metrics"><MetricCard title="Visualizações de páginas" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} /><MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} /><MetricCard title="Tempo de atenção" value={attention} note="média por usuário ativo" /><MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} /><MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} /></section><div className="dashboard-split"><MetricChart analytics={analytics} /><article className="table-card compact-table daily-table"><div className="section-heading"><div><h3>Métricas por dia</h3><p>Atividade diária</p></div></div><div className="daily-head"><span>Data</span><span>Visualizações de páginas</span><span>Usuários</span><span>Contatos</span></div>{visibleDays.map(day => <div className="daily-row" key={day.date}><span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span><span>{day.pageViews}</span><span>{day.users}</span><span>{day.contacts}</span></div>)}{!daily.length && <p className="empty-state">Ainda não recebemos acessos neste período.</p>}<TablePagination page={dailyPage} total={daily.length} setPage={setDailyPage}/></article></div></> }
 
 function Audience() {
   const analytics = useAnalytics();
@@ -1035,8 +1035,11 @@ function Pages() {
   const visiblePages = pages.slice(tablePage * ITEMS_PER_PAGE, (tablePage + 1) * ITEMS_PER_PAGE);
   const duration = (seconds?: number) => seconds ? `${Math.floor(seconds / 60)}min ${seconds % 60}s` : '—';
   const totalViews = pages.reduce((sum, item) => sum + Number(item.views || 0), 0);
-  const pagesWithExit = pages.filter(item => item.exitRate != null);
-  const averageExit = pagesWithExit.length ? pagesWithExit.reduce((sum, item) => sum + Number(item.exitRate || 0), 0) / pagesWithExit.length : 0;
+  const pagesWithExit = pages.filter(item => item.exitRate != null && Number(item.views || 0) > 0);
+  const totalExitViews = pagesWithExit.reduce((sum, item) => sum + Number(item.views || 0), 0);
+  const averageExit = totalExitViews > 0
+    ? pagesWithExit.reduce((sum, item) => sum + Number(item.exitRate || 0) * Number(item.views || 0), 0) / totalExitViews
+    : 0;
   const topPage = pages[0];
   const topTitle = topPage ? (topPage.title || topPage.path) : '—';
   const topPath = topPage ? topPage.path : undefined;
@@ -1049,7 +1052,7 @@ function Pages() {
         <MetricCard title="Páginas acompanhadas" value={String(pages.length || '—')} note="páginas com atividade no período"/>
         <MetricCard title="Visualizações de páginas" value={String(totalViews || '—')} {...comparison(totalViews, p?.pageViews)}/>
         <MetricCard title="Página mais vista" value={topTitle} subtitle={topPath} note="mais visualizada no período"/>
-        <MetricCard title="Taxa média de saída" value={averageExit ? `${averageExit.toFixed(1).replace('.', ',')}%` : '—'} note="saídas sem interação"/>
+        <MetricCard title="Taxa média de saída" value={averageExit ? `${averageExit.toFixed(1).replace('.', ',')}%` : '—'} note="sessões não engajadas"/>
       </section>
       <section className="pages-split">
         <PageChart pages={pages}/>
@@ -1065,7 +1068,7 @@ function Pages() {
             <span>Página</span>
             <span>Visualizações de páginas</span>
             <span>Tempo de atenção</span>
-            <span title="Porcentagem de visualizações que saíram sem interagir">Taxa de saída</span>
+            <span title="Porcentagem de sessões que duraram menos de 10s, viram apenas 1 página e não converteram (padrão GA4)">Taxa de saída</span>
           </div>
           {visiblePages.map((item) => (
             <div className="page-row" key={item.path}>
@@ -1852,7 +1855,7 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
       setTesting(false);
     }
   };
-  const snippet = siteId ? `<script async src="https://analizi.carvalhopaula1990.workers.dev/tracker.js" data-site="${siteId}"></script>` : '';
+  const snippet = siteId ? `<script async src="https://analizi.carvalhopaula1990.workers.dev/izi.js" data-site="${siteId}"></script>` : '';
   const guides = {
     html: ['Sites próprios em HTML', 'Abra o arquivo que contém a tag <head> do seu site.', 'Cole o código logo antes de </head>.', 'Publique a alteração no seu servidor.'],
     wordpress: ['WordPress', 'Instale um plugin de inserção de código no cabeçalho.', 'Abra a área Header / Cabeçalho do plugin.', 'Cole o código e salve.'],
