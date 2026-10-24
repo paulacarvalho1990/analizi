@@ -154,7 +154,9 @@ function Insights() {
 
   const [insights, setInsights] = useState<GeneratedInsight[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
-  const [modelLabel, setModelLabel] = useState<string>('');
+  const [modelLabel, setModelLabel] = useState<string>('IZI INTELLIGENCE');
+  const [scopeLabel, setScopeLabel] = useState<string>('semanal');
+  const [cachedNotice, setCachedNotice] = useState<boolean>(false);
 
   const [readKeys, setReadKeys] = useState<string[]>(() => {
     try {
@@ -172,7 +174,7 @@ function Insights() {
     });
   };
 
-  const fetchInsights = async () => {
+  const fetchInsights = async (force = false) => {
     if (!analytics || !currentSite) return;
     setLoadingAI(true);
     try {
@@ -181,6 +183,7 @@ function Insights() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           trackerSiteId: currentSite.tracker_site_id,
+          forceRefresh: force,
           business: {
             name: currentBusiness?.name,
             segment: currentBusiness?.segment,
@@ -200,10 +203,17 @@ function Insights() {
       });
 
       if (res.ok) {
-        const data = await res.json() as { insights?: GeneratedInsight[]; model?: string };
+        const data = await res.json() as {
+          insights?: GeneratedInsight[];
+          model?: string;
+          scope?: string;
+          cached?: boolean;
+        };
         if (data.insights && data.insights.length > 0) {
           setInsights(data.insights);
           if (data.model) setModelLabel(data.model);
+          if (data.scope) setScopeLabel(data.scope);
+          setCachedNotice(Boolean(data.cached));
         }
       }
     } catch (err) {
@@ -215,7 +225,7 @@ function Insights() {
 
   useEffect(() => {
     if (analytics && currentSite) {
-      fetchInsights();
+      fetchInsights(false);
     }
   }, [currentSite?.id, analytics?.periodDays, analytics?.totals?.pageViews]);
 
@@ -224,22 +234,26 @@ function Insights() {
       <div className="insights-header-bar">
         <PageHeader
           title="Insights & Recomendações"
-          subtitle={`Diagnósticos automáticos e planos de ação para os últimos ${analytics?.periodDays ?? selectedDays()} dias.`}
+          subtitle={`Diagnósticos inteligentes baseados no comportamento do seu site (${scopeLabel}).`}
         />
         <div className="insights-actions">
-          {modelLabel && (
-            <span className="insights-model-badge" title="Modelo de IA utilizado">
-              <Sparkles size={13} /> {modelLabel.includes('70B') ? 'Llama 3.3 70B' : 'IA Analizi'}
+          <span className="insights-model-badge" title="Inteligência do Analizi">
+            <Sparkles size={13} /> {modelLabel || 'IZI INTELLIGENCE'}
+          </span>
+          {cachedNotice && (
+            <span className="insights-cycle-badge" title="Análise consolidada para a semana atual">
+              Ciclo Semanal
             </span>
           )}
           <Button
             variant="secondary"
             className="insights-refresh-btn"
             disabled={loadingAI}
-            onClick={fetchInsights}
+            onClick={() => fetchInsights(true)}
+            title="Recalcular com os dados mais recentes"
           >
             <RefreshCw size={15} className={loadingAI ? 'spin' : ''} />
-            {loadingAI ? 'Analisando...' : 'Atualizar análise'}
+            {loadingAI ? 'Analisando...' : 'Atualizar agora'}
           </Button>
         </div>
       </div>
