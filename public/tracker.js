@@ -199,16 +199,16 @@
       const docH = Math.max(document.documentElement.scrollHeight, window.innerHeight || 0)
       if (docH <= 0 || docW <= 0) return
 
-      // Seleciona elementos estruturais e blocos visuais chave
+      // 1. Coleta elementos e filtra ancestrais duplicados
       const selectors = 'header, footer, nav, main, section, article, aside, h1, h2, h3, h4, button, a, img, video, form, input:not([type="hidden"]), select, textarea, [role="button"], [role="banner"], [role="navigation"], .card, .banner'
-      const nodes = [...document.querySelectorAll(selectors)]
-      const blocks = []
+      const rawNodes = [...document.querySelectorAll(selectors)]
+      const candidates = []
 
-      for (const el of nodes) {
+      for (const el of rawNodes) {
         if (!(el instanceof HTMLElement)) continue
         const rect = el.getBoundingClientRect()
         // Ignora elementos invisíveis ou minúsculos
-        if (rect.width < 12 || rect.height < 12) continue
+        if (rect.width < 14 || rect.height < 14) continue
         const style = window.getComputedStyle(el)
         if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
 
@@ -240,9 +240,17 @@
           type = type === 'header' || type === 'nav' ? 'header' : (type === 'footer' ? 'footer' : 'section')
         }
 
-        const label = truncate(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 70)
+        let label = ''
+        if (['button', 'link', 'heading', 'input', 'image', 'video'].includes(type)) {
+          label = truncate(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 50)
+        } else if (type === 'card' || type === 'banner') {
+          const heading = el.querySelector('h1, h2, h3, h4')
+          label = truncate(heading ? heading.innerText : (el.getAttribute('aria-label') || ''), 50)
+        } else {
+          label = truncate(el.getAttribute('aria-label') || '', 40)
+        }
 
-        blocks.push({
+        candidates.push({
           type,
           top,
           left,
@@ -250,8 +258,17 @@
           height,
           label
         })
+      }
 
-        if (blocks.length >= 150) break // Limite seguro para payload equilibrado
+      // 2. Filtro de desduplicação e limite compacto de 80 blocos estruturais
+      const blocks = []
+      for (let i = 0; i < candidates.length; i++) {
+        const c = candidates[i]
+        const isDuplicate = blocks.some((b) => Math.abs(b.top - c.top) < 4 && Math.abs(b.left - c.left) < 4 && Math.abs(b.width - c.width) < 6 && Math.abs(b.height - c.height) < 6)
+        if (!isDuplicate) {
+          blocks.push(c)
+        }
+        if (blocks.length >= 80) break
       }
 
       const layoutData = {
@@ -266,10 +283,12 @@
     } catch {}
   }
 
+  // Tenta capturar logo no início e também após carregamento total
+  setTimeout(captureLayout, 1000)
   if (document.readyState === 'complete') {
-    setTimeout(captureLayout, 1500)
+    setTimeout(captureLayout, 2000)
   } else {
-    window.addEventListener('load', () => setTimeout(captureLayout, 1500))
+    window.addEventListener('load', () => setTimeout(captureLayout, 2000))
   }
 
   // --- Heatmap Econômico: 2. Monitoramento de Scroll Depth (Zero tráfego durante o scroll) ---
