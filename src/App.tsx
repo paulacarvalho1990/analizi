@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Lightbulb, Copy, ExternalLink, Globe2, Info, Link2, MoreHorizontal, MousePointerClick, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, FileText, Flame, Lightbulb, Copy, ExternalLink, Globe2, Info, Link2, MoreHorizontal, MousePointerClick, Settings as SettingsIcon, ShieldCheck, Sparkles, Target, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard } from './components/Metrics'
@@ -1121,8 +1121,13 @@ function TeamSettings({ setPage }: { setPage: (page: Page) => void }) {
   return <>
     <div className="source-header">
       <button className="back-link" onClick={() => setPage('settings')}><ArrowLeft size={16}/> Configurações</button>
-      <h1>Acesso ao negócio: {currentBusiness?.name || 'Seu negócio'}</h1>
-      <p>Convide pessoas para visualizar os painéis deste negócio.</p>
+      <div>
+        <span className="eyebrow">EQUIPE E PERMISSÕES</span>
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Users size={26} style={{ color: '#ff3cac' }} /> Acesso ao negócio: {currentBusiness?.name || 'Seu negócio'}
+        </h1>
+        <p className="subtitle">Convide pessoas para visualizar os painéis deste negócio.</p>
+      </div>
     </div>
     <section className="team-card">
       <h2>Convidar uma pessoa</h2>
@@ -1162,9 +1167,78 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
   </>;
 }
 
-function SourceHeader({ title, subtitle, setPage }: { title: string, subtitle: string, setPage: (page: Page) => void }) { return <header className="source-header"><button className="back-link" onClick={() => setPage('data-sources')}><ArrowLeft size={17}/>Fontes de dados</button><div><h1>{title}</h1><p>{subtitle}</p></div></header> }
+function SourceHeader({
+  title,
+  subtitle,
+  setPage,
+  eyebrow,
+  icon: Icon,
+  iconColor
+}: {
+  title: string;
+  subtitle: string;
+  setPage: (page: Page) => void;
+  eyebrow?: string;
+  icon?: React.ComponentType<{ size?: number; style?: React.CSSProperties; className?: string }>;
+  iconColor?: string;
+}) {
+  return (
+    <header className="source-header">
+      <button className="back-link" onClick={() => setPage('data-sources')}>
+        <ArrowLeft size={17}/>Fontes de dados
+      </button>
+      <div>
+        {eyebrow && <span className="eyebrow">{eyebrow}</span>}
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {Icon && <Icon size={26} style={iconColor ? { color: iconColor } : undefined} />}
+          {title}
+        </h1>
+        <p className="subtitle">{subtitle}</p>
+      </div>
+    </header>
+  );
+}
 function DataSources({ setPage }: { setPage: (page: Page) => void }) { return <><PageHeader title="Fontes de dados" subtitle="Escolha de onde o Analizi vai trazer os dados do seu site."/><section className="source-intro"><div className="icon-circle"><Link2 size={22}/></div><div><h3>Uma fonte principal por site</h3><p>Isso evita números duplicados e mantém seus resultados fáceis de entender.</p></div></section><section className="source-options"><article className="source-config-card"><div className="source-card-heading"><span className="source-icon ga">G</span><div><span className="eyebrow">GOOGLE ANALYTICS 4</span><h2>Conecte uma propriedade existente</h2><p>Traga os dados que você já acompanha no Google Analytics.</p></div></div><ul><li><Check size={16}/>Importa o histórico disponível</li><li><Check size={16}/>Leitura segura, sem alterar sua conta Google</li></ul><Button onClick={() => setPage('ga4-setup')}>Configurar Google Analytics <ArrowRight size={17}/></Button></article><article className="source-config-card"><div className="source-card-heading"><span className="source-icon"><BrandLogo compact /></span><div><span className="eyebrow">RASTREADOR ANALIZI</span><h2>Instale um código no seu site</h2><p>Comece uma coleta nova, simples e focada no seu negócio.</p></div></div><ul><li><Check size={16}/>Leve e compatível com sites tradicionais</li><li><Check size={16}/>Não coleta conteúdo de formulários</li></ul><Button variant="secondary" onClick={() => setPage('tracker-setup')}>Ver código de instalação <ArrowRight size={17}/></Button></article></section><article className="source-note"><ShieldCheck size={21}/><div><b>Você poderá trocar a fonte depois.</b><p>Antes de mudar, vamos explicar exatamente o que acontece com seus dados.</p></div></article></> }
-function GA4Setup({ setPage }: { setPage: (page: Page) => void }) { return <><SourceHeader title="Conectar Google Analytics" subtitle="Em poucos passos, vamos encontrar os dados do seu site." setPage={setPage}/><section className="setup-layout"><article className="setup-card"><div className="step-label">PASSO 1 DE 3</div><span className="source-icon ga large">G</span><h2>Conecte sua conta Google</h2><p>Você será levado ao Google para autorizar o Analizi a <b>somente visualizar</b> os dados do Analytics.</p><div className="permission-box"><ShieldCheck size={19}/><span>Não teremos acesso para editar sua conta, criar campanhas ou fazer alterações.</span></div><Button className="full" onClick={() => {}}>Conectar conta Google <ExternalLink size={16}/></Button><p className="setup-help">Esta é uma demonstração: a autorização real será ativada na Fase 2.</p></article><aside className="setup-sidebar"><span className="eyebrow">O QUE VEM DEPOIS</span><ol><li className="current"><i>1</i><span><b>Conectar sua conta</b><small>Autorize a leitura dos dados</small></span></li><li><i>2</i><span><b>Escolher a propriedade</b><small>Encontre o seu site na lista</small></span></li><li><i>3</i><span><b>Validar conexão</b><small>Confirmaremos que está tudo certo</small></span></li></ol></aside></section><section className="faq-card"><h3>Não sabe se usa Google Analytics?</h3><p>Entre em <b>analytics.google.com</b>. Se você vê dados do seu site por lá, pode usar esta opção.</p></section></> }
+function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
+  return (
+    <>
+      <SourceHeader
+        eyebrow="CONFIGURAÇÃO GOOGLE"
+        icon={Globe2}
+        iconColor="#f59e0b"
+        title="Conectar Google Analytics"
+        subtitle="Em poucos passos, vamos encontrar os dados do seu site."
+        setPage={setPage}
+      />
+      <section className="setup-layout">
+        <article className="setup-card">
+          <div className="step-label">PASSO 1 DE 3</div>
+          <span className="source-icon ga large">G</span>
+          <h2>Conecte sua conta Google</h2>
+          <p>Você será levado ao Google para autorizar o Analizi a <b>somente visualizar</b> os dados do Analytics.</p>
+          <div className="permission-box">
+            <ShieldCheck size={19}/>
+            <span>Não teremos acesso para editar sua conta, criar campanhas ou fazer alterações.</span>
+          </div>
+          <Button className="full" onClick={() => {}}>Conectar conta Google <ExternalLink size={16}/></Button>
+          <p className="setup-help">Esta é uma demonstração: a autorização real será ativada na Fase 2.</p>
+        </article>
+        <aside className="setup-sidebar">
+          <span className="eyebrow">O QUE VEM DEPOIS</span>
+          <ol>
+            <li className="current"><i>1</i><span><b>Conectar sua conta</b><small>Autorize a leitura dos dados</small></span></li>
+            <li><i>2</i><span><b>Escolher a propriedade</b><small>Encontre o seu site na lista</small></span></li>
+            <li><i>3</i><span><b>Validar conexão</b><small>Confirmaremos que está tudo certo</small></span></li>
+          </ol>
+        </aside>
+      </section>
+      <section className="faq-card">
+        <h3>Não sabe se usa Google Analytics?</h3>
+        <p>Entre em <b>analytics.google.com</b>. Se você vê dados do seu site por lá, pode usar esta opção.</p>
+      </section>
+    </>
+  );
+}
 
 function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
   const { currentSite } = useBusiness();
@@ -1221,7 +1295,14 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
     other: ['Outra plataforma', 'Procure por código personalizado, cabeçalho ou scripts.', 'Cole o código antes de </head>.', 'Peça ajuda à plataforma, se necessário.']
   } as const;
   return <>
-    <SourceHeader title="Instalar o Rastreador Analizi" subtitle="Meça visitas e ações importantes no seu site sem coletar conteúdo de formulários." setPage={setPage}/>
+    <SourceHeader
+      eyebrow="INSTALAÇÃO RÁPIDA"
+      icon={Compass}
+      iconColor="#10b981"
+      title="Instalar o Rastreador Analizi"
+      subtitle="Meça visitas e ações importantes no seu site sem coletar conteúdo de formulários."
+      setPage={setPage}
+    />
     <section className="setup-layout">
       <article className="setup-card tracker-card">
         <div className="step-label">PASSO 1 DE 2</div>
@@ -1262,7 +1343,19 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
   </>;
 }
 
-function PageHeader({ title, subtitle }: { title: string, subtitle: string }) {
+function PageHeader({
+  title,
+  subtitle,
+  eyebrow,
+  icon: Icon,
+  iconColor
+}: {
+  title: string;
+  subtitle: string;
+  eyebrow?: string;
+  icon?: React.ComponentType<{ size?: number; style?: React.CSSProperties; className?: string }>;
+  iconColor?: string;
+}) {
   const { currentBusiness, currentSite } = useBusiness();
   const [name, setName] = useState('Sua conta');
   useEffect(() => {
@@ -1277,11 +1370,33 @@ function PageHeader({ title, subtitle }: { title: string, subtitle: string }) {
   const initials = name.split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
   const hasDataStatus = !['Configurações', 'Fontes de dados', 'Acesso ao negócio'].includes(title);
   const contextHint = currentBusiness ? `${currentBusiness.name}${currentSite?.domain ? ` · ${currentSite.domain}` : ''}` : '';
+
+  // Metadados padrão caso não sejam passados explicitamente
+  const defaultMeta: Record<string, { eyebrow: string; icon: React.ComponentType<{ size?: number; style?: React.CSSProperties; className?: string }>; iconColor: string }> = {
+    'Visão geral': { eyebrow: 'RESUMO DE DESEMPENHO', icon: BarChart3, iconColor: '#ff3cac' },
+    'Seu público': { eyebrow: 'ORIGEM E PERFIL', icon: Users, iconColor: '#3b82f6' },
+    'Suas páginas': { eyebrow: 'CONTEÚDO E ENGAJAMENTO', icon: FileText, iconColor: '#ff8a3d' },
+    'Resultados': { eyebrow: 'CONVERSÃO E LEADS', icon: Target, iconColor: '#10b981' },
+    'Insights & Recomendações': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
+    'Configurações': { eyebrow: 'PREFERÊNCIAS DO SISTEMA', icon: SettingsIcon, iconColor: '#8b5cf6' },
+    'Fontes de dados': { eyebrow: 'INTEGRAÇÕES E CONEXÕES', icon: Link2, iconColor: '#3b82f6' },
+    'Heatmap & Comportamento': { eyebrow: 'COMPORTAMENTO VISUAL', icon: Flame, iconColor: '#f97316' },
+  };
+
+  const meta = defaultMeta[title];
+  const resolvedEyebrow = eyebrow ?? meta?.eyebrow;
+  const ResolvedIcon = Icon ?? meta?.icon;
+  const resolvedIconColor = iconColor ?? meta?.iconColor;
+
   return <>
     <header className="page-header">
       <div>
-        <h1>{title}</h1>
-        <p>{subtitle} {contextHint ? `(${contextHint})` : ''}</p>
+        {resolvedEyebrow && <span className="eyebrow">{resolvedEyebrow}</span>}
+        <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {ResolvedIcon && <ResolvedIcon size={26} style={resolvedIconColor ? { color: resolvedIconColor } : undefined} />}
+          {title}
+        </h1>
+        <p className="subtitle">{subtitle} {contextHint ? `(${contextHint})` : ''}</p>
       </div>
       <button className="profile" title={`Perfil: ${name}`}>
         <span>{initials}</span>
