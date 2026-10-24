@@ -131,11 +131,32 @@ async function collect(request: Request, env: Env) {
       /(?:auth|login|oauth|accounts)/i.test(s)
   }
 
-  const isWhatsappOrigin = (s?: string | null, ref?: string | null) => {
+  const normalizeTrafficSource = (s?: string | null, ref?: string | null): { source: string; medium?: string } | null => {
     const check = (val?: string | null) => {
-      if (!val) return false
+      if (!val) return null
       const h = val.toLowerCase().trim().replace(/^www\./, '')
-      return h === 'l.wl.co' || h === 'wl.co' || h === 'wa.me' || h === 'whatsapp' || /(?:^|\.)whatsapp\.com$/i.test(h)
+      if (h === 'direto' || h === '(direct)' || h === 'direct' || h === 'none' || h === 'null' || h === '') return { source: 'Direto', medium: 'direto' }
+      if (h === 'l.wl.co' || h === 'wl.co' || h === 'wa.me' || h === 'whatsapp' || /(?:^|\.)whatsapp\.com$/i.test(h)) return { source: 'WhatsApp', medium: 'social' }
+      if (h === 'facebook' || h === 'fb.me' || h === 'fb.com' || /(?:^|\.)facebook\.com$/i.test(h)) return { source: 'Facebook', medium: 'social' }
+      if (h === 'instagram' || h === 'ig' || h === 'ig.me' || /(?:^|\.)instagram\.com$/i.test(h)) return { source: 'Instagram', medium: 'social' }
+      if (h === 'google' || h === 'google-play' || /(?:^|\.)google\.(?:com|com\.br|co\.[a-z]+|[a-z]{2})$/i.test(h)) return { source: 'Google', medium: 'orgânico' }
+      if (h === 'tiktok' || /(?:^|\.)tiktok\.com$/i.test(h)) return { source: 'TikTok', medium: 'social' }
+      if (h === 'youtube' || h === 'youtu.be' || /(?:^|\.)youtube\.com$/i.test(h)) return { source: 'YouTube', medium: 'social' }
+      if (h === 'twitter' || h === 'x' || h === 't.co' || /(?:^|\.)twitter\.com$/i.test(h) || h === 'x.com') return { source: 'X (Twitter)', medium: 'social' }
+      if (h === 'linkedin' || h === 'lnkd.in' || /(?:^|\.)linkedin\.com$/i.test(h)) return { source: 'LinkedIn', medium: 'social' }
+      if (h === 'pinterest' || h === 'pin.it' || /(?:^|\.)pinterest\.com$/i.test(h)) return { source: 'Pinterest', medium: 'social' }
+      if (h === 'telegram' || h === 't.me' || /(?:^|\.)telegram\.(?:org|me)$/i.test(h)) return { source: 'Telegram', medium: 'social' }
+      if (h === 'threads' || /(?:^|\.)threads\.net$/i.test(h)) return { source: 'Threads', medium: 'social' }
+      if (h === 'mercadolivre' || /(?:^|\.)mercadolivre\.com(?:\.br)?$/i.test(h) || /(?:^|\.)mercadolibre\.com$/i.test(h)) return { source: 'Mercado Livre', medium: 'referência' }
+      if (h === 'shopee' || h === 'shp.ee' || /(?:^|\.)shopee\.com(?:\.br)?$/i.test(h)) return { source: 'Shopee', medium: 'referência' }
+      if (h === 'bing' || /(?:^|\.)bing\.com$/i.test(h)) return { source: 'Bing', medium: 'orgânico' }
+      if (h === 'yahoo' || /(?:^|\.)yahoo\.com(?:\.br)?$/i.test(h)) return { source: 'Yahoo', medium: 'orgânico' }
+      if (h === 'duckduckgo' || /(?:^|\.)duckduckgo\.com$/i.test(h)) return { source: 'DuckDuckGo', medium: 'orgânico' }
+      if (h === 'kwai' || /(?:^|\.)kwai\.(?:com|app)$/i.test(h)) return { source: 'Kwai', medium: 'social' }
+      if (h === 'reddit' || h === 'redd.it' || /(?:^|\.)reddit\.com$/i.test(h)) return { source: 'Reddit', medium: 'social' }
+      if (h === 'globo' || /(?:^|\.)globo\.com$/i.test(h)) return { source: 'Globo', medium: 'referência' }
+      if (h === 'uol' || /(?:^|\.)uol\.com\.br$/i.test(h)) return { source: 'UOL', medium: 'referência' }
+      return null
     }
     return check(s) || check(ref)
   }
@@ -153,12 +174,15 @@ async function collect(request: Request, env: Env) {
     const refHost = compactText(event.referrerHost, 253) || null
 
     if (isAuthSource(rawSource)) {
-      rawSource = 'direto'
+      rawSource = 'Direto'
       rawMedium = rawMedium === 'referência' ? 'direto' : rawMedium
-    } else if (isWhatsappOrigin(rawSource, refHost)) {
-      rawSource = 'Whatsapp'
-      if (!rawMedium || rawMedium === 'referência' || rawMedium === 'referral') {
-        rawMedium = 'social'
+    } else {
+      const known = normalizeTrafficSource(rawSource, refHost)
+      if (known) {
+        rawSource = known.source
+        if (!rawMedium || rawMedium === 'referência' || rawMedium === 'referral') {
+          rawMedium = known.medium || 'social'
+        }
       }
     }
 
@@ -240,6 +264,31 @@ async function trackerStatus(id: string, env: Env) {
 function isoDate(value: Date) { return value.toISOString().slice(0, 10) }
 function shiftDate(value: string, days: number) { const date = new Date(`${value}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); return isoDate(date) }
 function validDate(value: string | null) { return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))) }
+
+const SQL_NORMALIZED_SOURCE = `case
+  when lower(source) in ('l.wl.co', 'wl.co', 'wa.me', 'whatsapp', 'api.whatsapp.com', 'web.whatsapp.com') or lower(source) like '%whatsapp.com' then 'WhatsApp'
+  when lower(source) in ('facebook.com', 'm.facebook.com', 'l.facebook.com', 'lm.facebook.com', 'web.facebook.com', 'touch.facebook.com', 'fb.com', 'fb.me', 'facebook') or lower(source) like '%facebook.com' then 'Facebook'
+  when lower(source) in ('instagram.com', 'l.instagram.com', 'm.instagram.com', 'ig', 'ig.me', 'instagram') or lower(source) like '%instagram.com' then 'Instagram'
+  when lower(source) in ('google', 'google.com', 'google.com.br', 'www.google.com') or lower(source) like '%google.com%' then 'Google'
+  when lower(source) in ('tiktok', 'tiktok.com', 'vm.tiktok.com', 'm.tiktok.com') or lower(source) like '%tiktok.com' then 'TikTok'
+  when lower(source) in ('youtube', 'youtube.com', 'youtu.be', 'm.youtube.com') or lower(source) like '%youtube.com' then 'YouTube'
+  when lower(source) in ('t.co', 'twitter', 'twitter.com', 'x.com', 'mobile.twitter.com') then 'X (Twitter)'
+  when lower(source) in ('linkedin', 'linkedin.com', 'lnkd.in', 'm.linkedin.com') then 'LinkedIn'
+  when lower(source) in ('pinterest', 'pinterest.com', 'pin.it', 'br.pinterest.com') then 'Pinterest'
+  when lower(source) in ('telegram', 't.me', 'telegram.org', 'telegram.me', 'web.telegram.org') then 'Telegram'
+  when lower(source) in ('threads', 'threads.net', 'l.threads.net') then 'Threads'
+  when lower(source) in ('mercadolivre', 'mercadolivre.com.br', 'mercadolivre.com', 'mercadolibre.com') then 'Mercado Livre'
+  when lower(source) in ('shopee', 'shopee.com.br', 'shopee.com', 'shp.ee') then 'Shopee'
+  when lower(source) in ('bing', 'bing.com') then 'Bing'
+  when lower(source) in ('yahoo', 'yahoo.com', 'br.yahoo.com') then 'Yahoo'
+  when lower(source) in ('duckduckgo', 'duckduckgo.com') then 'DuckDuckGo'
+  when lower(source) in ('kwai', 'kwai.com', 'kwai.app') then 'Kwai'
+  when lower(source) in ('reddit', 'reddit.com', 'redd.it') then 'Reddit'
+  when lower(source) in ('globo', 'globo.com', 'g1.globo.com', 'ge.globo.com') then 'Globo'
+  when lower(source) in ('uol', 'uol.com.br', 'noticias.uol.com.br') then 'UOL'
+  when lower(source) in ('direto', 'direct', '(direct)', 'none', '') or source is null then 'Direto'
+  else source
+end`
 
 async function analytics(id: string, env: Env, query: URLSearchParams) {
   const safeId = trackerId(id)
@@ -325,11 +374,11 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
         `).bind(safeId, start, end),
     // 1: sources
     env.ANALIZI_EVENTS.prepare(`
-      select coalesce(source, 'direto') as name, sum(page_views) as value
+      select ${SQL_NORMALIZED_SOURCE} as name, sum(page_views) as value
       from daily_sources
       where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
-      group by coalesce(source, 'direto')
-      order by value desc limit 6
+      group by ${SQL_NORMALIZED_SOURCE}
+      order by value desc limit 8
     `).bind(safeId, start, end),
     // 2: pages
     env.ANALIZI_EVENTS.prepare(`
@@ -360,13 +409,13 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     // 4: sourcePages
     env.ANALIZI_EVENTS.prepare(`
       select
-        source,
+        ${SQL_NORMALIZED_SOURCE} as source,
         page_path as path,
         sum(page_views) as views,
         sum(users) as users
       from daily_source_pages
       where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${pageFilterDaily}${sourceFilterDaily}
-      group by source, page_path
+      group by ${SQL_NORMALIZED_SOURCE}, page_path
       order by views desc limit 250
     `).bind(...[safeId, start, end, ...(page ? [page] : []), ...(source ? [source] : [])]),
     // 5: contactDetails
@@ -464,7 +513,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     `).bind(safeId, start, end),
     // 10: filterSources
     env.ANALIZI_EVENTS.prepare(`
-      select distinct coalesce(source, 'direto') as source from daily_sources where tracker_site_id = ? and metric_date >= ? and metric_date <= ? order by source limit 100
+      select distinct ${SQL_NORMALIZED_SOURCE} as source from daily_sources where tracker_site_id = ? and metric_date >= ? and metric_date <= ? order by source limit 100
     `).bind(safeId, start, end),
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
@@ -1016,14 +1065,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         select
           tracker_site_id,
           date(occurred_at) as metric_date,
-          case
-            when lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com' then 'Whatsapp'
-            else coalesce(source, 'direto')
-          end as source,
-          case
-            when (lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com') and coalesce(medium, '') in ('', 'referência', 'referral') then 'social'
-            else coalesce(medium, '')
-          end as medium,
+          ${SQL_NORMALIZED_SOURCE} as source,
+          coalesce(medium, '') as medium,
           coalesce(campaign, '') as campaign,
           count(distinct visitor_id) as users,
           sum(event_name = 'first_visit') as new_users,
@@ -1032,16 +1075,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
         where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at),
-          case
-            when lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com' then 'Whatsapp'
-            else coalesce(source, 'direto')
-          end,
-          case
-            when (lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com') and coalesce(medium, '') in ('', 'referência', 'referral') then 'social'
-            else coalesce(medium, '')
-          end,
-          coalesce(campaign, '')
+        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, coalesce(medium, ''), coalesce(campaign, '')
         on conflict(tracker_site_id, metric_date, source, medium, campaign) do update set
           users = excluded.users,
           new_users = excluded.new_users,
@@ -1105,21 +1139,13 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         select
           tracker_site_id,
           date(occurred_at) as metric_date,
-          case
-            when lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com' then 'Whatsapp'
-            else coalesce(source, 'direto')
-          end as source,
+          ${SQL_NORMALIZED_SOURCE} as source,
           coalesce(page_path, '/') as page_path,
           sum(event_name = 'page_view') as page_views,
           count(distinct visitor_id) as users
         from events
         where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at),
-          case
-            when lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com' then 'Whatsapp'
-            else coalesce(source, 'direto')
-          end,
-          coalesce(page_path, '/')
+        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, coalesce(page_path, '/')
         on conflict(tracker_site_id, metric_date, source, page_path) do update set
           page_views = excluded.page_views,
           users = excluded.users;

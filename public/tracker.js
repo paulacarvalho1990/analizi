@@ -48,10 +48,70 @@
       /(?:auth|login|oauth|accounts)/i.test(hostname)
   }
 
-  const isWhatsappHost = (hostname) => {
-    if (!hostname) return false
-    const h = hostname.toLowerCase().replace(/^www\./, '')
-    return h === 'l.wl.co' || h === 'wl.co' || h === 'wa.me' || h === 'whatsapp' || /(?:^|\.)whatsapp\.com$/i.test(h)
+  const normalizeReferrer = (hostname) => {
+    if (!hostname) return null
+    const h = hostname.toLowerCase().replace(/^www\./, '').trim()
+    if (h === 'l.wl.co' || h === 'wl.co' || h === 'wa.me' || h === 'whatsapp' || /(?:^|\.)whatsapp\.com$/i.test(h)) {
+      return { source: 'WhatsApp', medium: 'social' }
+    }
+    if (h === 'facebook' || h === 'fb.me' || h === 'fb.com' || /(?:^|\.)facebook\.com$/i.test(h)) {
+      return { source: 'Facebook', medium: 'social' }
+    }
+    if (h === 'instagram' || h === 'ig' || h === 'ig.me' || /(?:^|\.)instagram\.com$/i.test(h)) {
+      return { source: 'Instagram', medium: 'social' }
+    }
+    if (h === 'google' || h === 'google-play' || /(?:^|\.)google\.(?:com|com\.br|co\.[a-z]+|[a-z]{2})$/i.test(h)) {
+      return { source: 'Google', medium: 'orgânico' }
+    }
+    if (h === 'tiktok' || /(?:^|\.)tiktok\.com$/i.test(h)) {
+      return { source: 'TikTok', medium: 'social' }
+    }
+    if (h === 'youtube' || h === 'youtu.be' || /(?:^|\.)youtube\.com$/i.test(h)) {
+      return { source: 'YouTube', medium: 'social' }
+    }
+    if (h === 'twitter' || h === 'x' || h === 't.co' || /(?:^|\.)twitter\.com$/i.test(h) || h === 'x.com') {
+      return { source: 'X (Twitter)', medium: 'social' }
+    }
+    if (h === 'linkedin' || h === 'lnkd.in' || /(?:^|\.)linkedin\.com$/i.test(h)) {
+      return { source: 'LinkedIn', medium: 'social' }
+    }
+    if (h === 'pinterest' || h === 'pin.it' || /(?:^|\.)pinterest\.com$/i.test(h)) {
+      return { source: 'Pinterest', medium: 'social' }
+    }
+    if (h === 'telegram' || h === 't.me' || /(?:^|\.)telegram\.(?:org|me)$/i.test(h)) {
+      return { source: 'Telegram', medium: 'social' }
+    }
+    if (h === 'threads' || /(?:^|\.)threads\.net$/i.test(h)) {
+      return { source: 'Threads', medium: 'social' }
+    }
+    if (h === 'mercadolivre' || /(?:^|\.)mercadolivre\.com(?:\.br)?$/i.test(h) || /(?:^|\.)mercadolibre\.com$/i.test(h)) {
+      return { source: 'Mercado Livre', medium: 'referência' }
+    }
+    if (h === 'shopee' || h === 'shp.ee' || /(?:^|\.)shopee\.com(?:\.br)?$/i.test(h)) {
+      return { source: 'Shopee', medium: 'referência' }
+    }
+    if (h === 'bing' || /(?:^|\.)bing\.com$/i.test(h)) {
+      return { source: 'Bing', medium: 'orgânico' }
+    }
+    if (h === 'yahoo' || /(?:^|\.)yahoo\.com(?:\.br)?$/i.test(h)) {
+      return { source: 'Yahoo', medium: 'orgânico' }
+    }
+    if (h === 'duckduckgo' || /(?:^|\.)duckduckgo\.com$/i.test(h)) {
+      return { source: 'DuckDuckGo', medium: 'orgânico' }
+    }
+    if (h === 'kwai' || /(?:^|\.)kwai\.(?:com|app)$/i.test(h)) {
+      return { source: 'Kwai', medium: 'social' }
+    }
+    if (h === 'reddit' || h === 'redd.it' || /(?:^|\.)reddit\.com$/i.test(h)) {
+      return { source: 'Reddit', medium: 'social' }
+    }
+    if (h === 'globo' || /(?:^|\.)globo\.com$/i.test(h)) {
+      return { source: 'Globo', medium: 'referência' }
+    }
+    if (h === 'uol' || /(?:^|\.)uol\.com\.br$/i.test(h)) {
+      return { source: 'UOL', medium: 'referência' }
+    }
+    return null
   }
 
   const attribution = () => {
@@ -79,9 +139,10 @@
           const refHost = new URL(document.referrer).hostname.replace(/^www\./, '')
           // Ignora se for o próprio domínio do site ou provedor de autenticação (OAuth callback)
           if (refHost && refHost !== location.hostname.replace(/^www\./, '') && !isAuthReferrer(refHost)) {
-            if (isWhatsappHost(refHost)) {
-              source = 'Whatsapp'
-              medium = medium || 'social'
+            const known = normalizeReferrer(refHost)
+            if (known) {
+              source = known.source
+              medium = medium || known.medium
             } else {
               source = refHost
               medium = medium || 'referência'
@@ -89,9 +150,12 @@
           }
         } catch {}
       }
-    } else if (isWhatsappHost(source)) {
-      source = 'Whatsapp'
-      medium = medium || 'social'
+    } else {
+      const known = normalizeReferrer(source)
+      if (known) {
+        source = known.source
+        medium = medium || known.medium
+      }
     }
 
     if (!source) {

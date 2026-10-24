@@ -13,9 +13,159 @@ const ITEMS_PER_PAGE = 25
 function TablePagination({ page, total, setPage }: { page: number, total: number, setPage: (page: number) => void }) { const pages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)); if (total <= ITEMS_PER_PAGE) return null; return <div className="table-pagination"><span>Mostrando {page * ITEMS_PER_PAGE + 1}–{Math.min((page + 1) * ITEMS_PER_PAGE, total)} de {total}</span><div><button disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</button><b>{page + 1} de {pages}</b><button disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Próxima</button></div></div> }
 function PageChart({ pages }: { pages: AnalyticsData['pages'] }) { const rows = pages.slice(0, 8).map(item => ({ name: item.path === '/' ? 'Início' : item.path, views: Number(item.views) })); return <article className="chart-card"><div className="section-heading"><div><h3>Visualizações por página</h3><p>As páginas mais acessadas no período</p></div></div><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={rows}><defs><linearGradient id="pageBarGradient" x1="0" x2="1"><stop offset="0" stopColor="#ff3cac"/><stop offset="1" stopColor="#ff8a3d"/></linearGradient></defs><CartesianGrid vertical={false} stroke="#E8EFEC"/><XAxis dataKey="name" axisLine={false} tickLine={false}/><YAxis allowDecimals={false} axisLine={false} tickLine={false}/><Tooltip/><Bar dataKey="views" name="Visualizações" fill="url(#pageBarGradient)" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div></article> }
 function MetricChart({ analytics }: { analytics: AnalyticsData | null }) { const rows = (analytics?.daily ?? []).map(item => ({ ...item, label: item.date.slice(5).split('-').reverse().join('/') })); return <article className="chart-card"><div className="section-heading"><div><h3>Visualizações ao longo do período</h3><p>{analytics?.periodDays ?? 7} dias selecionados</p></div></div><div className="chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={rows}><defs><linearGradient id="realVisits" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#ff3cac" stopOpacity=".38"/><stop offset=".55" stopColor="#ff8a3d" stopOpacity=".16"/><stop offset="1" stopColor="#ff8a3d" stopOpacity="0"/></linearGradient></defs><CartesianGrid vertical={false} stroke="#E8EFEC"/><XAxis dataKey="label" axisLine={false} tickLine={false}/><YAxis hide/><Tooltip/><Area type="monotone" dataKey="pageViews" name="Visualizações" stroke="#ff3cac" strokeWidth={3} fill="url(#realVisits)" /></AreaChart></ResponsiveContainer></div></article> }
-function OriginChart({ analytics }: { analytics: AnalyticsData | null }) { return <article className="chart-card"><div className="section-heading"><div><h3>Origens dos acessos</h3><p>De onde as pessoas chegaram ao site</p></div></div><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={analytics?.sources ?? []} layout="vertical" margin={{ left: 24, right: 12 }}><defs><linearGradient id="originBarGradient" x1="0" x2="1"><stop offset="0" stopColor="#ff3cac"/><stop offset="1" stopColor="#ff8a3d"/></linearGradient></defs><CartesianGrid horizontal={false} stroke="#E8EFEC"/><XAxis type="number" hide/><YAxis type="category" dataKey="name" axisLine={false} tickLine={false} width={72}/><Tooltip/><Bar dataKey="value" name="Acessos" fill="url(#originBarGradient)" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer></div></article> }
+
+export function normalizeOriginName(raw?: string): string {
+  if (!raw) return 'Direto';
+  const s = raw.toLowerCase().trim().replace(/^www\./, '');
+  if (s === 'direto' || s === '(direct)' || s === 'direct' || s === 'none' || s === 'null' || s === '') return 'Direto';
+
+  // 1. WhatsApp
+  if (s === 'l.wl.co' || s === 'wl.co' || s === 'wa.me' || s === 'whatsapp' || /(?:^|\.)whatsapp\.com$/i.test(s)) return 'WhatsApp';
+  // 2. Facebook
+  if (s === 'facebook' || s === 'fb.me' || s === 'fb.com' || /(?:^|\.)facebook\.com$/i.test(s)) return 'Facebook';
+  // 3. Instagram
+  if (s === 'instagram' || s === 'ig' || s === 'ig.me' || /(?:^|\.)instagram\.com$/i.test(s)) return 'Instagram';
+  // 4. Google
+  if (s === 'google' || s === 'google-play' || /(?:^|\.)google\.(?:com|com\.br|co\.[a-z]+|[a-z]{2})$/i.test(s)) return 'Google';
+  // 5. TikTok
+  if (s === 'tiktok' || /(?:^|\.)tiktok\.com$/i.test(s)) return 'TikTok';
+  // 6. YouTube
+  if (s === 'youtube' || s === 'youtu.be' || /(?:^|\.)youtube\.com$/i.test(s)) return 'YouTube';
+  // 7. X (Twitter)
+  if (s === 'twitter' || s === 'x' || s === 't.co' || /(?:^|\.)twitter\.com$/i.test(s) || s === 'x.com') return 'X (Twitter)';
+  // 8. LinkedIn
+  if (s === 'linkedin' || s === 'lnkd.in' || /(?:^|\.)linkedin\.com$/i.test(s)) return 'LinkedIn';
+  // 9. Pinterest
+  if (s === 'pinterest' || s === 'pin.it' || /(?:^|\.)pinterest\.com$/i.test(s)) return 'Pinterest';
+  // 10. Telegram
+  if (s === 'telegram' || s === 't.me' || /(?:^|\.)telegram\.(?:org|me)$/i.test(s)) return 'Telegram';
+  // 11. Threads
+  if (s === 'threads' || /(?:^|\.)threads\.net$/i.test(s)) return 'Threads';
+  // 12. Mercado Livre
+  if (s === 'mercadolivre' || /(?:^|\.)mercadolivre\.com(?:\.br)?$/i.test(s) || /(?:^|\.)mercadolibre\.com$/i.test(s)) return 'Mercado Livre';
+  // 13. Shopee
+  if (s === 'shopee' || s === 'shp.ee' || /(?:^|\.)shopee\.com(?:\.br)?$/i.test(s)) return 'Shopee';
+  // 14. Bing
+  if (s === 'bing' || /(?:^|\.)bing\.com$/i.test(s)) return 'Bing';
+  // 15. Yahoo
+  if (s === 'yahoo' || /(?:^|\.)yahoo\.com(?:\.br)?$/i.test(s)) return 'Yahoo';
+  // 16. DuckDuckGo
+  if (s === 'duckduckgo' || /(?:^|\.)duckduckgo\.com$/i.test(s)) return 'DuckDuckGo';
+  // 17. Kwai
+  if (s === 'kwai' || /(?:^|\.)kwai\.(?:com|app)$/i.test(s)) return 'Kwai';
+  // 18. Reddit
+  if (s === 'reddit' || s === 'redd.it' || /(?:^|\.)reddit\.com$/i.test(s)) return 'Reddit';
+  // 19. Globo
+  if (s === 'globo' || /(?:^|\.)globo\.com$/i.test(s)) return 'Globo';
+  // 20. UOL
+  if (s === 'uol' || /(?:^|\.)uol\.com\.br$/i.test(s)) return 'UOL';
+
+  return raw;
+}
+
+function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
+  const aggregatedSources = (analytics?.sources ?? []).reduce<Array<{ name: string; value: number }>>((acc, curr) => {
+    const normName = normalizeOriginName(curr.name);
+    const val = Number(curr.value || 0);
+    const existing = acc.find(item => item.name === normName);
+    if (existing) {
+      existing.value += val;
+    } else {
+      acc.push({ name: normName, value: val });
+    }
+    return acc;
+  }, []).sort((a, b) => b.value - a.value).slice(0, 7);
+
+  return (
+    <article className="chart-card">
+      <div className="section-heading">
+        <div>
+          <h3>Origens dos acessos</h3>
+          <p>De onde as pessoas chegaram ao site</p>
+        </div>
+      </div>
+      <div className="chart origin-chart-container">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={aggregatedSources} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 4 }}>
+            <defs>
+              <linearGradient id="originBarGradient" x1="0" x2="1">
+                <stop offset="0" stopColor="#ff3cac"/>
+                <stop offset="1" stopColor="#ff8a3d"/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid horizontal={false} stroke="#E8EFEC"/>
+            <XAxis type="number" hide/>
+            <YAxis
+              type="category"
+              dataKey="name"
+              axisLine={false}
+              tickLine={false}
+              width={105}
+              tick={{ fontSize: 11, fill: 'var(--muted-foreground, #59766e)', fontWeight: 600 }}
+            />
+            <Tooltip
+              formatter={(val?: any) => [`${val ?? 0} acessos`, 'Total']}
+              contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e1ebe8' }}
+            />
+            <Bar dataKey="value" name="Acessos" fill="url(#originBarGradient)" radius={[0, 6, 6, 0]} barSize={16} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </article>
+  );
+}
+
 function Dashboard() { const analytics = useAnalytics(); const [dailyPage, setDailyPage] = useState(0); const t = analytics?.totals; const p = analytics?.previousTotals; const daily = analytics?.daily ?? []; const visibleDays = daily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE); const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—'; const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI'; return <><PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} /><AnalyticsFilters analytics={analytics}/><div className="period"><span className="source-badge"><span className="source-badge-dot" />{badge}</span></div><section className="metrics"><MetricCard title="Visualizações de página" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} /><MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} /><MetricCard title="Tempo de atenção" value={attention} note="média por visita" /><MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} /><MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} /></section><div className="dashboard-split"><MetricChart analytics={analytics} /><article className="table-card compact-table daily-table"><div className="section-heading"><div><h3>Métricas por dia</h3><p>Atividade diária</p></div></div><div className="daily-head"><span>Data</span><span>Views</span><span>Usuários</span><span>Contatos</span></div>{visibleDays.map(day => <div className="daily-row" key={day.date}><span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span><span>{day.pageViews}</span><span>{day.users}</span><span>{day.contacts}</span></div>)}{!daily.length && <p className="empty-state">Ainda não recebemos acessos neste período.</p>}<TablePagination page={dailyPage} total={daily.length} setPage={setDailyPage}/></article></div></> }
-function Audience() { const analytics = useAnalytics(); const [sourcePage, setSourcePage] = useState(0); const sourcePages = analytics?.sourcePages ?? []; const p = analytics?.previousTotals; const visibleSources = sourcePages.slice(sourcePage * ITEMS_PER_PAGE, (sourcePage + 1) * ITEMS_PER_PAGE); const topSource = analytics?.sources?.[0]; const topShare = analytics?.totals?.pageViews && topSource ? `${Math.round((Number(topSource.value) / Number(analytics.totals.pageViews)) * 100)}%` : '—'; return <><PageHeader title="Seu público" subtitle="Entenda de onde vêm as pessoas que chegam ao seu site." /><AnalyticsFilters analytics={analytics}/><section className="metrics"><MetricCard title="Sessões" value={String(analytics?.totals.sessions ?? '—')} {...comparison(analytics?.totals.sessions, p?.sessions)} /><MetricCard title="Usuários" value={String(analytics?.totals.users ?? '—')} {...comparison(analytics?.totals.users, p?.users)} /><MetricCard title="Novos usuários" value={String(analytics?.totals.newUsers ?? '—')} {...comparison(analytics?.totals.newUsers, p?.newUsers)} /><MetricCard title="Origem principal" value={topSource?.name || '—'} note={topSource ? `${topShare} do tráfego` : 'sem dados'} /></section><div className="audience-split"><OriginChart analytics={analytics}/><article className="table-card compact-table source-pages-table"><div className="section-heading"><div><h3>Origem por página</h3><p>Onde o tráfego de cada canal desembarcou</p></div></div><div className="source-pages-head"><span>Canal</span><span>Página de destino</span><span>Views</span><span>Usuários</span></div>{visibleSources.map(item => <div className="source-pages-row" key={`${item.source}-${item.path}`}><span><b>{item.source}</b></span><span>{item.path}</span><span>{item.views}</span><span>{item.users}</span></div>)}{!sourcePages.length && <p className="empty-state">Ainda não recebemos dados de origens de tráfego.</p>}<TablePagination page={sourcePage} total={sourcePages.length} setPage={setSourcePage}/></article></div></> }
+
+function Audience() {
+  const analytics = useAnalytics();
+  const [sourcePage, setSourcePage] = useState(0);
+  const sourcePages = analytics?.sourcePages ?? [];
+  const p = analytics?.previousTotals;
+  const visibleSources = sourcePages.slice(sourcePage * ITEMS_PER_PAGE, (sourcePage + 1) * ITEMS_PER_PAGE);
+  const topSource = analytics?.sources?.[0];
+  const topShare = analytics?.totals?.pageViews && topSource ? `${Math.round((Number(topSource.value) / Number(analytics.totals.pageViews)) * 100)}%` : '—';
+
+  return (
+    <>
+      <PageHeader title="Seu público" subtitle="Entenda de onde vêm as pessoas que chegam ao seu site." />
+      <AnalyticsFilters analytics={analytics}/>
+      <section className="metrics">
+        <MetricCard title="Sessões" value={String(analytics?.totals.sessions ?? '—')} {...comparison(analytics?.totals.sessions, p?.sessions)} />
+        <MetricCard title="Usuários" value={String(analytics?.totals.users ?? '—')} {...comparison(analytics?.totals.users, p?.users)} />
+        <MetricCard title="Novos usuários" value={String(analytics?.totals.newUsers ?? '—')} {...comparison(analytics?.totals.newUsers, p?.newUsers)} />
+        <MetricCard title="Origem principal" value={topSource?.name ? normalizeOriginName(topSource.name) : '—'} note={topSource ? `${topShare} do tráfego` : 'sem dados'} />
+      </section>
+      <div className="audience-split">
+        <OriginChart analytics={analytics}/>
+        <article className="table-card compact-table source-pages-table">
+          <div className="section-heading">
+            <div>
+              <h3>Origem por página</h3>
+              <p>Onde o tráfego de cada canal desembarcou</p>
+            </div>
+          </div>
+          <div className="source-pages-head">
+            <span>Canal</span>
+            <span>Página de destino</span>
+            <span>Views</span>
+            <span>Usuários</span>
+          </div>
+          {visibleSources.map(item => (
+            <div className="source-pages-row" key={`${item.source}-${item.path}`}>
+              <span><b>{normalizeOriginName(item.source)}</b></span>
+              <span>{item.path}</span>
+              <span>{item.views}</span>
+              <span>{item.users}</span>
+            </div>
+          ))}
+          {!sourcePages.length && <p className="empty-state">Ainda não recebemos dados de origens de tráfego.</p>}
+          <TablePagination page={sourcePage} total={sourcePages.length} setPage={setSourcePage}/>
+        </article>
+      </div>
+    </>
+  );
+}
 function isLeadClick(item: { intent?: string, isContactLead?: number, label: string, destination?: string }): boolean {
   if (item.isContactLead === 1) return true;
   if (item.intent && item.intent !== 'geral' && item.intent !== 'outro') return true;
@@ -463,7 +613,8 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
         Origem
         <select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}>
           <option value="">Todas as origens</option>
-          {(analytics?.filterSources ?? []).map(item => <option key={item.source} value={item.source}>{item.source}</option>)}
+          {Array.from(new Set((analytics?.filterSources ?? []).map(item => normalizeOriginName(item.source))))
+            .map(sourceName => <option key={sourceName} value={sourceName}>{sourceName}</option>)}
         </select>
       </label>
       <div className="filter-presets">
