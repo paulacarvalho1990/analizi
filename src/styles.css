@@ -413,3 +413,27 @@ body { background:var(--background); color:var(--foreground); }
 [data-theme="dark"] .insight-ai-box.projection p {
   color: #E2E8F0;
 }
+
+/* Card de métrica com subtítulo / caminho de página */
+.metric-card strong.has-subtitle {
+  font-size: 18px;
+  line-height: 1.25;
+  margin: 9px 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.metric-subtitle {
+  display: block;
+  font-size: 11px;
+  color: #7a928b;
+  margin-bottom: 7px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-theme="dark"] .metric-subtitle {
+  color: var(--muted-foreground);
+}
+
