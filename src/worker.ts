@@ -478,10 +478,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     sourceKind: 'consolidated'
   }
 
-  // Permite cache de 1 hora no navegador e borda para dados já consolidados de D-1
-  return json(responseBody, 200, {
-    'cache-control': 'public, max-age=3600, s-maxage=3600'
-  })
+  return json(responseBody, 200)
 }
 
 export interface AIInsight {
