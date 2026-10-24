@@ -10,103 +10,103 @@ export interface MetricDefinition {
 
 export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
   'Sessões': {
-    caption: 'O NÚMERO DE VISITAS QUE SEU SITE RECEBEU',
+    caption: 'O número de visitas que seu site recebeu',
     what: 'Período contínuo de navegação de um visitante no site até 30 minutos de inatividade.',
     why: 'Cada visita representa uma oportunidade de negócio para apresentar sua marca ou converter.',
     tip: 'Invista em conteúdos atrativos e campanhas com links diretos para aumentar as visitas.'
   },
   'Visualizações de páginas': {
-    caption: 'TOTAL DE PÁGINAS ABERTAS PELOS VISITANTES',
+    caption: 'Total de páginas abertas pelos visitantes',
     what: 'Quantidade total de páginas carregadas e vistas no período, somando múltiplos acessos.',
     why: 'Demonstra o volume total de interesse e consumo de conteúdo no seu site.',
     tip: 'Crie links internos entre páginas para incentivar os visitantes a explorar mais áreas.'
   },
   'Visualizações de página': {
-    caption: 'TOTAL DE PÁGINAS ABERTAS PELOS VISITANTES',
+    caption: 'Total de páginas abertas pelos visitantes',
     what: 'Quantidade total de páginas carregadas e vistas no período, somando múltiplos acessos.',
     why: 'Demonstra o volume total de interesse e consumo de conteúdo no seu site.',
     tip: 'Crie links internos entre páginas para incentivar os visitantes a explorar mais áreas.'
   },
   'Visualizações': {
-    caption: 'TOTAL DE PÁGINAS ABERTAS PELOS VISITANTES',
+    caption: 'Total de páginas abertas pelos visitantes',
     what: 'Quantidade total de páginas carregadas e vistas no período, somando múltiplos acessos.',
     why: 'Demonstra o volume total de interesse e consumo de conteúdo no seu site.',
     tip: 'Crie links internos entre páginas para incentivar os visitantes a explorar mais áreas.'
   },
   'Usuários': {
-    caption: 'PESSOAS ÚNICAS QUE ACESSARAM SEU SITE',
+    caption: 'Pessoas únicas que acessaram seu site',
     what: 'Indivíduos únicos identificados que navegaram no site no período (sem duplicar repetições).',
     why: 'Mede o alcance real em número de pessoas que conhecem ou interagem com seu negócio.',
     tip: 'Trabalhe em parcerias, SEO e redes sociais para atrair novos visitantes únicos.'
   },
   'Novos usuários': {
-    caption: 'VISITANTES QUE ENTRARAM PELA PRIMEIRA VEZ',
+    caption: 'Visitantes que entraram pela primeira vez',
     what: 'Visitantes que nunca haviam acessado seu site antes da data atual.',
     why: 'Indica a capacidade do seu negócio de renovar público e conquistar novos clientes.',
     tip: 'Avalie suas campanhas pagas e orgânicas para garantir atração constante de novos visitantes.'
   },
   'Tempo de atenção': {
-    caption: 'TEMPO MÉDIO QUE O VISITANTE PASSOU NAVEGANDO',
+    caption: 'Tempo médio que o visitante passou navegando',
     what: 'Duração média em que os visitantes permaneceram com o site aberto e interagindo ativamente.',
     why: 'Visitantes que passam mais tempo prestando atenção têm muito mais chance de comprar.',
     tip: 'Torne o conteúdo fácil de ler, com títulos claros e respostas rápidas ao que o cliente busca.'
   },
   'Contatos iniciados': {
-    caption: 'VISITANTES QUE CLICARAM PARA FALAR OU CADASTRAR',
+    caption: 'Visitantes que clicaram para falar ou cadastrar',
     what: 'Soma de cliques em WhatsApp, formulários, e-mails, telefones ou botões de lead no site.',
     why: 'É a métrica comercial mais importante: indica quantas pessoas quiseram virar clientes.',
     tip: 'Mantenha botões de contato destacados e visíveis em todas as páginas importantes.'
   },
   'WhatsApp': {
-    caption: 'CLIQUES DIRETOS NO SEU BOTÃO DO WHATSAPP',
+    caption: 'Cliques diretos no seu botão do WhatsApp',
     what: 'Total de vezes que alguém clicou para iniciar conversa com você pelo WhatsApp.',
     why: 'O WhatsApp é o canal mais rápido e com maior taxa de fechamento de negócios.',
     tip: 'Mantenha um botão flutuante e atenda rapidamente para aproveitar o momento de interesse.'
   },
   'Cadastros': {
-    caption: 'FORMULÁRIOS DE INSCRIÇÃO OU LEADS RECEBIDOS',
+    caption: 'Formulários de inscrição ou leads recebidos',
     what: 'Pessoas que enviaram dados de cadastro, inscrição ou pedido de orçamento pelo site.',
     why: 'Constrói sua base própria de contatos e potenciais clientes para atendimento posterior.',
     tip: 'Peça apenas as informações indispensáveis para não afastar quem tem pressa.'
   },
   'Logins': {
-    caption: 'ACESSOS DE USUÁRIOS NA ÁREA RESTRITA',
+    caption: 'Acessos de usuários na área restrita',
     what: 'Contagem de acessos autenticados e entradas na área do cliente ou plataforma.',
     why: 'Mede o engajamento e a frequência de uso de clientes que já compraram ou usam o sistema.',
     tip: 'Facilite o botão de login no cabeçalho superior para que o cliente acesse em 1 clique.'
   },
   'Taxa de contato': {
-    caption: 'PERCENTUAL DE VISITAS QUE GERARAM CONTATO',
+    caption: 'Percentual de visitas que geraram contato',
     what: 'Porcentagem de sessões que resultaram em clique de contato ou formulário enviado.',
     why: 'Indica a eficiência do seu site em converter visitantes curiosos em leads quentes.',
     tip: 'Se estiver abaixo de 2%, reforce depoimentos, clareza da oferta e garantias.'
   },
   'Taxa de conversão': {
-    caption: 'PERCENTUAL DE VISITAS QUE GERARAM CONTATO',
+    caption: 'Percentual de visitas que geraram contato',
     what: 'Porcentagem das visitas totais que completaram uma ação de contato ou cadastro.',
     why: 'Mede o poder de persuasão do seu site para transformar visitas em oportunidades.',
     tip: 'Torne a oferta irresistível e reduza o número de passos até o contato.'
   },
   'Origem principal': {
-    caption: 'CANAL DE ONDE CHEGOU A MAIOR PARTE DO PÚBLICO',
+    caption: 'Canal de onde chegou a maior parte do público',
     what: 'Canal de divulgação que trouxe o maior volume absoluto de visitantes para o site.',
     why: 'Mostra onde seus esforços de marketing estão dando mais retorno financeiro e tráfego.',
     tip: 'Invista ainda mais no canal vencedor e teste novas abordagens nos canais menores.'
   },
   'Páginas acompanhadas': {
-    caption: 'TOTAL DE LINKS DIFERENTES ACESSADOS NO SITE',
+    caption: 'Total de links diferentes acessados no site',
     what: 'Quantidade de URLs distintas do site que tiveram pelo menos uma visualização no período.',
     why: 'Mapeia a diversidade de seções que seu público está conseguindo encontrar e navegar.',
     tip: 'Páginas esquecidas devem ser linkadas na página inicial ou no menu de navegação.'
   },
   'Página mais vista': {
-    caption: 'A PÁGINA COM MAIOR INTERESSE E AUDIÊNCIA',
+    caption: 'A página com maior interesse e audiência',
     what: 'A página específica do seu site que recebeu a maior fatia de acessos de todo o período.',
     why: 'É a vitrine principal do seu negócio: quem entra no seu site passa por ela.',
     tip: 'Garanta carregamento veloz, informações atualizadas e chamadas de WhatsApp bem visíveis.'
   },
   'Taxa média de saída': {
-    caption: 'VISITANTES QUE SAÍRAM SEM INTERAGIR NO SITE',
+    caption: 'Visitantes que saíram sem interagir no site',
     what: 'Porcentagem de visualizações em que o visitante encerrou a navegação sem clicar em nada.',
     why: 'Quanto menor, melhor! Taxa de saída alta pode significar que a página não agradou.',
     tip: 'Coloque a informação mais importante no topo da página e dê uma opção clara de próximo passo.'
