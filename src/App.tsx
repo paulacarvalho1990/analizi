@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Lightbulb, RefreshCw, Copy, ExternalLink, Globe2, Link2, MoreHorizontal, MousePointerClick, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Lightbulb, Copy, ExternalLink, Globe2, Link2, MoreHorizontal, MousePointerClick, ShieldCheck, Sparkles } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard } from './components/Metrics'
@@ -174,7 +174,7 @@ function Insights() {
     });
   };
 
-  const fetchInsights = async (force = false) => {
+  const fetchInsights = async () => {
     if (!analytics || !currentSite) return;
     setLoadingAI(true);
     try {
@@ -183,7 +183,6 @@ function Insights() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           trackerSiteId: currentSite.tracker_site_id,
-          forceRefresh: force,
           business: {
             name: currentBusiness?.name,
             segment: currentBusiness?.segment,
@@ -225,36 +224,24 @@ function Insights() {
 
   useEffect(() => {
     if (analytics && currentSite) {
-      fetchInsights(false);
+      fetchInsights();
     }
-  }, [currentSite?.id, analytics?.periodDays, analytics?.totals?.pageViews]);
+  }, [currentSite?.id]);
 
   return (
     <>
       <div className="insights-header-bar">
         <PageHeader
           title="Insights & Recomendações"
-          subtitle={`Diagnósticos inteligentes baseados no comportamento do seu site (${scopeLabel}).`}
+          subtitle={`Diagnósticos inteligentes consolidados semanalmente para seu site (${scopeLabel}).`}
         />
         <div className="insights-actions">
           <span className="insights-model-badge" title="Inteligência do Analizi">
             <Sparkles size={13} /> {modelLabel || 'IZI INTELLIGENCE'}
           </span>
-          {cachedNotice && (
-            <span className="insights-cycle-badge" title="Análise consolidada para a semana atual">
-              Ciclo Semanal
-            </span>
-          )}
-          <Button
-            variant="secondary"
-            className="insights-refresh-btn"
-            disabled={loadingAI}
-            onClick={() => fetchInsights(true)}
-            title="Recalcular com os dados mais recentes"
-          >
-            <RefreshCw size={15} className={loadingAI ? 'spin' : ''} />
-            {loadingAI ? 'Analisando...' : 'Atualizar agora'}
-          </Button>
+          <span className="insights-cycle-badge" title="Insights gerados a cada 7 dias às segundas-feiras">
+            Ciclo de 7 dias
+          </span>
         </div>
       </div>
 
