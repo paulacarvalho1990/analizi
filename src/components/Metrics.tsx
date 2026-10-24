@@ -15,6 +15,12 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     why: 'Cada visita representa uma oportunidade de negócio para apresentar sua marca ou converter.',
     tip: 'Invista em conteúdos atrativos e campanhas com links diretos para aumentar as visitas.'
   },
+  'Visualizações de páginas': {
+    caption: 'TOTAL DE PÁGINAS ABERTAS PELOS VISITANTES',
+    what: 'Quantidade total de páginas carregadas e vistas no período, somando múltiplos acessos.',
+    why: 'Demonstra o volume total de interesse e consumo de conteúdo no seu site.',
+    tip: 'Crie links internos entre páginas para incentivar os visitantes a explorar mais áreas.'
+  },
   'Visualizações de página': {
     caption: 'TOTAL DE PÁGINAS ABERTAS PELOS VISITANTES',
     what: 'Quantidade total de páginas carregadas e vistas no período, somando múltiplos acessos.',
@@ -22,10 +28,10 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     tip: 'Crie links internos entre páginas para incentivar os visitantes a explorar mais áreas.'
   },
   'Visualizações': {
-    caption: 'TOTAL DE PÁGINAS ABERTAS NO PERÍODO',
-    what: 'Número total de vezes que páginas do seu site foram carregadas.',
-    why: 'Reflete a audiência agregada das suas páginas.',
-    tip: 'Compare com a quantidade de usuários para ver a média de páginas por visita.'
+    caption: 'TOTAL DE PÁGINAS ABERTAS PELOS VISITANTES',
+    what: 'Quantidade total de páginas carregadas e vistas no período, somando múltiplos acessos.',
+    why: 'Demonstra o volume total de interesse e consumo de conteúdo no seu site.',
+    tip: 'Crie links internos entre páginas para incentivar os visitantes a explorar mais áreas.'
   },
   'Usuários': {
     caption: 'PESSOAS ÚNICAS QUE ACESSARAM SEU SITE',
