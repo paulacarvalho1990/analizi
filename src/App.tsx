@@ -46,7 +46,7 @@ function PageChart({ pages }: { pages: AnalyticsData['pages'] }) {
               </div>
             </div>
           </div>
-          <p className="chart-header-caption">RANKING DAS PÁGINAS COM MAIOR TRÁFEGO PARA ENTENDER QUAIS CONTEÚDOS ATRAEM MAIS VISITANTES</p>
+          <p className="chart-header-caption">Ranking das páginas com maior tráfego para entender quais conteúdos atraem mais visitantes</p>
         </div>
       </div>
       <div className="chart">
@@ -135,7 +135,7 @@ function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
               </div>
             </div>
           </div>
-          <p className="chart-header-caption">FLUXO DIÁRIO DE ACESSOS PARA IDENTIFICAR DIAS DE MAIOR MOVIMENTO E TENDÊNCIA DE CRESCIMENTO</p>
+          <p className="chart-header-caption">Fluxo diário de acessos para identificar dias de maior movimento e tendência de crescimento</p>
         </div>
       </div>
       <div className="chart">
@@ -300,7 +300,7 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
               </div>
             </div>
           </div>
-          <p className="chart-header-caption">CANAIS E PLATAFORMAS DE ONDE SEU PÚBLICO CHEGOU AO SITE (GOOGLE, REDES SOCIAIS, DIRETO)</p>
+          <p className="chart-header-caption">Canais e plataformas de onde seu público chegou ao site (Google, redes sociais, direto)</p>
         </div>
       </div>
       <div className="chart origin-chart-container">
