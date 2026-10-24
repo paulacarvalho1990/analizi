@@ -1251,6 +1251,35 @@ body { background:var(--background); color:var(--foreground); }
   to { transform: rotate(360deg); }
 }
 
+/* Padronização de Cabeçalhos de Página (Template Heatmap) */
+.page-header .eyebrow,
+.source-header .eyebrow {
+  color: #ff3cac;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  display: inline-block;
+  margin-bottom: 4px;
+}
+
+.page-header h1,
+.source-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.page-header .subtitle,
+.source-header .subtitle {
+  color: var(--muted-foreground, #64748b);
+  font-size: 14px;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+
 
 
 
