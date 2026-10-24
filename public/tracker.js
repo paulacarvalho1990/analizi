@@ -190,11 +190,117 @@
   if (isFirstVisit) send('first_visit')
   send('page_view')
 
+  // --- Heatmap Econômico: 1. Extração Estrutural de Layout (Placeholders / Wireframe) ---
+  const layoutSentKey = `analizi:${siteId}:layout:${location.pathname}`
+  const captureLayout = () => {
+    if (get(session, layoutSentKey)) return
+    try {
+      const docW = Math.max(document.documentElement.scrollWidth, window.innerWidth || 0)
+      const docH = Math.max(document.documentElement.scrollHeight, window.innerHeight || 0)
+      if (docH <= 0 || docW <= 0) return
+
+      // Seleciona elementos estruturais e blocos visuais chave
+      const selectors = 'header, footer, nav, main, section, article, h1, h2, h3, button, a, img, video, form, [role="button"]'
+      const nodes = [...document.querySelectorAll(selectors)]
+      const blocks = []
+
+      for (const el of nodes) {
+        if (!(el instanceof HTMLElement)) continue
+        const rect = el.getBoundingClientRect()
+        // Ignora elementos invisíveis ou minúsculos
+        if (rect.width < 15 || rect.height < 15) continue
+        const style = window.getComputedStyle(el)
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
+
+        const top = Math.round(rect.top + window.scrollY)
+        const left = Math.round(rect.left + window.scrollX)
+        const width = Math.round(rect.width)
+        const height = Math.round(rect.height)
+
+        let type = el.tagName.toLowerCase()
+        if (type === 'a') type = el.querySelector('img') ? 'image-link' : 'link'
+        else if (type.startsWith('h')) type = 'heading'
+        else if (type === 'button' || el.getAttribute('role') === 'button') type = 'button'
+        else if (type === 'img') type = 'image'
+        else if (type === 'video') type = 'video'
+        else if (type === 'form') type = 'form'
+        else if (['header', 'footer', 'nav', 'section', 'article', 'main'].includes(type)) type = 'section'
+
+        const label = truncate(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 60)
+
+        blocks.push({
+          type,
+          top,
+          left,
+          width,
+          height,
+          label
+        })
+
+        if (blocks.length >= 120) break // Limite seguro para manter payload minúsculo
+      }
+
+      const layoutData = {
+        viewport_width: window.innerWidth,
+        viewport_height: window.innerHeight,
+        page_height: docH,
+        blocks
+      }
+
+      send('page_layout', { layout: layoutData })
+      set(session, layoutSentKey, '1')
+    } catch {}
+  }
+
+  if (document.readyState === 'complete') {
+    setTimeout(captureLayout, 1500)
+  } else {
+    window.addEventListener('load', () => setTimeout(captureLayout, 1500))
+  }
+
+  // --- Heatmap Econômico: 2. Monitoramento de Scroll Depth (Zero tráfego durante o scroll) ---
+  let maxScrollPct = 0
+  const updateScrollDepth = () => {
+    try {
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0
+      const winH = window.innerHeight || 0
+      const docH = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight || 1)
+      const currentPct = Math.min(100, Math.round(((scrollY + winH) / docH) * 100))
+      if (currentPct > maxScrollPct) {
+        maxScrollPct = currentPct
+      }
+    } catch {}
+  }
+
+  window.addEventListener('scroll', updateScrollDepth, { passive: true })
+  updateScrollDepth()
+
+  const sendScrollDepth = () => {
+    if (maxScrollPct <= 0) return
+    const brackets = []
+    if (maxScrollPct >= 25) brackets.push('25%')
+    if (maxScrollPct >= 50) brackets.push('50%')
+    if (maxScrollPct >= 75) brackets.push('75%')
+    if (maxScrollPct >= 95) brackets.push('100%')
+
+    send('scroll_depth', {
+      max_percentage: maxScrollPct,
+      depth_brackets: brackets
+    })
+    maxScrollPct = 0 // Evita duplo envio
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') sendScrollDepth()
+  })
+  window.addEventListener('pagehide', sendScrollDepth)
+
+  // --- Heatmap Econômico: 3. Cliques Estruturais (Sem Loose Clicks) com Coordenadas ---
   document.addEventListener('click', (event) => {
-    const target = event.target instanceof Element ? event.target.closest('a, button, [role="button"], input[type="button"], input[type="submit"]') : null
+    const target = event.target instanceof Element ? event.target.closest('a, button, [role="button"], input[type="button"], input[type="submit"], img, video') : null
     if (!target) return
     const href = target instanceof HTMLAnchorElement ? target.href : ''
-    const label = truncate(target.getAttribute('aria-label') || target.textContent || target.getAttribute('value') || '', 160)
+    const label = truncate(target.getAttribute('aria-label') || target.textContent || target.getAttribute('value') || target.getAttribute('alt') || '', 160)
     const isWhatsapp = /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com)/i.test(href)
     const isPhone = /^tel:/i.test(href)
     const isEmail = /^mailto:/i.test(href)
@@ -202,8 +308,27 @@
     const isLogin = /\b(entrar|acessar\s*(minha\s*)?conta|fazer\s*login|login)\b/i.test(label)
     const hasLeadIntent = /\b(fale\s*(com|conosco)|entre\s*em\s*contato|contato|whats(?:app)?|agend[ea]|marc[ae]\s*(uma\s*)?(consulta|reuni[aã]o)|solicite|pedir|pe[cç]a\s*(um\s*)?or[cç]amento|or[cç]amento|quero\s*(saber|agendar|falar|receber)|ligue|telefone|enviar\s*(mensagem|formul[aá]rio)|tirar\s*d[uú]vidas|falar\s*com\s*(um\s*)?(especialista|consultor)|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?|cadastre-se|inscreva-se)\b/i.test(label)
     const isContactLead = isWhatsapp || isPhone || isEmail || hasLeadIntent
-    const eventName = isWhatsapp ? 'whatsapp_contact' : isSignup ? 'sign_up' : isLogin ? 'login' : 'button_click'
+    const isMedia = target.tagName === 'IMG' || target.tagName === 'VIDEO'
+    const eventName = isWhatsapp ? 'whatsapp_contact' : isSignup ? 'sign_up' : isLogin ? 'login' : isMedia ? 'media_click' : 'button_click'
     const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : isSignup ? 'cadastro' : isLogin ? 'login' : hasLeadIntent ? 'contato' : 'geral'
-    send(eventName, { button_label: label || 'Botão sem texto', button_id: truncate(target.id, 120), destination: cleanUrl(href), contact_intent: intent, is_contact_lead: isContactLead ? 1 : 0 })
+
+    // Coordenadas para o Heatmap
+    const rect = target.getBoundingClientRect()
+    const clickX = event.clientX
+    const clickY = event.clientY + window.scrollY
+    const docW = Math.max(document.documentElement.scrollWidth, window.innerWidth || 1)
+    const clickXPct = Math.min(100, Math.max(0, Math.round((clickX / docW) * 100)))
+    const targetTag = target.tagName.toUpperCase()
+
+    send(eventName, {
+      button_label: label || (isMedia ? `Mídia (${targetTag.toLowerCase()})` : 'Elemento sem texto'),
+      button_id: truncate(target.id, 120),
+      destination: cleanUrl(href),
+      contact_intent: intent,
+      is_contact_lead: isContactLead ? 1 : 0,
+      click_x_pct: clickXPct,
+      click_y_px: Math.round(clickY),
+      target_tag: targetTag
+    })
   }, { capture: true })
 })()
