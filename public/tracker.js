@@ -190,10 +190,13 @@
   if (isFirstVisit) send('first_visit')
   send('page_view')
 
-  // --- Heatmap Econômico: 1. Extração Estrutural de Layout (Placeholders / Wireframe Sem Sobreposição) ---
-  const layoutSentKey = `analizi:${siteId}:layout:${location.pathname}`
-  const captureLayout = () => {
-    if (get(session, layoutSentKey)) return
+  // --- Heatmap Econômico: 1. Extração Estrutural de Layout (1 vez por sessão por página, no page_view e navegação SPA) ---
+  const getLayoutSentKey = (path = location.pathname) => `analizi:${siteId}:layout:${sessionId}:${path}`
+  const captureLayout = (targetPath = location.pathname) => {
+    // Se a rota mudou entre o agendamento e a execução, usa a rota atual
+    const currentPath = location.pathname || targetPath || '/'
+    const sentKey = getLayoutSentKey(currentPath)
+    if (get(session, sentKey)) return
     try {
       const docW = Math.max(document.documentElement.scrollWidth, window.innerWidth || 0)
       const docH = Math.max(document.documentElement.scrollHeight, window.innerHeight || 0)
@@ -332,6 +335,8 @@
         if (accepted.length >= 75) break
       }
 
+      if (accepted.length === 0) return
+
       // Reordena de cima para baixo para leitura limpa
       accepted.sort((a, b) => a.top - b.top || a.left - b.left)
 
@@ -343,16 +348,8 @@
       }
 
       send('page_layout', { layout: layoutData })
-      set(session, layoutSentKey, '1')
+      set(session, sentKey, '1')
     } catch {}
-  }
-
-  // Tenta capturar logo no início e também após carregamento total
-  setTimeout(captureLayout, 1000)
-  if (document.readyState === 'complete') {
-    setTimeout(captureLayout, 2000)
-  } else {
-    window.addEventListener('load', () => setTimeout(captureLayout, 2000))
   }
 
   // --- Heatmap Econômico: 2. Monitoramento de Scroll Depth (Zero tráfego durante o scroll) ---
@@ -391,6 +388,48 @@
     if (document.visibilityState === 'hidden') sendScrollDepth()
   })
   window.addEventListener('pagehide', sendScrollDepth)
+
+  const schedulePageLayoutCapture = () => {
+    const path = location.pathname
+    setTimeout(() => captureLayout(path), 800)
+    setTimeout(() => captureLayout(path), 2000)
+  }
+
+  // Captura o page_layout do page_view inicial (1 vez por sessão por página)
+  schedulePageLayoutCapture()
+  if (document.readyState !== 'complete') {
+    window.addEventListener('load', () => schedulePageLayoutCapture())
+  }
+
+  // Monitora navegação SPA (History API / popstate) para disparar page_view + page_layout (1x por sessão por página)
+  let lastTrackedPath = location.pathname
+  const handleRouteChange = () => {
+    const newPath = location.pathname
+    if (newPath && newPath !== lastTrackedPath) {
+      // Envia o scroll_depth acumulado da página anterior antes de trocar
+      sendScrollDepth()
+      lastTrackedPath = newPath
+      send('page_view')
+      updateScrollDepth()
+      schedulePageLayoutCapture()
+    }
+  }
+
+  window.addEventListener('popstate', handleRouteChange)
+  try {
+    const origPushState = history.pushState
+    const origReplaceState = history.replaceState
+    history.pushState = function (...args) {
+      const ret = origPushState.apply(this, args)
+      handleRouteChange()
+      return ret
+    }
+    history.replaceState = function (...args) {
+      const ret = origReplaceState.apply(this, args)
+      handleRouteChange()
+      return ret
+    }
+  } catch {}
 
   // --- Heatmap Econômico: 3. Cliques Estruturais (Sem Loose Clicks) com Coordenadas ---
   document.addEventListener('click', (event) => {
