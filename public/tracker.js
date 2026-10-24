@@ -18,6 +18,7 @@
   const sessionKey = `analizi:${siteId}:session`
   const activityKey = `analizi:${siteId}:activity`
   const countKey = `analizi:${siteId}:sessions`
+  const attrKey = `analizi:${siteId}:attribution`
   const isFirstVisit = !get(local, visitorKey)
   const visitorId = get(local, visitorKey) || randomId()
   set(local, visitorKey, visitorId)
@@ -40,12 +41,53 @@
     const operatingSystem = /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : 'Outro'
     return { deviceType, browser, operatingSystem }
   }
+
+  const isAuthReferrer = (hostname) => {
+    if (!hostname) return false
+    return /^(?:accounts\.google\.com|appleid\.apple\.com|login\.microsoftonline\.com|auth0\.com|supabase\.co)$/i.test(hostname) ||
+      /(?:auth|login|oauth|accounts)/i.test(hostname)
+  }
+
   const attribution = () => {
     const params = new URLSearchParams(location.search)
-    const referrer = document.referrer ? new URL(document.referrer) : null
-    const source = params.get('utm_source') || (referrer ? referrer.hostname.replace(/^www\./, '') : 'direto')
-    const medium = params.get('utm_medium') || (referrer ? 'referência' : 'direto')
-    return { source, medium, campaign: params.get('utm_campaign') || '' }
+    const utmSource = params.get('utm_source')
+    const utmMedium = params.get('utm_medium')
+    const utmCampaign = params.get('utm_campaign')
+
+    // Se a sessão já tem atribuição salva e não há novos parâmetros UTM explícitos, mantém a origem da sessão
+    const saved = get(session, attrKey)
+    if (saved && !utmSource && !utmCampaign) {
+      try {
+        const parsed = JSON.parse(saved)
+        if (parsed && parsed.source) return parsed
+      } catch {}
+    }
+
+    let source = utmSource || ''
+    let medium = utmMedium || ''
+    const campaign = utmCampaign || ''
+
+    if (!source) {
+      if (document.referrer) {
+        try {
+          const refHost = new URL(document.referrer).hostname.replace(/^www\./, '')
+          // Ignora se for o próprio domínio do site ou provedor de autenticação (OAuth callback)
+          if (refHost && refHost !== location.hostname.replace(/^www\./, '') && !isAuthReferrer(refHost)) {
+            source = refHost
+            medium = medium || 'referência'
+          }
+        } catch {}
+      }
+    }
+
+    if (!source) {
+      source = 'direto'
+      medium = medium || 'direto'
+    }
+
+    const attrData = { source, medium, campaign }
+    set(session, attrKey, JSON.stringify(attrData))
+    return attrData
   }
   let lastEventAt = now()
   const context = () => {
@@ -80,8 +122,10 @@
     const isEmail = /^mailto:/i.test(href)
     const isSignup = /\b(cadastre-se|inscreva-se|criar\s*(minha\s*)?conta|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?)\b/i.test(label)
     const isLogin = /\b(entrar|acessar\s*(minha\s*)?conta|fazer\s*login|login)\b/i.test(label)
+    const hasLeadIntent = /\b(fale\s*(com|conosco)|entre\s*em\s*contato|contato|whats(?:app)?|agend[ea]|marc[ae]\s*(uma\s*)?(consulta|reuni[aã]o)|solicite|pedir|pe[cç]a\s*(um\s*)?or[cç]amento|or[cç]amento|quero\s*(saber|agendar|falar|receber)|ligue|telefone|enviar\s*(mensagem|formul[aá]rio)|tirar\s*d[uú]vidas|falar\s*com\s*(um\s*)?(especialista|consultor)|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?|cadastre-se|inscreva-se)\b/i.test(label)
+    const isContactLead = isWhatsapp || isPhone || isEmail || hasLeadIntent
     const eventName = isWhatsapp ? 'whatsapp_contact' : isSignup ? 'sign_up' : isLogin ? 'login' : 'button_click'
-    const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : isSignup ? 'cadastro' : isLogin ? 'login' : 'outro'
-    send(eventName, { button_label: label || 'Botão sem texto', button_id: truncate(target.id, 120), destination: cleanUrl(href), contact_intent: intent })
+    const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : isSignup ? 'cadastro' : isLogin ? 'login' : hasLeadIntent ? 'contato' : 'geral'
+    send(eventName, { button_label: label || 'Botão sem texto', button_id: truncate(target.id, 120), destination: cleanUrl(href), contact_intent: intent, is_contact_lead: isContactLead ? 1 : 0 })
   }, { capture: true })
 })()

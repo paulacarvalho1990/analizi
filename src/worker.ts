@@ -120,6 +120,12 @@ async function collect(request: Request, env: Env) {
 
   const statements: D1Statement[] = []
   const usageMonth = new Date().toISOString().slice(0, 7)
+  const isAuthSource = (s?: string | null) => {
+    if (!s) return false
+    return /accounts\.google\.com|appleid\.apple\.com|login\.microsoftonline\.com|auth0\.com|supabase\.co/i.test(s) ||
+      /(?:auth|login|oauth|accounts)/i.test(s)
+  }
+
   for (const event of events) {
     const name = compactText(event.eventName, 40)
     if (!ALLOWED_EVENTS.has(name)) continue
@@ -127,6 +133,14 @@ async function collect(request: Request, env: Env) {
     const visitorId = compactText(event.visitorId, 80)
     const sessionId = compactText(event.sessionId, 80)
     if (!id || !visitorId || !sessionId) continue
+
+    let rawSource = compactText(event.source, 120) || null
+    let rawMedium = compactText(event.medium, 120)
+    if (isAuthSource(rawSource)) {
+      rawSource = 'direto'
+      rawMedium = rawMedium === 'referência' ? 'direto' : rawMedium
+    }
+
     statements.push(env.ANALIZI_EVENTS.prepare(`
       insert into events (
         id, tracker_site_id, occurred_at, received_at, event_name, visitor_id, session_id, session_number,
@@ -140,7 +154,7 @@ async function collect(request: Request, env: Env) {
       compactText(event.pagePath, 1_024) || null, compactText(event.pageTitle, 512) || null,
       compactText(event.pageUrl, 2_048) || null, compactText(event.pageHostname, 253) || null,
       compactText(event.referrerHost, 253) || null, compactText(event.referrerUrl, 2_048) || null,
-      compactText(event.source, 120) || null, compactText(event.medium, 120), compactText(event.campaign, 240),
+      rawSource, rawMedium, compactText(event.campaign, 240),
       compactText(event.deviceType, 32) || null, compactText(event.browser, 80) || null,
       compactText(event.operatingSystem, 80) || null, compactText(event.language, 35) || null,
       Number.isFinite(event.engagementTimeMs) ? Math.max(0, Math.min(Number(event.engagementTimeMs), 3_600_000)) : null,
@@ -236,7 +250,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     env.ANALIZI_EVENTS.prepare(`select ${groupExpression} date, count(distinct session_id) sessions, count(distinct visitor_id) users, sum(event_name='page_view') pageViews, count(distinct case when event_name in ('whatsapp_contact','sign_up') then session_id end) contacts from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql} group by ${groupExpression} order by date`).bind(...currentValues),
     env.ANALIZI_EVENTS.prepare(`select coalesce(source,'direto') source, coalesce(page_path,'/') path, sum(event_name='page_view') views, count(distinct visitor_id) users from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql} group by source,path order by views desc limit 250`).bind(...currentValues),
     env.ANALIZI_EVENTS.prepare(`select date(occurred_at) date, event_name type, coalesce(page_path,'/') path, count(*) contacts from events where tracker_site_id=? and event_name in ('whatsapp_contact','sign_up') and occurred_at >= ? and occurred_at < ?${filterSql} group by date(occurred_at), event_name, coalesce(page_path,'/') order by date, contacts desc limit 250`).bind(...currentValues),
-    env.ANALIZI_EVENTS.prepare(`select date(occurred_at) date, coalesce(page_path,'/') path, coalesce(json_extract(metadata_json,'$.button_label'),'Botão sem texto') label, coalesce(json_extract(metadata_json,'$.button_id'),'') buttonId, coalesce(json_extract(metadata_json,'$.destination'),'') destination, count(*) clicks, count(distinct session_id) sessions from events where tracker_site_id=? and event_name='button_click' and occurred_at >= ? and occurred_at < ?${filterSql} group by date(occurred_at), path, label, buttonId, destination order by clicks desc, date desc limit 250`).bind(...currentValues),
+    env.ANALIZI_EVENTS.prepare(`select date(occurred_at) date, coalesce(page_path,'/') path, coalesce(json_extract(metadata_json,'$.button_label'),'Botão sem texto') label, coalesce(json_extract(metadata_json,'$.button_id'),'') buttonId, coalesce(json_extract(metadata_json,'$.destination'),'') destination, coalesce(json_extract(metadata_json,'$.contact_intent'),'geral') intent, coalesce(json_extract(metadata_json,'$.is_contact_lead'), 0) isContactLead, count(*) clicks, count(distinct session_id) sessions from events where tracker_site_id=? and event_name='button_click' and occurred_at >= ? and occurred_at < ?${filterSql} group by date(occurred_at), path, label, buttonId, destination, intent, isContactLead order by clicks desc, date desc limit 250`).bind(...currentValues),
     env.ANALIZI_EVENTS.prepare(`select count(distinct visitor_id) users, count(distinct session_id) sessions, count(distinct case when event_name in ('whatsapp_contact','sign_up') then session_id end) contactSessions, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts, sum(event_name='whatsapp_contact') whatsappContacts, sum(event_name='sign_up') signUps, sum(event_name='first_visit') newUsers, round(avg(engagement_time_ms)/1000) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql}`).bind(...previousValues),
     env.ANALIZI_EVENTS.prepare(`select coalesce(page_path,'/') path, sum(case when occurred_at >= ? and occurred_at < ? and event_name='page_view' then 1 else 0 end) currentViews, sum(case when occurred_at >= ? and occurred_at < ? and event_name='page_view' then 1 else 0 end) previousViews from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?${filterSql} group by path having currentViews > 0 or previousViews > 0 order by currentViews desc limit 30`).bind(start, rangeEnd, previousStart, start, safeId, previousStart, rangeEnd, ...filterValues),
     env.ANALIZI_EVENTS.prepare(`select distinct coalesce(page_path,'/') path from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ? order by path limit 250`).bind(safeId, start, rangeEnd),
