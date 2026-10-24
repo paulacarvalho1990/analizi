@@ -285,12 +285,12 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             0 as newUsers,
             coalesce(sum(p.conversions), 0) as contacts,
             coalesce(sum(p.conversions), 0) as contactSessions,
-            0 as whatsappContacts,
-            0 as signUps,
+            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date <= ? and dc.page_path = p.page_path and dc.contact_type = 'whatsapp_contact'), 0) as whatsappContacts,
+            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date <= ? and dc.page_path = p.page_path and dc.contact_type = 'sign_up'), 0) as signUps,
             round(sum(p.average_engagement_seconds * p.page_views) / nullif(sum(p.page_views), 0)) as attentionSeconds
           from daily_pages p
           where p.tracker_site_id = ? and p.metric_date >= ? and p.metric_date <= ? and p.page_path = ?
-        `).bind(safeId, start, end, page)
+        `).bind(start, end, start, end, safeId, start, end, page)
       : source
       ? env.ANALIZI_EVENTS.prepare(`
           select
@@ -314,8 +314,8 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             coalesce(sum(m.new_users), 0) as newUsers,
             coalesce(sum(m.conversions), 0) as contacts,
             coalesce(sum(m.conversions), 0) as contactSessions,
-            0 as whatsappContacts,
-            0 as signUps,
+            coalesce(sum(m.whatsapp_contacts), 0) as whatsappContacts,
+            coalesce(sum(m.sign_ups), 0) as signUps,
             round(sum(m.average_engagement_seconds * m.page_views) / nullif(sum(m.page_views), 0)) as attentionSeconds
           from daily_metrics m
           where m.tracker_site_id = ? and m.metric_date >= ? and m.metric_date <= ?
@@ -370,12 +370,12 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     env.ANALIZI_EVENTS.prepare(`
       select
         metric_date as date,
-        contact_intent as type,
+        contact_type as type,
         page_path as path,
-        sum(clicks) as contacts
-      from daily_button_clicks
-      where tracker_site_id = ? and metric_date >= ? and metric_date <= ? and is_contact_lead = 1${pageFilterDaily}
-      group by metric_date, contact_intent, page_path
+        sum(contacts) as contacts
+      from daily_contacts
+      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${pageFilterDaily}
+      group by metric_date, contact_type, page_path
       order by date desc, contacts desc limit 250
     `).bind(...[safeId, start, end, ...(page ? [page] : [])]),
     // 6: clickDetails
@@ -405,12 +405,12 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             0 as newUsers,
             coalesce(sum(p.conversions), 0) as contacts,
             coalesce(sum(p.conversions), 0) as contactSessions,
-            0 as whatsappContacts,
-            0 as signUps,
+            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date < ? and dc.page_path = p.page_path and dc.contact_type = 'whatsapp_contact'), 0) as whatsappContacts,
+            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date < ? and dc.page_path = p.page_path and dc.contact_type = 'sign_up'), 0) as signUps,
             round(sum(p.average_engagement_seconds * p.page_views) / nullif(sum(p.page_views), 0)) as attentionSeconds
           from daily_pages p
           where p.tracker_site_id = ? and p.metric_date >= ? and p.metric_date < ? and p.page_path = ?
-        `).bind(safeId, previousStart, start, page)
+        `).bind(previousStart, start, previousStart, start, safeId, previousStart, start, page)
       : source
       ? env.ANALIZI_EVENTS.prepare(`
           select
@@ -434,8 +434,8 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             coalesce(sum(m.new_users), 0) as newUsers,
             coalesce(sum(m.conversions), 0) as contacts,
             coalesce(sum(m.conversions), 0) as contactSessions,
-            0 as whatsappContacts,
-            0 as signUps,
+            coalesce(sum(m.whatsapp_contacts), 0) as whatsappContacts,
+            coalesce(sum(m.sign_ups), 0) as signUps,
             round(sum(m.average_engagement_seconds * m.page_views) / nullif(sum(m.page_views), 0)) as attentionSeconds
           from daily_metrics m
           where m.tracker_site_id = ? and m.metric_date >= ? and m.metric_date < ?
@@ -969,7 +969,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
     // 1. Consolida métricas gerais do dia anterior (D-1)
     await env.ANALIZI_EVENTS.batch([
       env.ANALIZI_EVENTS.prepare(`
-        insert into daily_metrics (tracker_site_id, metric_date, sessions, users, new_users, page_views, conversions, average_engagement_seconds, exit_rate)
+        insert into daily_metrics (tracker_site_id, metric_date, sessions, users, new_users, page_views, conversions, whatsapp_contacts, sign_ups, average_engagement_seconds, exit_rate)
         select
           e.tracker_site_id,
           date(e.occurred_at) as metric_date,
@@ -978,6 +978,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           sum(e.event_name = 'first_visit') as new_users,
           sum(e.event_name = 'page_view') as page_views,
           count(distinct case when e.event_name in ('whatsapp_contact','sign_up') or e.is_conversion = 1 then e.session_id end) as conversions,
+          sum(e.event_name = 'whatsapp_contact') as whatsapp_contacts,
+          sum(e.event_name = 'sign_up') as sign_ups,
           round(avg(e.engagement_time_ms) / 1000) as average_engagement_seconds,
           round(100.0 * sum(e.event_name = 'page_view' and e.id = (
             select x.id from events x
@@ -998,6 +1000,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           new_users = excluded.new_users,
           page_views = excluded.page_views,
           conversions = excluded.conversions,
+          whatsapp_contacts = excluded.whatsapp_contacts,
+          sign_ups = excluded.sign_ups,
           average_engagement_seconds = excluded.average_engagement_seconds,
           exit_rate = excluded.exit_rate;
       `),
@@ -1135,12 +1139,27 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         on conflict(tracker_site_id, metric_date, page_path, button_label, button_id, destination, contact_intent, is_contact_lead) do update set
           clicks = excluded.clicks,
           sessions = excluded.sessions;
+      `),
+      // 6. Consolida contatos confirmados (WhatsApp e Cadastros)
+      env.ANALIZI_EVENTS.prepare(`
+        insert into daily_contacts (tracker_site_id, metric_date, contact_type, page_path, contacts)
+        select
+          tracker_site_id,
+          date(occurred_at) as metric_date,
+          event_name as contact_type,
+          coalesce(page_path, '/') as page_path,
+          count(*) as contacts
+        from events
+        where event_name in ('whatsapp_contact', 'sign_up') and date(occurred_at) <= date('now', '-1 day')
+        group by tracker_site_id, date(occurred_at), event_name, coalesce(page_path, '/')
+        on conflict (tracker_site_id, metric_date, contact_type, page_path) do update set
+          contacts = excluded.contacts;
       `)
     ])
 
     console.log('Consolidação concluída com sucesso.')
 
-    // 6. VALIDAÇÃO DE SEGURANÇA: Somente executa a limpeza se a consolidação realmente gravou registros
+    // 7. VALIDAÇÃO DE SEGURANÇA: Somente executa a limpeza se a consolidação realmente gravou registros
     const check = await env.ANALIZI_EVENTS.batch([
       env.ANALIZI_EVENTS.prepare(`
         select count(*) as c from daily_metrics where metric_date = date('now', '-1 day')
