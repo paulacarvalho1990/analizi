@@ -624,7 +624,64 @@ function ConnectionStatus() {
   );
 }
 
-function Pages() { const analytics = useAnalytics(); const [tablePage, setTablePage] = useState(0); const pages = analytics?.pages ?? []; const p = analytics?.previousTotals; const visiblePages = pages.slice(tablePage * ITEMS_PER_PAGE, (tablePage + 1) * ITEMS_PER_PAGE); const duration = (seconds?: number) => seconds ? `${Math.floor(seconds / 60)}min ${seconds % 60}s` : '—'; const totalViews = pages.reduce((sum, item) => sum + Number(item.views || 0), 0); const pagesWithExit = pages.filter(item => item.exitRate != null); const averageExit = pagesWithExit.length ? pagesWithExit.reduce((sum, item) => sum + Number(item.exitRate || 0), 0) / pagesWithExit.length : 0; const topPage = pages[0]; return <><PageHeader title="Suas páginas" subtitle="Veja quais páginas atraem e mantêm mais pessoas no seu site."/><AnalyticsFilters analytics={analytics}/><section className="metrics page-metrics"><MetricCard title="Páginas acompanhadas" value={String(pages.length || '—')} note="páginas com atividade no período"/><MetricCard title="Visualizações" value={String(totalViews || '—')} {...comparison(totalViews, p?.pageViews)}/><MetricCard title="Página mais vista" value={topPage?.path || '—'} note="mais visualizada no período"/><MetricCard title="Taxa média de saída" value={averageExit ? `${averageExit.toFixed(1).replace('.', ',')}%` : '—'} note="saídas sem interação"/></section><section className="pages-split"><PageChart pages={pages}/><article className="table-card compact-table pages-table"><div className="section-heading"><div><h3>Desempenho das páginas</h3><p>Período selecionado</p></div><button className="filter-button">Ordenado por visualizações <ChevronDown size={15}/></button></div><div className="table-head"><span>Página</span><span>Visualizações</span><span>Tempo de atenção</span><span title="Porcentagem de visualizações que saíram sem interagir">Taxa de saída</span></div>{visiblePages.map((item) => <div className="page-row" key={item.path}><span><b>{item.title || item.path}</b><small>{item.path}</small></span><span><b>{item.views}</b></span><span>{duration(item.attentionSeconds)}</span><span>{item.exitRate == null ? '—' : `${item.exitRate}%`}</span></div>)}{!pages.length && <p className="empty-state">Ainda não recebemos visualizações de páginas neste período.</p>}<TablePagination page={tablePage} total={pages.length} setPage={setTablePage}/></article></section></> }
+function Pages() {
+  const analytics = useAnalytics();
+  const [tablePage, setTablePage] = useState(0);
+  const pages = analytics?.pages ?? [];
+  const p = analytics?.previousTotals;
+  const visiblePages = pages.slice(tablePage * ITEMS_PER_PAGE, (tablePage + 1) * ITEMS_PER_PAGE);
+  const duration = (seconds?: number) => seconds ? `${Math.floor(seconds / 60)}min ${seconds % 60}s` : '—';
+  const totalViews = pages.reduce((sum, item) => sum + Number(item.views || 0), 0);
+  const pagesWithExit = pages.filter(item => item.exitRate != null);
+  const averageExit = pagesWithExit.length ? pagesWithExit.reduce((sum, item) => sum + Number(item.exitRate || 0), 0) / pagesWithExit.length : 0;
+  const topPage = pages[0];
+  const topTitle = topPage ? (topPage.title || topPage.path) : '—';
+  const topPath = topPage ? topPage.path : undefined;
+
+  return (
+    <>
+      <PageHeader title="Suas páginas" subtitle="Veja quais páginas atraem e mantêm mais pessoas no seu site."/>
+      <AnalyticsFilters analytics={analytics}/>
+      <section className="metrics page-metrics">
+        <MetricCard title="Páginas acompanhadas" value={String(pages.length || '—')} note="páginas com atividade no período"/>
+        <MetricCard title="Visualizações" value={String(totalViews || '—')} {...comparison(totalViews, p?.pageViews)}/>
+        <MetricCard title="Página mais vista" value={topTitle} subtitle={topPath} note="mais visualizada no período"/>
+        <MetricCard title="Taxa média de saída" value={averageExit ? `${averageExit.toFixed(1).replace('.', ',')}%` : '—'} note="saídas sem interação"/>
+      </section>
+      <section className="pages-split">
+        <PageChart pages={pages}/>
+        <article className="table-card compact-table pages-table">
+          <div className="section-heading">
+            <div>
+              <h3>Desempenho das páginas</h3>
+              <p>Período selecionado</p>
+            </div>
+            <button className="filter-button">Ordenado por visualizações <ChevronDown size={15}/></button>
+          </div>
+          <div className="table-head">
+            <span>Página</span>
+            <span>Visualizações</span>
+            <span>Tempo de atenção</span>
+            <span title="Porcentagem de visualizações que saíram sem interagir">Taxa de saída</span>
+          </div>
+          {visiblePages.map((item) => (
+            <div className="page-row" key={item.path}>
+              <span>
+                <b>{item.title || item.path}</b>
+                <small>{item.path}</small>
+              </span>
+              <span><b>{item.views}</b></span>
+              <span>{duration(item.attentionSeconds)}</span>
+              <span>{item.exitRate == null ? '—' : `${item.exitRate}%`}</span>
+            </div>
+          ))}
+          {!pages.length && <p className="empty-state">Ainda não recebemos visualizações de páginas neste período.</p>}
+          <TablePagination page={tablePage} total={pages.length} setPage={setTablePage}/>
+        </article>
+      </section>
+    </>
+  );
+}
 
 function TeamSettings({ setPage }: { setPage: (page: Page) => void }) {
   const { currentBusiness } = useBusiness();
