@@ -199,16 +199,16 @@
       const docH = Math.max(document.documentElement.scrollHeight, window.innerHeight || 0)
       if (docH <= 0 || docW <= 0) return
 
-      // Seleciona elementos estruturais e blocos visuais chave
+      // 1. Coleta elementos e filtra ancestrais duplicados (evita capturar container E todos os filhos idênticos)
       const selectors = 'header, footer, nav, main, section, article, aside, h1, h2, h3, h4, button, a, img, video, form, input:not([type="hidden"]), select, textarea, [role="button"], [role="banner"], [role="navigation"], .card, .banner'
-      const nodes = [...document.querySelectorAll(selectors)]
-      const blocks = []
+      const rawNodes = [...document.querySelectorAll(selectors)]
+      const candidates = []
 
-      for (const el of nodes) {
+      for (const el of rawNodes) {
         if (!(el instanceof HTMLElement)) continue
         const rect = el.getBoundingClientRect()
         // Ignora elementos invisíveis ou minúsculos
-        if (rect.width < 12 || rect.height < 12) continue
+        if (rect.width < 14 || rect.height < 14) continue
         const style = window.getComputedStyle(el)
         if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
 
@@ -240,9 +240,19 @@
           type = type === 'header' || type === 'nav' ? 'header' : (type === 'footer' ? 'footer' : 'section')
         }
 
-        const label = truncate(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 70)
+        // Não captura texto genérico longo de containers pais se for section/aside/article/main
+        let label = ''
+        if (['button', 'link', 'heading', 'input', 'image', 'video'].includes(type)) {
+          label = truncate(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 70)
+        } else if (type === 'card' || type === 'banner') {
+          const heading = el.querySelector('h1, h2, h3, h4')
+          label = truncate(heading ? (heading as HTMLElement).innerText : (el.getAttribute('aria-label') || ''), 60)
+        } else {
+          label = truncate(el.getAttribute('aria-label') || '', 50)
+        }
 
-        blocks.push({
+        candidates.push({
+          el,
           type,
           top,
           left,
@@ -250,8 +260,26 @@
           height,
           label
         })
+      }
 
-        if (blocks.length >= 150) break // Limite seguro para payload equilibrado
+      // 2. Filtro de desduplicação e sobreposição idêntica:
+      // Se um elemento folha (como button, a, heading) tem exatamente as mesmas coordenadas do elemento pai, mantemos apenas o mais específico.
+      const blocks = []
+      for (let i = 0; i < candidates.length; i++) {
+        const c = candidates[i]
+        // Se for seção/card gigante vazia que engloba tudo com quase a mesma área de outra seção, ignora
+        const isDuplicate = blocks.some((b) => Math.abs(b.top - c.top) < 4 && Math.abs(b.left - c.left) < 4 && Math.abs(b.width - c.width) < 6 && Math.abs(b.height - c.height) < 6)
+        if (!isDuplicate) {
+          blocks.push({
+            type: c.type,
+            top: c.top,
+            left: c.left,
+            width: c.width,
+            height: c.height,
+            label: c.label
+          })
+        }
+        if (blocks.length >= 120) break
       }
 
       const layoutData = {
