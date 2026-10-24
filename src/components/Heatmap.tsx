@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import {
   Flame, Monitor, Smartphone, MousePointer, ArrowDown, RefreshCw, Clock,
-  Image as ImageIcon, Video, Type, CheckSquare, Layout, Sparkles, Navigation,
-  CreditCard, Flag, TextCursorInput, Link as LinkIcon
+  Image as ImageIcon, Video, Type, CheckSquare, Layout, Navigation,
+  CreditCard, Flag, TextCursorInput, Link as LinkIcon, MoveHorizontal
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
@@ -14,6 +14,101 @@ interface LayoutBlock {
   width: number
   height: number
   label?: string
+}
+
+/**
+ * Filtra e organiza blocos estruturais para garantir que NENHUM visual fique empilhado
+ * ou sobreposto no wireframe. Elementos interativos/folha têm prioridade sobre seções/containers.
+ */
+function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number): LayoutBlock[] {
+  if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) return []
+
+  const priorityMap: Record<string, number> = {
+    button: 10,
+    input: 10,
+    form: 9,
+    video: 8,
+    image: 8,
+    'image-link': 8,
+    link: 7,
+    heading: 7,
+    card: 5,
+    banner: 4,
+    header: 3,
+    nav: 3,
+    footer: 3,
+    section: 1
+  }
+
+  // 1. Normaliza e remove wrappers gigantes que cobrem a página toda
+  const valid = rawBlocks
+    .map((b) => ({
+      ...b,
+      top: Math.max(0, Math.round(b.top || 0)),
+      left: Math.max(0, Math.round(b.left || 0)),
+      width: Math.max(24, Math.round(b.width || 0)),
+      height: Math.max(20, Math.round(b.height || 0)),
+      label: String(b.label || '').replace(/\s+/g, ' ').trim()
+    }))
+    .filter((b) => {
+      // Descarta seções genéricas gigantes que englobam múltiplos blocos
+      if (b.type === 'section' && b.height > 450 && b.width > 900) return false
+      if (b.height > pageHeight * 0.75 && b.height > 900) return false
+      return true
+    })
+
+  // 2. Se um container (section, banner, header, card) contém outros blocos menores dentro dele,
+  // descartamos o container externo para não empilhar caixa sobre caixa.
+  const containsRect = (outer: LayoutBlock, inner: LayoutBlock) => {
+    const tol = 8
+    return (
+      inner.left >= outer.left - tol &&
+      inner.top >= outer.top - tol &&
+      inner.left + inner.width <= outer.left + outer.width + tol &&
+      inner.top + inner.height <= outer.top + outer.height + tol &&
+      inner.width * inner.height < outer.width * outer.height * 0.92
+    )
+  }
+
+  const withoutRedundantContainers = valid.filter((block, idx) => {
+    if (['section', 'banner', 'header', 'card', 'heading'].includes(block.type)) {
+      const innerChildren = valid.filter((other, oIdx) => oIdx !== idx && containsRect(block, other))
+      if (innerChildren.length > 0) {
+        return false
+      }
+    }
+    return true
+  })
+
+  // 3. Ordena por prioridade (botões, inputs, imagens, títulos primeiro; menores áreas primeiro)
+  const sorted = [...withoutRedundantContainers].sort((a, b) => {
+    const pA = priorityMap[a.type] || 1
+    const pB = priorityMap[b.type] || 1
+    if (pB !== pA) return pB - pA
+    return a.width * a.height - b.width * b.height
+  })
+
+  // 4. Verificação estrita de colisão (AABB): se dois blocos se sobrepõem, mantém apenas o de maior prioridade
+  const accepted: LayoutBlock[] = []
+  const isOverlapping = (a: LayoutBlock, b: LayoutBlock) => {
+    const gap = 3 // exige pelo menos 3px de respiro ou zero sobreposição significativa
+    const xOverlap = Math.max(0, Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left))
+    const yOverlap = Math.max(0, Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top))
+    if (xOverlap <= gap || yOverlap <= gap) return false
+    const interArea = xOverlap * yOverlap
+    const minArea = Math.min(a.width * a.height, b.width * b.height)
+    return interArea / Math.max(1, minArea) > 0.1
+  }
+
+  for (const candidate of sorted) {
+    const collides = accepted.some((acc) => isOverlapping(acc, candidate))
+    if (!collides) {
+      accepted.push(candidate)
+    }
+  }
+
+  // Retorna ordenado visualmente do topo para a base
+  return accepted.sort((a, b) => a.top - b.top || a.left - b.left)
 }
 
 interface HeatmapClick {
@@ -244,9 +339,12 @@ export function Heatmap() {
   }, [targetSiteId, selectedPage, device])
 
   const layout = data?.layout
-  const blocks = layout?.blocks || []
-  const pageHeight = Math.max(layout?.pageHeight || 1200, 800)
-  const baseWidth = device === 'mobile' ? 390 : Math.max(layout?.viewportWidth || 1200, 1100)
+  const rawBlocks = layout?.blocks || []
+  const maxBlockBottom = rawBlocks.reduce((max, b) => Math.max(max, (b.top || 0) + (b.height || 0)), 0)
+  const pageHeight = Math.max(layout?.pageHeight || 1200, maxBlockBottom + 80, 800)
+  const blocks = buildNonOverlappingBlocks(rawBlocks, pageHeight)
+  const maxBlockRight = blocks.reduce((max, b) => Math.max(max, (b.left || 0) + (b.width || 0)), 0)
+  const baseWidth = device === 'mobile' ? 390 : Math.max(layout?.viewportWidth || 1280, maxBlockRight + 40, 1280)
   const clicks = data?.clicks || []
   const maxClickCount = Math.max(...clicks.map((c) => c.count), 1)
 
@@ -386,13 +484,21 @@ export function Heatmap() {
             </section>
           )}
 
+          {/* Indicador de Largura e Scroll Horizontal */}
+          <div className="heatmap-scroll-hint">
+            <MoveHorizontal size={15} />
+            <span>
+              Largura real renderizada: <b>{baseWidth}px</b> ({blocks.length} blocos sem sobreposição) — role a barra horizontal abaixo para explorar toda a largura da página.
+            </span>
+          </div>
+
           {/* Área do Wireframe + Heatmap com Scroll Lateral Suave e Contido */}
           <div className="heatmap-canvas-wrapper">
             <div
               className={`heatmap-canvas ${device}`}
               style={{
-                width: device === 'mobile' ? '390px' : `${baseWidth}px`,
-                minWidth: device === 'mobile' ? '390px' : `${baseWidth}px`,
+                width: `${baseWidth}px`,
+                minWidth: `${baseWidth}px`,
                 minHeight: `${pageHeight}px`,
                 position: 'relative'
               }}
