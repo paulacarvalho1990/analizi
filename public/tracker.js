@@ -190,7 +190,7 @@
   if (isFirstVisit) send('first_visit')
   send('page_view')
 
-  // --- Heatmap Econômico: 1. Extração Estrutural de Layout (Placeholders / Wireframe) ---
+  // --- Heatmap Econômico: 1. Extração Estrutural de Layout (Placeholders / Wireframe Sem Sobreposição) ---
   const layoutSentKey = `analizi:${siteId}:layout:${location.pathname}`
   const captureLayout = () => {
     if (get(session, layoutSentKey)) return
@@ -199,16 +199,33 @@
       const docH = Math.max(document.documentElement.scrollHeight, window.innerHeight || 0)
       if (docH <= 0 || docW <= 0) return
 
-      // 1. Coleta elementos e filtra ancestrais duplicados
-      const selectors = 'header, footer, nav, main, section, article, aside, h1, h2, h3, h4, button, a, img, video, form, input:not([type="hidden"]), select, textarea, [role="button"], [role="banner"], [role="navigation"], .card, .banner'
+      // 1. Coleta elementos visuais e ignora contêineres gigantes de estrutura (main/section genérica)
+      const selectors = 'header, footer, nav, article, h1, h2, h3, h4, button, a, img, video, form, input:not([type="hidden"]), select, textarea, [role="button"], [role="banner"], .card, .price-card, .metric-card, .chart-card, .table-card, .banner, .landing-hero, .hero-product'
       const rawNodes = [...document.querySelectorAll(selectors)]
       const candidates = []
+
+      const typePriority = {
+        button: 10,
+        input: 10,
+        form: 9,
+        video: 8,
+        image: 8,
+        'image-link': 8,
+        link: 7,
+        heading: 7,
+        card: 5,
+        banner: 4,
+        header: 3,
+        footer: 3,
+        section: 1
+      }
 
       for (const el of rawNodes) {
         if (!(el instanceof HTMLElement)) continue
         const rect = el.getBoundingClientRect()
-        // Ignora elementos invisíveis ou minúsculos
-        if (rect.width < 14 || rect.height < 14) continue
+        // Ignora elementos invisíveis, minúsculos ou que cubram quase a página inteira
+        if (rect.width < 16 || rect.height < 16) continue
+        if (rect.height > docH * 0.7 && rect.height > 900) continue
         const style = window.getComputedStyle(el)
         if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
 
@@ -220,7 +237,7 @@
         let type = el.tagName.toLowerCase()
         if (type === 'a') {
           type = el.querySelector('img') ? 'image-link' : (el.classList.contains('button') || el.classList.contains('btn') ? 'button' : 'link')
-        } else if (type.startsWith('h')) {
+        } else if (type.startsWith('h') && type.length === 2) {
           type = 'heading'
         } else if (type === 'button' || el.getAttribute('role') === 'button') {
           type = 'button'
@@ -232,26 +249,33 @@
           type = 'form'
         } else if (type === 'input' || type === 'select' || type === 'textarea') {
           type = 'input'
-        } else if (el.classList.contains('banner') || el.getAttribute('role') === 'banner') {
+        } else if (el.classList.contains('banner') || el.classList.contains('landing-hero') || el.getAttribute('role') === 'banner') {
           type = 'banner'
-        } else if (el.classList.contains('card') || ['article'].includes(type)) {
+        } else if (el.classList.contains('card') || el.classList.contains('price-card') || el.classList.contains('metric-card') || el.classList.contains('chart-card') || el.classList.contains('table-card') || el.classList.contains('hero-product') || type === 'article') {
           type = 'card'
-        } else if (['header', 'footer', 'nav', 'section', 'aside', 'main'].includes(type)) {
-          type = type === 'header' || type === 'nav' ? 'header' : (type === 'footer' ? 'footer' : 'section')
+        } else if (['header', 'footer', 'nav'].includes(type)) {
+          type = type === 'footer' ? 'footer' : 'header'
+        } else {
+          type = 'section'
         }
 
+        const cleanLabel = (txt, limit) => truncate(String(txt || '').replace(/\s+/g, ' '), limit)
+
         let label = ''
-        if (['button', 'link', 'heading', 'input', 'image', 'video'].includes(type)) {
-          label = truncate(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 50)
-        } else if (type === 'card' || type === 'banner') {
-          const heading = el.querySelector('h1, h2, h3, h4')
-          label = truncate(heading ? heading.innerText : (el.getAttribute('aria-label') || ''), 50)
+        if (['button', 'link', 'heading', 'input', 'image', 'video', 'image-link'].includes(type)) {
+          label = cleanLabel(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 48)
+        } else if (type === 'card' || type === 'banner' || type === 'form') {
+          const heading = el.querySelector('h1, h2, h3, h4, b, strong')
+          label = cleanLabel(heading ? heading.innerText : (el.getAttribute('aria-label') || ''), 48)
         } else {
-          label = truncate(el.getAttribute('aria-label') || '', 40)
+          label = cleanLabel(el.getAttribute('aria-label') || '', 40)
         }
 
         candidates.push({
+          el,
           type,
+          priority: typePriority[type] || 1,
+          area: width * height,
           top,
           left,
           width,
@@ -260,22 +284,62 @@
         })
       }
 
-      // 2. Filtro de desduplicação e limite compacto de 80 blocos estruturais
-      const blocks = []
-      for (let i = 0; i < candidates.length; i++) {
-        const c = candidates[i]
-        const isDuplicate = blocks.some((b) => Math.abs(b.top - c.top) < 4 && Math.abs(b.left - c.left) < 4 && Math.abs(b.width - c.width) < 6 && Math.abs(b.height - c.height) < 6)
-        if (!isDuplicate) {
-          blocks.push(c)
+      // 2. Descarta contêineres genéricos que já possuem múltiplos filhos capturados dentro deles
+      const leafOrDistinct = candidates.filter((cand) => {
+        if (['section', 'header', 'footer', 'banner', 'card'].includes(cand.type)) {
+          const childrenInside = candidates.filter((other) => other !== cand && cand.el.contains(other.el))
+          // Se um contêiner já tem elementos mais específicos dentro dele, descarta o contêiner para não empilhar caixas
+          if (childrenInside.length >= 1 && ['section', 'banner', 'header'].includes(cand.type)) {
+            return false
+          }
+          if (childrenInside.length >= 2 && cand.type === 'card') {
+            return false
+          }
         }
-        if (blocks.length >= 80) break
+        return true
+      })
+
+      // 3. Ordena por prioridade visual (botões, títulos, imagens primeiro; menores áreas primeiro)
+      leafOrDistinct.sort((a, b) => {
+        if (b.priority !== a.priority) return b.priority - a.priority
+        return a.area - b.area
+      })
+
+      // 4. Filtro estrito anti-colisão (AABB): nenhum bloco aceito pode sobrepor outro já aceito
+      const accepted = []
+      const overlaps = (a, b) => {
+        const pad = 2
+        const xOverlap = Math.max(0, Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left))
+        const yOverlap = Math.max(0, Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top))
+        if (xOverlap <= pad || yOverlap <= pad) return false
+        const intersection = xOverlap * yOverlap
+        const minArea = Math.min(a.width * a.height, b.width * b.height)
+        return intersection / Math.max(1, minArea) > 0.15
       }
 
+      for (const c of leafOrDistinct) {
+        const hasCollision = accepted.some((existing) => overlaps(existing, c))
+        if (!hasCollision) {
+          accepted.push({
+            type: c.type,
+            top: c.top,
+            left: c.left,
+            width: c.width,
+            height: c.height,
+            label: c.label
+          })
+        }
+        if (accepted.length >= 75) break
+      }
+
+      // Reordena de cima para baixo para leitura limpa
+      accepted.sort((a, b) => a.top - b.top || a.left - b.left)
+
       const layoutData = {
-        viewport_width: window.innerWidth,
+        viewport_width: Math.max(window.innerWidth || 0, docW),
         viewport_height: window.innerHeight,
         page_height: docH,
-        blocks
+        blocks: accepted
       }
 
       send('page_layout', { layout: layoutData })

@@ -641,6 +641,32 @@ body { background:var(--background); color:var(--foreground); }
   flex-direction: column;
   gap: 20px;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.heatmap-scroll-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted-foreground, #59766e);
+  background: var(--card, #ffffff);
+  border: 1px solid var(--border, #dce7e3);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+[data-theme="dark"] .heatmap-scroll-hint {
+  background: var(--card, #25272d);
+  border-color: var(--border, #3a3d46);
+  color: #9ba3af;
+}
+
+.heatmap-scroll-hint svg {
+  color: var(--analizi-blue, #3b82f6);
+  flex-shrink: 0;
 }
 
 .heatmap-toolbar {
@@ -909,38 +935,42 @@ body { background:var(--background); color:var(--foreground); }
 /* Canvas & Wireframe Render */
 .heatmap-canvas-wrapper {
   display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   background: #090d16;
   border-radius: 16px;
   padding: 24px;
   overflow-x: auto;
   overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
-  scrollbar-width: thin;
-  scrollbar-color: #334155 #090d16;
+  scrollbar-width: auto;
+  scrollbar-color: #475569 #090d16;
 }
 
 .heatmap-canvas-wrapper::-webkit-scrollbar {
-  height: 10px;
+  height: 14px;
 }
 
 .heatmap-canvas-wrapper::-webkit-scrollbar-track {
-  background: #090d16;
-  border-radius: 6px;
+  background: #0f172a;
+  border-radius: 8px;
 }
 
 .heatmap-canvas-wrapper::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 6px;
-  border: 2px solid #090d16;
+  background: #475569;
+  border-radius: 8px;
+  border: 3px solid #0f172a;
 }
 
 .heatmap-canvas-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #64748b;
 }
 
 .heatmap-canvas {
-  margin: 0 auto;
+  margin: 0;
   background: #0f172a;
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -949,6 +979,7 @@ body { background:var(--background); color:var(--foreground); }
 }
 
 .heatmap-canvas.mobile {
+  margin: 0 auto;
   border: 10px solid #1e293b;
   border-radius: 36px;
 }
