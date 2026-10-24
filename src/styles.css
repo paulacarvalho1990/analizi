@@ -940,33 +940,37 @@ body { background:var(--background); color:var(--foreground); }
   min-width: 0;
   background: #090d16;
   border-radius: 16px;
-  padding: 24px;
-  overflow-x: auto;
+  padding: 24px 24px 18px;
+  overflow-x: scroll;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
   scrollbar-width: auto;
-  scrollbar-color: #475569 #090d16;
+  scrollbar-color: #cbd5e1 #1e293b;
 }
 
 .heatmap-canvas-wrapper::-webkit-scrollbar {
-  height: 14px;
+  height: 16px;
+  display: block;
 }
 
 .heatmap-canvas-wrapper::-webkit-scrollbar-track {
-  background: #0f172a;
-  border-radius: 8px;
+  background: #1e293b;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 12px;
 }
 
 .heatmap-canvas-wrapper::-webkit-scrollbar-thumb {
-  background: #475569;
-  border-radius: 8px;
-  border: 3px solid #0f172a;
+  background: linear-gradient(90deg, #94a3b8 0%, #cbd5e1 100%);
+  border-radius: 10px;
+  border: 3px solid #1e293b;
+  min-width: 60px;
 }
 
 .heatmap-canvas-wrapper::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: linear-gradient(90deg, #cbd5e1 0%, #f8fafc 100%);
 }
 
 .heatmap-canvas {
