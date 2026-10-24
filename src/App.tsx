@@ -1289,6 +1289,8 @@ function PageHeader({ title, subtitle }: { title: string, subtitle: string }) {
   </>;
 }
 
+import { Heatmap } from './components/Heatmap';
+
 export function App() {
   const [mode, setMode] = useState<AuthPage>(() => {
     // Se há cliente supabase configurado, inicia em 'loading' para verificar a sessão salva sem piscar a Landing
@@ -1386,6 +1388,7 @@ export function App() {
     audience: <Audience/>,
     pages: <Pages/>,
     results: <Results/>,
+    heatmap: <Heatmap/>,
     insights: <Insights/>,
     settings: <Settings setPage={setPage}/>,
     team: <TeamSettings setPage={setPage}/>,

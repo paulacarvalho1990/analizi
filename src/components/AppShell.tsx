@@ -1,17 +1,17 @@
-import { BarChart3, FileText, Lightbulb, LogOut, Menu, Moon, Settings, Sun, Target, Users } from 'lucide-react'
+import { BarChart3, FileText, Flame, Lightbulb, LogOut, Menu, Moon, Settings, Sun, Target, Users } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { BrandLogo } from './BrandLogo'
 import { WorkspaceSelector } from './WorkspaceSelector'
 
-export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
+export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
 
 const nav = [
   ['dashboard', 'Início', BarChart3], ['audience', 'Público', Users], ['pages', 'Páginas', FileText],
-  ['results', 'Resultados', Target], ['insights', 'Insights', Lightbulb],
+  ['results', 'Resultados', Target], ['heatmap', 'Heatmap', Flame], ['insights', 'Insights', Lightbulb],
 ] as const
 
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
-  const paths: Partial<Record<Page, string>> = { dashboard: '/painel', audience: '/publico', pages: '/paginas', results: '/resultados', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics' }
+  const paths: Partial<Record<Page, string>> = { dashboard: '/painel', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics' }
   const navigate = (next: Page) => { const path = paths[next]; if (path && window.location.pathname !== path) window.history.pushState({}, '', path); setPage(next) }
   useEffect(() => { const path = paths[page]; if (path && window.location.pathname !== path) window.history.pushState({}, '', path) }, [page])
 
