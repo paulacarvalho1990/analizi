@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Lightbulb, Copy, ExternalLink, Globe2, Link2, MoreHorizontal, MousePointerClick, ShieldCheck, Sparkles } from 'lucide-react'
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { ArrowLeft, ArrowRight, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Lightbulb, Copy, ExternalLink, Globe2, Info, Link2, MoreHorizontal, MousePointerClick, ShieldCheck, Sparkles } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard } from './components/Metrics'
@@ -11,8 +11,205 @@ import { BusinessProvider, useBusiness } from './lib/business-context'
 
 const ITEMS_PER_PAGE = 25
 function TablePagination({ page, total, setPage }: { page: number, total: number, setPage: (page: number) => void }) { const pages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)); if (total <= ITEMS_PER_PAGE) return null; return <div className="table-pagination"><span>Mostrando {page * ITEMS_PER_PAGE + 1}–{Math.min((page + 1) * ITEMS_PER_PAGE, total)} de {total}</span><div><button disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</button><b>{page + 1} de {pages}</b><button disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Próxima</button></div></div> }
-function PageChart({ pages }: { pages: AnalyticsData['pages'] }) { const rows = pages.slice(0, 8).map(item => ({ name: item.path === '/' ? 'Início' : item.path, views: Number(item.views) })); return <article className="chart-card"><div className="section-heading"><div><h3>Visualizações por página</h3><p>As páginas mais acessadas no período</p></div></div><div className="chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={rows}><defs><linearGradient id="pageBarGradient" x1="0" x2="1"><stop offset="0" stopColor="#ff3cac"/><stop offset="1" stopColor="#ff8a3d"/></linearGradient></defs><CartesianGrid vertical={false} stroke="#E8EFEC"/><XAxis dataKey="name" axisLine={false} tickLine={false}/><YAxis allowDecimals={false} axisLine={false} tickLine={false}/><Tooltip/><Bar dataKey="views" name="Visualizações" fill="url(#pageBarGradient)" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></div></article> }
-function MetricChart({ analytics }: { analytics: AnalyticsData | null }) { const rows = (analytics?.daily ?? []).map(item => ({ ...item, label: item.date.slice(5).split('-').reverse().join('/') })); return <article className="chart-card"><div className="section-heading"><div><h3>Visualizações ao longo do período</h3><p>{analytics?.periodDays ?? 7} dias selecionados</p></div></div><div className="chart"><ResponsiveContainer width="100%" height="100%"><AreaChart data={rows}><defs><linearGradient id="realVisits" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#ff3cac" stopOpacity=".38"/><stop offset=".55" stopColor="#ff8a3d" stopOpacity=".16"/><stop offset="1" stopColor="#ff8a3d" stopOpacity="0"/></linearGradient></defs><CartesianGrid vertical={false} stroke="#E8EFEC"/><XAxis dataKey="label" axisLine={false} tickLine={false}/><YAxis hide/><Tooltip/><Area type="monotone" dataKey="pageViews" name="Visualizações" stroke="#ff3cac" strokeWidth={3} fill="url(#realVisits)" /></AreaChart></ResponsiveContainer></div></article> }
+function PageChart({ pages }: { pages: AnalyticsData['pages'] }) {
+  const rows = pages.slice(0, 8).map(item => ({
+    name: item.path === '/' ? 'Início' : item.path,
+    fullPath: item.path,
+    title: item.title || (item.path === '/' ? 'Página Inicial' : item.path),
+    views: Number(item.views || 0)
+  }));
+
+  const totalTopViews = rows.reduce((sum, r) => sum + r.views, 0);
+
+  return (
+    <article className="chart-card">
+      <div className="section-heading">
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <h3 style={{ margin: 0 }}>Visualizações por página</h3>
+            <div className="metric-info-wrapper" tabIndex={0} role="button" aria-label="Informações sobre o gráfico de visualizações por página">
+              <Info size={14} className="metric-info-icon" />
+              <div className="metric-tooltip-popover">
+                <div className="metric-tooltip-title">Visualizações por Página</div>
+                <div className="metric-tooltip-section">
+                  <b>O que representa</b>
+                  <p>As páginas do seu site ordenadas pelo volume total de acessos que receberam no período selecionado.</p>
+                </div>
+                <div className="metric-tooltip-section">
+                  <b>Por que é importante</b>
+                  <p>Identifica os conteúdos que geram mais tração e revela quais páginas merecem botões de ação e conversão.</p>
+                </div>
+                <div className="metric-tooltip-section tip">
+                  <b>Dica prática</b>
+                  <p>Se as páginas do topo tiverem pouca conversão, adicione chamadas para WhatsApp ou formulários curtos nelas.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="chart-header-caption">RANKING DAS PÁGINAS COM MAIOR TRÁFEGO PARA ENTENDER QUAIS CONTEÚDOS ATRAEM MAIS VISITANTES</p>
+        </div>
+      </div>
+      <div className="chart">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={rows} margin={{ top: 20, right: 12, left: -10, bottom: 4 }}>
+            <defs>
+              <linearGradient id="pageBarGradient" x1="0" x2="1">
+                <stop offset="0" stopColor="#ff3cac"/>
+                <stop offset="1" stopColor="#ff8a3d"/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} stroke="#E8EFEC"/>
+            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+            <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+            <Tooltip
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  const data = payload[0].payload as { name: string; fullPath: string; title: string; views: number };
+                  const share = totalTopViews > 0 ? Math.round((data.views / totalTopViews) * 100) : 0;
+                  return (
+                    <div className="chart-rich-tooltip">
+                      <div className="tooltip-title">{data.title}</div>
+                      <div className="tooltip-path">{data.fullPath}</div>
+                      <div className="tooltip-stat highlight">
+                        <span>Visualizações:</span>
+                        <b>{data.views.toLocaleString('pt-BR')}</b>
+                      </div>
+                      <div className="tooltip-share">
+                        <span>Participação no top 8:</span>
+                        <b>{share}%</b>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              }}
+            />
+            <Bar dataKey="views" name="Visualizações" fill="url(#pageBarGradient)" radius={[6, 6, 0, 0]}>
+              <LabelList
+                dataKey="views"
+                position="top"
+                fill="var(--foreground, #21463e)"
+                fontSize={11}
+                fontWeight={700}
+                formatter={(val?: any) => (Number(val) > 0 ? Number(val).toLocaleString('pt-BR') : '')}
+              />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </article>
+  );
+}
+
+function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
+  const rows = (analytics?.daily ?? []).map(item => ({
+    ...item,
+    label: item.date.slice(5).split('-').reverse().join('/'),
+    views: Number(item.pageViews || 0)
+  }));
+
+  const totalPeriodViews = rows.reduce((sum, r) => sum + r.views, 0);
+
+  return (
+    <article className="chart-card">
+      <div className="section-heading">
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <h3 style={{ margin: 0 }}>Visualizações ao longo do período</h3>
+            <div className="metric-info-wrapper" tabIndex={0} role="button" aria-label="Informações sobre o gráfico de evolução do tráfego">
+              <Info size={14} className="metric-info-icon" />
+              <div className="metric-tooltip-popover">
+                <div className="metric-tooltip-title">Visualizações no Período</div>
+                <div className="metric-tooltip-section">
+                  <b>O que representa</b>
+                  <p>Volume dia a dia de páginas visualizadas pelos visitantes no intervalo de datas selecionado.</p>
+                </div>
+                <div className="metric-tooltip-section">
+                  <b>Por que é importante</b>
+                  <p>Permite detectar picos após campanhas, postagens ou anúncios, além de dias com menor tráfego.</p>
+                </div>
+                <div className="metric-tooltip-section tip">
+                  <b>Dica prática</b>
+                  <p>Observe em quais dias da semana seu tráfego é mais alto para agendar envios de e-mail e novas ofertas.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="chart-header-caption">FLUXO DIÁRIO DE ACESSOS PARA IDENTIFICAR DIAS DE MAIOR MOVIMENTO E TENDÊNCIA DE CRESCIMENTO</p>
+        </div>
+      </div>
+      <div className="chart">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={rows} margin={{ top: 22, right: 16, left: 16, bottom: 4 }}>
+            <defs>
+              <linearGradient id="realVisits" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stopColor="#ff3cac" stopOpacity=".38"/>
+                <stop offset=".55" stopColor="#ff8a3d" stopOpacity=".16"/>
+                <stop offset="1" stopColor="#ff8a3d" stopOpacity="0"/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid vertical={false} stroke="#E8EFEC"/>
+            <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+            <YAxis hide domain={['auto', 'dataMax + 4']} />
+            <Tooltip
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  const data = payload[0].payload as { label: string; date: string; pageViews: number; users: number; contacts: number };
+                  const share = totalPeriodViews > 0 ? Math.round((Number(data.pageViews || 0) / totalPeriodViews) * 100) : 0;
+                  return (
+                    <div className="chart-rich-tooltip">
+                      <div className="tooltip-title">Data: {data.label}</div>
+                      <div className="tooltip-path">{data.date}</div>
+                      <div className="tooltip-stat highlight">
+                        <span>Visualizações:</span>
+                        <b>{Number(data.pageViews || 0).toLocaleString('pt-BR')}</b>
+                      </div>
+                      <div className="tooltip-stat">
+                        <span>Usuários únicos:</span>
+                        <b>{Number(data.users || 0).toLocaleString('pt-BR')}</b>
+                      </div>
+                      {Number(data.contacts || 0) > 0 && (
+                        <div className="tooltip-stat">
+                          <span>Contatos:</span>
+                          <b>{Number(data.contacts || 0).toLocaleString('pt-BR')}</b>
+                        </div>
+                      )}
+                      <div className="tooltip-share">
+                        <span>% do total do período:</span>
+                        <b>{share}%</b>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              }}
+            />
+            <Area
+              type="monotone"
+              dataKey="pageViews"
+              name="Visualizações"
+              stroke="#ff3cac"
+              strokeWidth={3}
+              fill="url(#realVisits)"
+              dot={{ r: 3, fill: '#ff3cac', stroke: '#fff', strokeWidth: 1.5 }}
+              activeDot={{ r: 6, fill: '#ff3cac' }}
+            >
+              <LabelList
+                dataKey="pageViews"
+                position="top"
+                offset={10}
+                fill="#ff3cac"
+                fontSize={10}
+                fontWeight={700}
+                formatter={(val?: any) => (Number(val) > 0 ? Number(val).toLocaleString('pt-BR') : '')}
+              />
+            </Area>
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </article>
+  );
+}
 
 export function normalizeOriginName(raw?: string): string {
   if (!raw) return 'Direto';
@@ -76,17 +273,39 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
     return acc;
   }, []).sort((a, b) => b.value - a.value).slice(0, 7);
 
+  const totalOriginViews = aggregatedSources.reduce((sum, s) => sum + s.value, 0);
+
   return (
     <article className="chart-card">
       <div className="section-heading">
         <div>
-          <h3>Origens dos acessos</h3>
-          <p>De onde as pessoas chegaram ao site</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <h3 style={{ margin: 0 }}>Origens dos acessos</h3>
+            <div className="metric-info-wrapper" tabIndex={0} role="button" aria-label="Informações sobre o gráfico de origens dos acessos">
+              <Info size={14} className="metric-info-icon" />
+              <div className="metric-tooltip-popover">
+                <div className="metric-tooltip-title">Origens dos Acessos</div>
+                <div className="metric-tooltip-section">
+                  <b>O que representa</b>
+                  <p>Canais e plataformas de onde vieram as pessoas que entraram no seu site (ex: WhatsApp, Google, Instagram, Direto).</p>
+                </div>
+                <div className="metric-tooltip-section">
+                  <b>Por que é importante</b>
+                  <p>Mostra quais canais de divulgação trazem mais retorno real para você concentrar tempo e investimento neles.</p>
+                </div>
+                <div className="metric-tooltip-section tip">
+                  <b>Dica prática</b>
+                  <p>Se o canal 'Direto' for o maior, as pessoas chegam por links diretos no chat, favoritos ou digitando o endereço.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="chart-header-caption">CANAIS E PLATAFORMAS DE ONDE SEU PÚBLICO CHEGOU AO SITE (GOOGLE, REDES SOCIAIS, DIRETO)</p>
         </div>
       </div>
       <div className="chart origin-chart-container">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={aggregatedSources} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 4 }}>
+          <BarChart data={aggregatedSources} layout="vertical" margin={{ top: 8, right: 38, left: 8, bottom: 4 }}>
             <defs>
               <linearGradient id="originBarGradient" x1="0" x2="1">
                 <stop offset="0" stopColor="#ff3cac"/>
@@ -104,10 +323,38 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
               tick={{ fontSize: 11, fill: 'var(--muted-foreground, #59766e)', fontWeight: 600 }}
             />
             <Tooltip
-              formatter={(val?: any) => [`${val ?? 0} acessos`, 'Total']}
-              contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e1ebe8' }}
+              content={({ active, payload }) => {
+                if (active && payload && payload.length) {
+                  const data = payload[0].payload as { name: string; value: number };
+                  const share = totalOriginViews > 0 ? Math.round((data.value / totalOriginViews) * 100) : 0;
+                  return (
+                    <div className="chart-rich-tooltip">
+                      <div className="tooltip-title">{data.name}</div>
+                      <div className="tooltip-stat highlight">
+                        <span>Acessos no período:</span>
+                        <b>{data.value.toLocaleString('pt-BR')}</b>
+                      </div>
+                      <div className="tooltip-share">
+                        <span>Participação no top canais:</span>
+                        <b>{share}%</b>
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              }}
             />
-            <Bar dataKey="value" name="Acessos" fill="url(#originBarGradient)" radius={[0, 6, 6, 0]} barSize={16} />
+            <Bar dataKey="value" name="Acessos" fill="url(#originBarGradient)" radius={[0, 6, 6, 0]} barSize={16}>
+              <LabelList
+                dataKey="value"
+                position="right"
+                offset={8}
+                fill="var(--foreground, #21463e)"
+                fontSize={11}
+                fontWeight={700}
+                formatter={(val?: any) => (Number(val) > 0 ? Number(val).toLocaleString('pt-BR') : '')}
+              />
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
