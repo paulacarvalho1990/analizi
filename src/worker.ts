@@ -22,9 +22,12 @@ const ALLOWED_EVENTS = new Set([
   'session_start',
   'first_visit',
   'button_click',
+  'media_click',
   'sign_up',
   'login',
   'whatsapp_contact',
+  'page_layout',
+  'scroll_depth',
 ])
 
 type TrackerEvent = {
@@ -184,6 +187,51 @@ async function collect(request: Request, env: Env) {
           rawMedium = known.medium || 'social'
         }
       }
+    }
+
+    // Trata armazenamento estrutural de Layout (sem gravar na tabela events para economizar espaço)
+    if (name === 'page_layout') {
+      const layoutObj = (event.metadata as { layout?: { viewport_width?: number; viewport_height?: number; page_height?: number; blocks?: unknown[] } })?.layout
+      if (layoutObj && Array.isArray(layoutObj.blocks)) {
+        const pagePath = compactText(event.pagePath, 1_024) || '/'
+        const devType = compactText(event.deviceType, 32) || 'desktop'
+        const vpW = Number(layoutObj.viewport_width) || 1280
+        const vpH = Number(layoutObj.viewport_height) || 800
+        const pageH = Number(layoutObj.page_height) || 1200
+        const layoutJson = JSON.stringify(layoutObj.blocks.slice(0, 120))
+        statements.push(env.ANALIZI_EVENTS.prepare(`
+          insert into page_layouts (tracker_site_id, page_path, device_type, viewport_width, viewport_height, page_height, layout_json, updated_at)
+          values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
+          on conflict(tracker_site_id, page_path, device_type) do update set
+            viewport_width = excluded.viewport_width,
+            viewport_height = excluded.viewport_height,
+            page_height = excluded.page_height,
+            layout_json = excluded.layout_json,
+            updated_at = current_timestamp
+        `).bind(siteId, pagePath, devType, vpW, vpH, pageH, layoutJson))
+      }
+      continue
+    }
+
+    // Trata consolidação de Scroll Depth (econômico, sem poluir a tabela events)
+    if (name === 'scroll_depth') {
+      const meta = event.metadata as { depth_brackets?: string[] } | undefined
+      const brackets = Array.isArray(meta?.depth_brackets) ? meta.depth_brackets : []
+      const pagePath = compactText(event.pagePath, 1_024) || '/'
+      const devType = compactText(event.deviceType, 32) || 'desktop'
+      const metricDate = (compactText(event.occurredAt, 40) || new Date().toISOString()).slice(0, 10)
+
+      for (const bracket of brackets) {
+        if (['25%', '50%', '75%', '100%'].includes(bracket)) {
+          statements.push(env.ANALIZI_EVENTS.prepare(`
+            insert into daily_page_scroll (tracker_site_id, metric_date, page_path, device_type, depth_bracket, visitors)
+            values (?, ?, ?, ?, ?, 1)
+            on conflict(tracker_site_id, metric_date, page_path, device_type, depth_bracket) do update set
+              visitors = daily_page_scroll.visitors + 1
+          `).bind(siteId, metricDate, pagePath, devType, bracket))
+        }
+      }
+      continue
     }
 
     statements.push(env.ANALIZI_EVENTS.prepare(`
@@ -534,6 +582,121 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   }
 
   return json(responseBody, 200)
+}
+
+async function heatmapData(siteId: string, env: Env, searchParams: URLSearchParams): Promise<Response> {
+  const safeId = trackerId(siteId)
+  if (!safeId) return json({ error: 'Identificação inválida.' }, 400)
+
+  const pagePath = searchParams.get('page') || '/'
+  const deviceType = searchParams.get('device') || 'desktop'
+  const period = Math.min(Math.max(Number(searchParams.get('period')) || 30, 1), 90)
+
+  const endDate = new Date().toISOString().slice(0, 10)
+  const startDate = new Date(Date.now() - (period - 1) * 86400000).toISOString().slice(0, 10)
+
+  // 1. Busca layout salvo
+  const layoutQuery = env.ANALIZI_EVENTS.prepare(`
+    select page_path, device_type, viewport_width, viewport_height, page_height, layout_json, updated_at
+    from page_layouts
+    where tracker_site_id = ? and page_path = ? and device_type = ?
+    limit 1
+  `).bind(safeId, pagePath, deviceType)
+
+  // 2. Busca lista de páginas que têm layout gravado para o seletor
+  const pagesListQuery = env.ANALIZI_EVENTS.prepare(`
+    select distinct page_path from page_layouts where tracker_site_id = ? order by page_path asc limit 100
+  `).bind(safeId)
+
+  // 3. Busca cliques com coordenadas agregadas
+  const clicksQuery = env.ANALIZI_EVENTS.prepare(`
+    select
+      cast(json_extract(metadata_json, '$.click_x_pct') as integer) as x_pct,
+      cast(json_extract(metadata_json, '$.click_y_px') as integer) as y_px,
+      json_extract(metadata_json, '$.target_tag') as tag,
+      json_extract(metadata_json, '$.button_label') as label,
+      count(*) as count
+    from events
+    where tracker_site_id = ?
+      and page_path = ?
+      and (device_type = ? or (? = 'desktop' and device_type is null))
+      and event_name in ('button_click', 'media_click', 'whatsapp_contact', 'sign_up', 'login')
+      and json_extract(metadata_json, '$.click_x_pct') is not null
+      and date(occurred_at) >= ? and date(occurred_at) <= ?
+    group by x_pct, round(y_px / 15), tag, label
+    order by count desc
+    limit 250
+  `).bind(safeId, pagePath, deviceType, deviceType, startDate, endDate)
+
+  // 4. Busca consolidação de scroll depth
+  const scrollQuery = env.ANALIZI_EVENTS.prepare(`
+    select depth_bracket, sum(visitors) as visitors
+    from daily_page_scroll
+    where tracker_site_id = ? and page_path = ? and device_type = ?
+      and metric_date >= ? and metric_date <= ?
+    group by depth_bracket
+  `).bind(safeId, pagePath, deviceType, startDate, endDate)
+
+  // 5. Total de visitantes únicos na página para calcular % de retenção de scroll
+  const visitorsQuery = env.ANALIZI_EVENTS.prepare(`
+    select coalesce(sum(users), 0) as total_visitors
+    from daily_pages
+    where tracker_site_id = ? and page_path = ?
+      and metric_date >= ? and metric_date <= ?
+  `).bind(safeId, pagePath, startDate, endDate)
+
+  const results = await env.ANALIZI_EVENTS.batch([
+    layoutQuery,
+    pagesListQuery,
+    clicksQuery,
+    scrollQuery,
+    visitorsQuery
+  ]) as Array<{ results?: Array<Record<string, unknown>> }>
+
+  const layoutRow = results[0]?.results?.[0]
+  const availablePages = (results[1]?.results || []).map((r) => String(r.page_path))
+  const clicks = results[2]?.results || []
+  const scrollRows = results[3]?.results || []
+  const totalVisitors = Number(results[4]?.results?.[0]?.total_visitors || 0)
+
+  let blocks: unknown[] = []
+  if (layoutRow?.layout_json) {
+    try {
+      blocks = JSON.parse(String(layoutRow.layout_json))
+    } catch {}
+  }
+
+  const scrollRetention: Record<string, { visitors: number; percentage: number }> = {
+    '25%': { visitors: 0, percentage: 0 },
+    '50%': { visitors: 0, percentage: 0 },
+    '75%': { visitors: 0, percentage: 0 },
+    '100%': { visitors: 0, percentage: 0 },
+  }
+
+  for (const s of scrollRows) {
+    const bracket = String(s.depth_bracket)
+    const v = Number(s.visitors || 0)
+    if (scrollRetention[bracket]) {
+      scrollRetention[bracket].visitors = v
+      scrollRetention[bracket].percentage = totalVisitors > 0 ? Math.min(100, Math.round((v / totalVisitors) * 100)) : 100
+    }
+  }
+
+  return json({
+    pagePath,
+    deviceType,
+    availablePages,
+    totalVisitors,
+    layout: layoutRow ? {
+      viewportWidth: layoutRow.viewport_width,
+      viewportHeight: layoutRow.viewport_height,
+      pageHeight: layoutRow.page_height,
+      updatedAt: layoutRow.updated_at,
+      blocks
+    } : null,
+    clicks,
+    scrollRetention
+  }, 200)
 }
 
 export interface AIInsight {
@@ -1229,6 +1392,8 @@ export default {
     if (statusMatch) return trackerStatus(statusMatch[1], env)
     const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)
     if (analyticsMatch) return analytics(analyticsMatch[1], env, url.searchParams)
+    const heatmapMatch = url.pathname.match(/^\/v1\/heatmap\/(ANLZ[A-Z0-9]{5}-A)$/i)
+    if (heatmapMatch) return heatmapData(heatmapMatch[1], env, url.searchParams)
     if (url.pathname === '/v1/ai-insights') return generateAIInsights(request, env)
     return env.ASSETS.fetch(request)
   },
