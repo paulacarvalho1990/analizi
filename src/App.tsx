@@ -323,7 +323,24 @@ function pageFromPath(): Page { const path = window.location.pathname; if (path 
 function dateString(date: Date) { return date.toISOString().slice(0, 10) }
 function shiftDays(base: string, offset: number) { const d = new Date(`${base}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + offset); return dateString(d) }
 function comparison(current?: number, previous?: number) { const now = Number(current || 0); const before = Number(previous || 0); if (!before) return { variation: now ? 'novo no período' : 'sem dados', good: true }; const percent = Math.round(Math.abs(((now - before) / before) * 100)); return { variation: `${percent}%`, good: now >= before } }
-function readAnalyticsFilter(): AnalyticsFilter { const params = new URLSearchParams(window.location.search); const today = dateString(new Date()); const valid = (value: string | null) => Boolean(value && value.length === 10 && value[4] === '-' && value[7] === '-' && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))); const end = valid(params.get('end')) ? params.get('end')! : today; let start = valid(params.get('start')) ? params.get('start')! : shiftDays(end, -6); if (start > end) start = end; if (start < shiftDays(end, -729)) start = shiftDays(end, -729); const group = params.get('group'); return { start, end, group: group === 'week' || group === 'month' || group === 'quarter' || group === 'semester' || group === 'year' ? group : 'day', page: params.get('page') || '', source: params.get('source') || '' } }
+function readAnalyticsFilter(): AnalyticsFilter {
+  const params = new URLSearchParams(window.location.search);
+  const yesterday = shiftDays(dateString(new Date()), -1);
+  const valid = (value: string | null) => Boolean(value && value.length === 10 && value[4] === '-' && value[7] === '-' && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)));
+  let end = valid(params.get('end')) ? params.get('end')! : yesterday;
+  if (end > yesterday) end = yesterday;
+  let start = valid(params.get('start')) ? params.get('start')! : shiftDays(end, -6);
+  if (start > end) start = end;
+  if (start < shiftDays(end, -729)) start = shiftDays(end, -729);
+  const group = params.get('group');
+  return {
+    start,
+    end,
+    group: group === 'week' || group === 'month' || group === 'quarter' || group === 'semester' || group === 'year' ? group : 'day',
+    page: params.get('page') || '',
+    source: params.get('source') || ''
+  };
+}
 function selectedDays() { const filter = readAnalyticsFilter(); return Math.floor((Date.parse(`${filter.end}T00:00:00Z`) - Date.parse(`${filter.start}T00:00:00Z`)) / 86_400_000) + 1 }
 
 function useAnalytics() {
@@ -368,7 +385,96 @@ function useAnalytics() {
   return data;
 }
 
-function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) { const [filter, setFilter] = useState<AnalyticsFilter>(readAnalyticsFilter); useEffect(() => { const onPop = () => setFilter(readAnalyticsFilter()); window.addEventListener('popstate', onPop); return () => window.removeEventListener('popstate', onPop) }, []); const apply = (next: AnalyticsFilter) => { const safeStart = next.start < shiftDays(next.end, -729) ? shiftDays(next.end, -729) : next.start; const url = new URL(window.location.href); url.searchParams.set('start', safeStart); url.searchParams.set('end', next.end); url.searchParams.set('group', next.group); if (next.page) url.searchParams.set('page', next.page); else url.searchParams.delete('page'); if (next.source) url.searchParams.set('source', next.source); else url.searchParams.delete('source'); window.history.pushState({}, '', url); window.dispatchEvent(new PopStateEvent('popstate')) }; const preset = (days: number) => { const end = dateString(new Date()); apply({ ...filter, start: shiftDays(end, -days + 1), end }) }; return <div className="analytics-filters"><label>De<input type="date" value={filter.start} max={filter.end} min={shiftDays(filter.end, -729)} onChange={(event) => apply({ ...filter, start: event.target.value })}/></label><label>Até<input type="date" value={filter.end} max={dateString(new Date())} min={filter.start} onChange={(event) => apply({ ...filter, end: event.target.value })}/></label><label>Agrupar por<select value={filter.group} onChange={(event) => apply({ ...filter, group: event.target.value as AnalyticsFilter['group'] })}><option value="day">Dia</option><option value="week">Semana</option><option value="month">Mês</option><option value="quarter">Trimestre</option><option value="semester">Semestre</option><option value="year">Ano</option></select></label><label>Página<select value={filter.page} onChange={(event) => apply({ ...filter, page: event.target.value })}><option value="">Todas as páginas</option>{(analytics?.filterPages ?? []).map(item => <option key={item.path} value={item.path}>{item.path}</option>)}</select></label><label>Origem<select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}><option value="">Todas as origens</option>{(analytics?.filterSources ?? []).map(item => <option key={item.source} value={item.source}>{item.source}</option>)}</select></label><div className="filter-presets"><button onClick={() => preset(7)}>7 dias</button><button onClick={() => preset(30)}>30 dias</button><button onClick={() => preset(90)}>90 dias</button><button onClick={() => preset(365)}>1 ano</button><button onClick={() => preset(730)}>2 anos</button></div></div> }
+function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
+  const [filter, setFilter] = useState<AnalyticsFilter>(readAnalyticsFilter);
+  const maxAvailableDate = shiftDays(dateString(new Date()), -1);
+
+  useEffect(() => {
+    const onPop = () => setFilter(readAnalyticsFilter());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  const apply = (next: AnalyticsFilter) => {
+    const safeEnd = next.end > maxAvailableDate ? maxAvailableDate : next.end;
+    let safeStart = next.start > safeEnd ? safeEnd : next.start;
+    if (safeStart < shiftDays(safeEnd, -729)) safeStart = shiftDays(safeEnd, -729);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set('start', safeStart);
+    url.searchParams.set('end', safeEnd);
+    url.searchParams.set('group', next.group);
+    if (next.page) url.searchParams.set('page', next.page);
+    else url.searchParams.delete('page');
+    if (next.source) url.searchParams.set('source', next.source);
+    else url.searchParams.delete('source');
+
+    window.history.pushState({}, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  const preset = (days: number) => {
+    const end = maxAvailableDate;
+    apply({ ...filter, start: shiftDays(end, -days + 1), end });
+  };
+
+  return (
+    <div className="analytics-filters">
+      <label>
+        De
+        <input
+          type="date"
+          value={filter.start}
+          max={filter.end}
+          min={shiftDays(filter.end, -729)}
+          onChange={(event) => apply({ ...filter, start: event.target.value })}
+        />
+      </label>
+      <label>
+        Até
+        <input
+          type="date"
+          value={filter.end}
+          max={maxAvailableDate}
+          min={filter.start}
+          onChange={(event) => apply({ ...filter, end: event.target.value })}
+        />
+      </label>
+      <label>
+        Agrupar por
+        <select value={filter.group} onChange={(event) => apply({ ...filter, group: event.target.value as AnalyticsFilter['group'] })}>
+          <option value="day">Dia</option>
+          <option value="week">Semana</option>
+          <option value="month">Mês</option>
+          <option value="quarter">Trimestre</option>
+          <option value="semester">Semestre</option>
+          <option value="year">Ano</option>
+        </select>
+      </label>
+      <label>
+        Página
+        <select value={filter.page} onChange={(event) => apply({ ...filter, page: event.target.value })}>
+          <option value="">Todas as páginas</option>
+          {(analytics?.filterPages ?? []).map(item => <option key={item.path} value={item.path}>{item.path}</option>)}
+        </select>
+      </label>
+      <label>
+        Origem
+        <select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}>
+          <option value="">Todas as origens</option>
+          {(analytics?.filterSources ?? []).map(item => <option key={item.source} value={item.source}>{item.source}</option>)}
+        </select>
+      </label>
+      <div className="filter-presets">
+        <button onClick={() => preset(7)}>7 dias</button>
+        <button onClick={() => preset(30)}>30 dias</button>
+        <button onClick={() => preset(90)}>90 dias</button>
+        <button onClick={() => preset(365)}>1 ano</button>
+        <button onClick={() => preset(730)}>2 anos</button>
+      </div>
+    </div>
+  );
+}
 
 function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) { return <div className="landing"><header className="landing-nav"><BrandLogo /><nav><a href="#funcionalidades">Funcionalidades</a><a href="#como-funciona">Como funciona</a><a href="#preco">Preço</a></nav><div><Button variant="ghost" onClick={() => setMode('login')}>Entrar</Button><Button onClick={() => setMode('signup')}>Teste grátis</Button></div></header><main><section className="landing-hero"><div><span className="eyebrow">ANALYTICS SIMPLES PARA NEGÓCIOS REAIS</span><h1>Seu site fala. O Analizi traduz.</h1><p>Descubra o que atrai pessoas, o que gera contatos e onde melhorar — sem precisar entender de analytics.</p><div className="hero-actions"><Button onClick={() => setMode('signup')}>Testar 7 dias grátis <ArrowRight size={18}/></Button><Button variant="secondary" onClick={() => setMode('login')}>Já tenho uma conta</Button></div><small>Sem cartão de crédito. Cancele quando quiser.</small></div><div className="hero-product"><div className="product-bar"><span/><span/><span/></div><div className="product-head"><span>Visão geral</span><b>Últimos 7 dias</b></div><div className="product-metrics"><div><small>Visualizações</small><b>852</b><i>+18%</i></div><div><small>Contatos iniciados</small><b>38</b><i>+6%</i></div><div><small>Taxa de saída</small><b>32,4%</b><em>quanto menor, melhor</em></div></div><div className="mini-chart"><span/><span/><span/><span/><span/><span/><span/></div><div className="product-insight"><Sparkles size={18}/><span><b>Seu site está crescendo</b><small>As visualizações aumentaram 18% nesta semana.</small></span></div></div></section><section className="landing-proof"><span>FEITO PARA QUEM QUER DECIDIR COM CLAREZA</span><div><b>Sites mais compreensíveis.</b><b>Decisões mais seguras.</b><b>Negócios mais próximos dos clientes.</b></div></section><section id="funcionalidades" className="landing-section"><div className="section-intro"><span className="eyebrow">TUDO O QUE IMPORTA</span><h2>Menos telas técnicas. Mais respostas úteis.</h2><p>O Analizi organiza as informações do seu site em uma visão que faz sentido para a rotina do seu negócio.</p></div><div className="feature-grid"><article><div className="feature-icon blue"><Globe2 size={22}/></div><h3>Entenda seus visitantes</h3><p>Veja de onde as pessoas chegam e quais páginas despertam mais interesse.</p></article><article><div className="feature-icon pink"><Sparkles size={22}/></div><h3>Receba insights claros</h3><p>Identifique mudanças importantes sem interpretar gráficos complexos.</p></article><article><div className="feature-icon orange"><MousePointerClick size={22}/></div><h3>Acompanhe os contatos</h3><p>Saiba quais páginas geram contatos pelo WhatsApp e novos cadastros.</p></article><article><div className="feature-icon blue"><CircleCheck size={22}/></div><h3>Melhore a experiência</h3><p>Use a Taxa de saída para encontrar páginas que precisam de atenção.</p></article></div></section><section id="como-funciona" className="steps-section"><div className="section-intro"><span className="eyebrow">COMECE EM MINUTOS</span><h2>Como funciona</h2></div><div className="steps-grid"><article><i>01</i><h3>Conecte seu site</h3><p>Use o Google Analytics que você já tem ou instale o rastreador Analizi.</p></article><article><i>02</i><h3>Acompanhe o essencial</h3><p>Veja usuários, origens, páginas e contatos em uma visão simples.</p></article><article><i>03</i><h3>Faça escolhas melhores</h3><p>Transforme dados em melhorias reais para o seu site e negócio.</p></article></div></section><section className="benefits-section"><div><span className="eyebrow">FEITO PARA PEQUENOS NEGÓCIOS</span><h2>Uma ferramenta que respeita seu tempo.</h2><ul><li><Check size={18}/>Em português e sem jargões técnicos</li><li><Check size={18}/>Acesse seus dados de qualquer lugar</li><li><Check size={18}/>Dados organizados e isolados por negócio</li><li><Check size={18}/>Relatório semanal direto no seu e-mail</li></ul></div><aside><span className="eyebrow">DESTAQUE</span><h3>Não espere uma planilha para saber como foi sua semana.</h3><p>Receba um resumo objetivo dos resultados e uma oportunidade para melhorar.</p><Sparkles size={34}/></aside></section><section id="preco" className="pricing-section"><span className="eyebrow">PLANOS SIMPLES PARA CRESCER COM VOCÊ</span><h2>Comece a entender seu site hoje.</h2><p className="pricing-subtitle">Os relatórios são os mesmos. Você escolhe a quantidade de sites, eventos e se precisa exportar os dados.</p><div className="pricing-grid"><article className="price-card"><div><span>ESSENCIAL</span><h3>R$ <b>79,90</b><small>/mês</small></h3><p>Para acompanhar um site com clareza.</p></div><ul><li><Check size={17}/>1 site</li><li><Check size={17}/>Até 20 mil eventos por mês</li><li><Check size={17}/>Dashboard e relatório semanal</li><li><Check size={17}/>Google Analytics ou Rastreador Analizi</li><li><Check size={17}/>Sem exportação de dados</li></ul><p className="plan-notice"><b>Mais de 20 mil eventos?</b> Conheça o Crescimento.</p><Button className="full" onClick={() => setMode('signup')}>Começar teste de 7 dias <ArrowRight size={18}/></Button><small>Sem cartão de crédito.</small></article><article className="price-card featured"><span className="plan-badge">PARA QUEM ESTÁ CRESCENDO</span><div><span>CRESCIMENTO</span><h3>R$ <b>149,90</b><small>/mês</small></h3><p>Para acompanhar mais sites e mais movimento.</p></div><ul><li><Check size={17}/>Até 3 sites</li><li><Check size={17}/>Até 100 mil eventos por mês</li><li><Check size={17}/>Dashboard e relatório semanal</li><li><Check size={17}/>Google Analytics ou Rastreador Analizi</li><li><Check size={17}/>Exportação de dados</li></ul><Button className="full" onClick={() => setMode('signup')}>Começar teste de 7 dias <ArrowRight size={18}/></Button><small>Sem cartão de crédito.</small></article></div></section><section className="landing-cta"><BrandLogo inverse/><h2>Conheça seu site. Conheça seu público.</h2><p>Comece agora e veja seu negócio com mais clareza.</p><Button onClick={() => setMode('signup')}>Testar 7 dias grátis <ArrowRight size={18}/></Button></section></main><footer className="landing-footer"><BrandLogo /><span>© 2026 Analizi. Feito para negócios que querem crescer.</span><button onClick={() => setMode('login')}>Entrar</button></footer></div> }
 
