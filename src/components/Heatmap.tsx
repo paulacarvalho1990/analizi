@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Flame, Monitor, Smartphone, MousePointer, ArrowDown, RefreshCw, Clock } from 'lucide-react'
+import {
+  Flame, Monitor, Smartphone, MousePointer, ArrowDown, RefreshCw, Clock,
+  Image as ImageIcon, Video, Type, CheckSquare, Layout, Sparkles, Navigation,
+  CreditCard, Flag, TextCursorInput, Link as LinkIcon
+} from 'lucide-react'
 import { useBusiness } from '../lib/business-context'
 
 interface LayoutBlock {
@@ -38,6 +42,143 @@ interface HeatmapPayload {
   } | null
   clicks: HeatmapClick[]
   scrollRetention: Record<string, ScrollRetention>
+}
+
+function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWidth: number }) {
+  const bTop = block.top
+  const bLeft = block.left
+  const bWidth = block.width
+  const bHeight = block.height
+  const type = block.type || 'section'
+  const label = block.label || ''
+
+  const style: React.CSSProperties = {
+    top: `${bTop}px`,
+    left: `${Math.min(bLeft, baseWidth - 30)}px`,
+    width: `${Math.min(bWidth, baseWidth)}px`,
+    height: `${bHeight}px`
+  }
+
+  // Placeholder completo para Imagem
+  if (type === 'image' || type === 'image-link') {
+    return (
+      <div className="wireframe-block wireframe-image" style={style} title={`IMAGEM: ${label}`}>
+        <div className="wireframe-image-inner">
+          <ImageIcon size={bHeight > 80 ? 28 : 16} className="wireframe-svg-icon" />
+          <span className="block-label">{label || 'Imagem / Mídia'}</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Vídeo
+  if (type === 'video') {
+    return (
+      <div className="wireframe-block wireframe-video" style={style} title={`VÍDEO: ${label}`}>
+        <div className="wireframe-video-inner">
+          <Video size={bHeight > 80 ? 26 : 16} className="wireframe-svg-icon" />
+          <span className="block-label">{label || 'Vídeo incorporado'}</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Botão
+  if (type === 'button') {
+    return (
+      <div className="wireframe-block wireframe-button" style={style} title={`BOTÃO: ${label}`}>
+        <CheckSquare size={13} className="wireframe-svg-icon" />
+        <span className="block-label">{label || 'Botão de Ação'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Formulário
+  if (type === 'form') {
+    return (
+      <div className="wireframe-block wireframe-form" style={style} title={`FORMULÁRIO: ${label}`}>
+        <div className="wireframe-form-header">
+          <TextCursorInput size={14} className="wireframe-svg-icon" />
+          <span className="block-label">{label || 'Formulário de Contato / Inscrição'}</span>
+        </div>
+        {bHeight > 70 && (
+          <div className="wireframe-form-fake-inputs">
+            <div className="fake-input-row" />
+            <div className="fake-input-row short" />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Placeholder completo para Input isolado
+  if (type === 'input') {
+    return (
+      <div className="wireframe-block wireframe-input" style={style} title={`CAMPO DE TEXTO: ${label}`}>
+        <TextCursorInput size={12} className="wireframe-svg-icon" />
+        <span className="block-label">{label || 'Campo de entrada'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Banner / Hero
+  if (type === 'banner') {
+    return (
+      <div className="wireframe-block wireframe-banner" style={style} title={`BANNER: ${label}`}>
+        <div className="wireframe-banner-accent" />
+        <Flag size={14} className="wireframe-svg-icon" />
+        <span className="block-label">{label || 'Banner Promocional / Destaque'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Card
+  if (type === 'card') {
+    return (
+      <div className="wireframe-block wireframe-card" style={style} title={`CARD: ${label}`}>
+        <CreditCard size={14} className="wireframe-svg-icon" />
+        <span className="block-label">{label || 'Card de Conteúdo'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder completo para Título / Heading
+  if (type === 'heading') {
+    return (
+      <div className="wireframe-block wireframe-heading" style={style} title={`TÍTULO: ${label}`}>
+        <Type size={14} className="wireframe-svg-icon" />
+        <span className="block-label">{label || 'Título da Seção'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder para Header ou Navegação
+  if (type === 'header' || type === 'nav') {
+    return (
+      <div className="wireframe-block wireframe-header" style={style} title={`CABEÇALHO: ${label}`}>
+        <Navigation size={14} className="wireframe-svg-icon" />
+        <span className="block-label">{label || 'Cabeçalho / Navegação'}</span>
+      </div>
+    )
+  }
+
+  // Placeholder para Link comum
+  if (type === 'link') {
+    return (
+      <div className="wireframe-block wireframe-link" style={style} title={`LINK: ${label}`}>
+        <LinkIcon size={12} className="wireframe-svg-icon" />
+        <span className="block-label">{label || 'Link'}</span>
+      </div>
+    )
+  }
+
+  // Fallback padrão: Seção estrutural
+  return (
+    <div className="wireframe-block wireframe-section" style={style} title={`SEÇÃO: ${label}`}>
+      <Layout size={13} className="wireframe-svg-icon" />
+      <span className="block-label">{label || 'Bloco / Seção'}</span>
+    </div>
+  )
 }
 
 export function Heatmap() {
@@ -221,50 +362,11 @@ export function Heatmap() {
                 position: 'relative'
               }}
             >
-              {/* Wireframe Sintético (Placeholders Estruturais) */}
+              {/* Wireframe Sintético (Placeholders Estruturais e Ricos) */}
               <div className="wireframe-layer" style={{ height: `${pageHeight}px` }}>
-                {blocks.map((block, idx) => {
-                  const bTop = block.top
-                  const bLeft = block.left
-                  const bWidth = block.width
-                  const bHeight = block.height
-
-                  let icon = '📦'
-                  let typeClass = 'wireframe-section'
-                  if (block.type === 'button') {
-                    icon = '🔘'
-                    typeClass = 'wireframe-button'
-                  } else if (block.type === 'image' || block.type === 'image-link') {
-                    icon = '🖼️'
-                    typeClass = 'wireframe-image'
-                  } else if (block.type === 'heading') {
-                    icon = '📝'
-                    typeClass = 'wireframe-heading'
-                  } else if (block.type === 'video') {
-                    icon = '🎬'
-                    typeClass = 'wireframe-video'
-                  } else if (block.type === 'form') {
-                    icon = '📋'
-                    typeClass = 'wireframe-form'
-                  }
-
-                  return (
-                    <div
-                      key={idx}
-                      className={`wireframe-block ${typeClass}`}
-                      style={{
-                        top: `${bTop}px`,
-                        left: `${Math.min(bLeft, baseWidth - 40)}px`,
-                        width: `${Math.min(bWidth, baseWidth)}px`,
-                        height: `${bHeight}px`
-                      }}
-                      title={`${block.type.toUpperCase()}: ${block.label || 'Sem rótulo'}`}
-                    >
-                      <span className="block-icon">{icon}</span>
-                      <span className="block-label">{block.label || block.type.toUpperCase()}</span>
-                    </div>
-                  )
-                })}
+                {blocks.map((block, idx) => (
+                  <RenderWireframeBlock key={idx} block={block} baseWidth={baseWidth} />
+                ))}
               </div>
 
               {/* Camada 1: Cliques (Pontos térmicos sobrepostos) */}

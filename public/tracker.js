@@ -200,7 +200,7 @@
       if (docH <= 0 || docW <= 0) return
 
       // Seleciona elementos estruturais e blocos visuais chave
-      const selectors = 'header, footer, nav, main, section, article, h1, h2, h3, button, a, img, video, form, [role="button"]'
+      const selectors = 'header, footer, nav, main, section, article, aside, h1, h2, h3, h4, button, a, img, video, form, input:not([type="hidden"]), select, textarea, [role="button"], [role="banner"], [role="navigation"], .card, .banner'
       const nodes = [...document.querySelectorAll(selectors)]
       const blocks = []
 
@@ -208,7 +208,7 @@
         if (!(el instanceof HTMLElement)) continue
         const rect = el.getBoundingClientRect()
         // Ignora elementos invisíveis ou minúsculos
-        if (rect.width < 15 || rect.height < 15) continue
+        if (rect.width < 12 || rect.height < 12) continue
         const style = window.getComputedStyle(el)
         if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue
 
@@ -218,15 +218,29 @@
         const height = Math.round(rect.height)
 
         let type = el.tagName.toLowerCase()
-        if (type === 'a') type = el.querySelector('img') ? 'image-link' : 'link'
-        else if (type.startsWith('h')) type = 'heading'
-        else if (type === 'button' || el.getAttribute('role') === 'button') type = 'button'
-        else if (type === 'img') type = 'image'
-        else if (type === 'video') type = 'video'
-        else if (type === 'form') type = 'form'
-        else if (['header', 'footer', 'nav', 'section', 'article', 'main'].includes(type)) type = 'section'
+        if (type === 'a') {
+          type = el.querySelector('img') ? 'image-link' : (el.classList.contains('button') || el.classList.contains('btn') ? 'button' : 'link')
+        } else if (type.startsWith('h')) {
+          type = 'heading'
+        } else if (type === 'button' || el.getAttribute('role') === 'button') {
+          type = 'button'
+        } else if (type === 'img') {
+          type = 'image'
+        } else if (type === 'video') {
+          type = 'video'
+        } else if (type === 'form') {
+          type = 'form'
+        } else if (type === 'input' || type === 'select' || type === 'textarea') {
+          type = 'input'
+        } else if (el.classList.contains('banner') || el.getAttribute('role') === 'banner') {
+          type = 'banner'
+        } else if (el.classList.contains('card') || ['article'].includes(type)) {
+          type = 'card'
+        } else if (['header', 'footer', 'nav', 'section', 'aside', 'main'].includes(type)) {
+          type = type === 'header' || type === 'nav' ? 'header' : (type === 'footer' ? 'footer' : 'section')
+        }
 
-        const label = truncate(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 60)
+        const label = truncate(el.getAttribute('aria-label') || el.getAttribute('alt') || el.innerText || el.getAttribute('placeholder') || '', 70)
 
         blocks.push({
           type,
@@ -237,7 +251,7 @@
           label
         })
 
-        if (blocks.length >= 120) break // Limite seguro para manter payload minúsculo
+        if (blocks.length >= 150) break // Limite seguro para payload equilibrado
       }
 
       const layoutData = {
