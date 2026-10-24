@@ -48,6 +48,12 @@
       /(?:auth|login|oauth|accounts)/i.test(hostname)
   }
 
+  const isWhatsappHost = (hostname) => {
+    if (!hostname) return false
+    const h = hostname.toLowerCase().replace(/^www\./, '')
+    return h === 'l.wl.co' || h === 'wl.co' || h === 'wa.me' || h === 'whatsapp' || /(?:^|\.)whatsapp\.com$/i.test(h)
+  }
+
   const attribution = () => {
     const params = new URLSearchParams(location.search)
     const utmSource = params.get('utm_source')
@@ -73,11 +79,19 @@
           const refHost = new URL(document.referrer).hostname.replace(/^www\./, '')
           // Ignora se for o próprio domínio do site ou provedor de autenticação (OAuth callback)
           if (refHost && refHost !== location.hostname.replace(/^www\./, '') && !isAuthReferrer(refHost)) {
-            source = refHost
-            medium = medium || 'referência'
+            if (isWhatsappHost(refHost)) {
+              source = 'Whatsapp'
+              medium = medium || 'social'
+            } else {
+              source = refHost
+              medium = medium || 'referência'
+            }
           }
         } catch {}
       }
+    } else if (isWhatsappHost(source)) {
+      source = 'Whatsapp'
+      medium = medium || 'social'
     }
 
     if (!source) {

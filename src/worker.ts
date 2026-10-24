@@ -131,6 +131,15 @@ async function collect(request: Request, env: Env) {
       /(?:auth|login|oauth|accounts)/i.test(s)
   }
 
+  const isWhatsappOrigin = (s?: string | null, ref?: string | null) => {
+    const check = (val?: string | null) => {
+      if (!val) return false
+      const h = val.toLowerCase().trim().replace(/^www\./, '')
+      return h === 'l.wl.co' || h === 'wl.co' || h === 'wa.me' || h === 'whatsapp' || /(?:^|\.)whatsapp\.com$/i.test(h)
+    }
+    return check(s) || check(ref)
+  }
+
   for (const event of events) {
     const name = compactText(event.eventName, 40)
     if (!ALLOWED_EVENTS.has(name)) continue
@@ -141,9 +150,16 @@ async function collect(request: Request, env: Env) {
 
     let rawSource = compactText(event.source, 120) || null
     let rawMedium = compactText(event.medium, 120)
+    const refHost = compactText(event.referrerHost, 253) || null
+
     if (isAuthSource(rawSource)) {
       rawSource = 'direto'
       rawMedium = rawMedium === 'referência' ? 'direto' : rawMedium
+    } else if (isWhatsappOrigin(rawSource, refHost)) {
+      rawSource = 'Whatsapp'
+      if (!rawMedium || rawMedium === 'referência' || rawMedium === 'referral') {
+        rawMedium = 'social'
+      }
     }
 
     statements.push(env.ANALIZI_EVENTS.prepare(`
@@ -255,7 +271,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   const source = compactText(query.get('source'), 120)
 
   const pageFilterDaily = page ? ' and page_path = ?' : ''
-  const sourceFilterDaily = source ? ' and source = ?' : ''
+  const sourceFilterDaily = source ? ' and lower(source) = lower(?)' : ''
 
   // 100% das métricas são extraídas das tabelas consolidadas diárias
   const results = await env.ANALIZI_EVENTS.batch([
@@ -288,7 +304,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             0 as signUps,
             null as attentionSeconds
           from daily_sources s
-          where s.tracker_site_id = ? and s.metric_date >= ? and s.metric_date <= ? and s.source = ?
+          where s.tracker_site_id = ? and s.metric_date >= ? and s.metric_date <= ? and lower(s.source) = lower(?)
         `).bind(safeId, start, end, source)
       : env.ANALIZI_EVENTS.prepare(`
           select
@@ -408,7 +424,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             0 as signUps,
             null as attentionSeconds
           from daily_sources s
-          where s.tracker_site_id = ? and s.metric_date >= ? and s.metric_date < ? and s.source = ?
+          where s.tracker_site_id = ? and s.metric_date >= ? and s.metric_date < ? and lower(s.source) = lower(?)
         `).bind(safeId, previousStart, start, source)
       : env.ANALIZI_EVENTS.prepare(`
           select
@@ -991,8 +1007,14 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         select
           tracker_site_id,
           date(occurred_at) as metric_date,
-          coalesce(source, 'direto') as source,
-          coalesce(medium, '') as medium,
+          case
+            when lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com' then 'Whatsapp'
+            else coalesce(source, 'direto')
+          end as source,
+          case
+            when (lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com') and coalesce(medium, '') in ('', 'referência', 'referral') then 'social'
+            else coalesce(medium, '')
+          end as medium,
           coalesce(campaign, '') as campaign,
           count(distinct visitor_id) as users,
           sum(event_name = 'first_visit') as new_users,
@@ -1001,7 +1023,16 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
         where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), coalesce(source, 'direto'), coalesce(medium, ''), coalesce(campaign, '')
+        group by tracker_site_id, date(occurred_at),
+          case
+            when lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com' then 'Whatsapp'
+            else coalesce(source, 'direto')
+          end,
+          case
+            when (lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com') and coalesce(medium, '') in ('', 'referência', 'referral') then 'social'
+            else coalesce(medium, '')
+          end,
+          coalesce(campaign, '')
         on conflict(tracker_site_id, metric_date, source, medium, campaign) do update set
           users = excluded.users,
           new_users = excluded.new_users,
@@ -1065,13 +1096,21 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         select
           tracker_site_id,
           date(occurred_at) as metric_date,
-          coalesce(source, 'direto') as source,
+          case
+            when lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com' then 'Whatsapp'
+            else coalesce(source, 'direto')
+          end as source,
           coalesce(page_path, '/') as page_path,
           sum(event_name = 'page_view') as page_views,
           count(distinct visitor_id) as users
         from events
         where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), coalesce(source, 'direto'), coalesce(page_path, '/')
+        group by tracker_site_id, date(occurred_at),
+          case
+            when lower(coalesce(source, '')) in ('l.wl.co', 'wl.co', 'wa.me') or lower(coalesce(source, '')) like '%whatsapp.com' then 'Whatsapp'
+            else coalesce(source, 'direto')
+          end,
+          coalesce(page_path, '/')
         on conflict(tracker_site_id, metric_date, source, page_path) do update set
           page_views = excluded.page_views,
           users = excluded.users;
