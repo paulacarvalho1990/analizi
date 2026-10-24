@@ -1284,7 +1284,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
               i.event_name in ('button_click','whatsapp_contact','sign_up','login') or i.is_conversion = 1
             )
           )) / nullif(sum(event_name = 'page_view'), 0), 1) as exit_rate,
-          coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(case when sum(event_name = 'page_view') > 0 then sum(event_name = 'page_view') else count(distinct session_id) end, 0)), 0) as average_engagement_seconds,
+          coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct case when coalesce(engagement_time_ms, 0) >= 500 or event_name not in ('session_start', 'first_visit', 'page_view') then session_id end), 0)), 0) as average_engagement_seconds,
           count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
         where date(occurred_at) <= date('now', '-1 day')

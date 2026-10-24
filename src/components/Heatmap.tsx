@@ -361,9 +361,13 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
   // Placeholder completo para Mapa Interativo / Localização
   if (type === 'map') {
     return (
-      <div className="wireframe-block wireframe-map" style={style} title={`MAPA / LOCALIZAÇÃO: ${label}`}>
-        <div className="wireframe-map-inner">
-          <MapPin size={bHeight > 80 ? 26 : 16} className="wireframe-svg-icon" />
+      <div
+        className="wireframe-block wireframe-map"
+        style={{ ...style, background: '#132524', border: '1px solid #23534e', color: '#99f6e4', padding: 0 }}
+        title={`MAPA / LOCALIZAÇÃO: ${label}`}
+      >
+        <div className="wireframe-map-inner" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', padding: '10px', gap: '6px' }}>
+          <MapPin size={bHeight > 80 ? 26 : 16} className="wireframe-svg-icon" style={{ color: '#2dd4bf' }} />
           <span className="block-label">{label || 'Mapa Interativo / Localização'}</span>
         </div>
       </div>
@@ -373,8 +377,12 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
   // Placeholder completo para Player de Áudio / Podcast
   if (type === 'audio') {
     return (
-      <div className="wireframe-block wireframe-audio" style={style} title={`ÁUDIO / PODCAST: ${label}`}>
-        <Volume2 size={15} className="wireframe-svg-icon" />
+      <div
+        className="wireframe-block wireframe-audio"
+        style={{ ...style, background: '#231b2e', border: '1px solid #4c356b', color: '#e9d5ff' }}
+        title={`ÁUDIO / PODCAST: ${label}`}
+      >
+        <Volume2 size={15} className="wireframe-svg-icon" style={{ color: '#c084fc' }} />
         <span className="block-label">{label || 'Player de Áudio / Podcast'}</span>
       </div>
     )
@@ -383,15 +391,19 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
   // Placeholder completo para FAQ / Acordeão
   if (type === 'faq') {
     return (
-      <div className="wireframe-block wireframe-faq" style={style} title={`FAQ / ACORDEÃO: ${label}`}>
-        <div className="wireframe-faq-header">
-          <HelpCircle size={14} className="wireframe-svg-icon" />
+      <div
+        className="wireframe-block wireframe-faq"
+        style={{ ...style, background: '#172030', border: '1px solid #2e415f', color: '#dbeafe', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', padding: '10px 14px', gap: '8px' }}
+        title={`FAQ / ACORDEÃO: ${label}`}
+      >
+        <div className="wireframe-faq-header" style={{ display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 700 }}>
+          <HelpCircle size={14} className="wireframe-svg-icon" style={{ color: '#60a5fa' }} />
           <span className="block-label">{label || 'Perguntas Frequentes / Acordeão'}</span>
         </div>
         {bHeight > 90 && (
-          <div className="wireframe-faq-items">
-            <div className="fake-faq-row" />
-            <div className="fake-faq-row" />
+          <div className="wireframe-faq-items" style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+            <div className="fake-faq-row" style={{ height: '16px', background: 'rgba(96, 165, 250, 0.12)', border: '1px solid rgba(96, 165, 250, 0.28)', borderRadius: '5px', width: '100%' }} />
+            <div className="fake-faq-row" style={{ height: '16px', background: 'rgba(96, 165, 250, 0.12)', border: '1px solid rgba(96, 165, 250, 0.28)', borderRadius: '5px', width: '100%' }} />
           </div>
         )}
       </div>
@@ -401,8 +413,12 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
   // Placeholder completo para Depoimento / Prova Social
   if (type === 'testimonial') {
     return (
-      <div className="wireframe-block wireframe-testimonial" style={style} title={`DEPOIMENTO: ${label}`}>
-        <MessageSquareQuote size={15} className="wireframe-svg-icon" />
+      <div
+        className="wireframe-block wireframe-testimonial"
+        style={{ ...style, background: '#241d18', border: '1px solid #433227', borderLeft: '3px solid #f97316', color: '#ffedd5' }}
+        title={`DEPOIMENTO: ${label}`}
+      >
+        <MessageSquareQuote size={15} className="wireframe-svg-icon" style={{ color: '#fb923c' }} />
         <span className="block-label">{label || 'Depoimento / Avaliação de Cliente'}</span>
       </div>
     )
@@ -411,8 +427,12 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
   // Placeholder completo para Carrossel / Slider
   if (type === 'carousel') {
     return (
-      <div className="wireframe-block wireframe-carousel" style={style} title={`CARROSSEL / SLIDER: ${label}`}>
-        <GalleryHorizontal size={15} className="wireframe-svg-icon" />
+      <div
+        className="wireframe-block wireframe-carousel"
+        style={{ ...style, background: '#1a1e2e', border: '1px dashed #4f46e5', color: '#e0e7ff' }}
+        title={`CARROSSEL / SLIDER: ${label}`}
+      >
+        <GalleryHorizontal size={15} className="wireframe-svg-icon" style={{ color: '#818cf8' }} />
         <span className="block-label">{label || 'Carrossel / Galeria Interativa'}</span>
       </div>
     )

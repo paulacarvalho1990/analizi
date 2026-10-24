@@ -1,4 +1,4 @@
--- Recalcula o Tempo de Atenção (average_engagement_seconds) somando o engagement_time_ms de todos os eventos da sessão/visualização em vez de fazer média simples por evento individual.
+-- Recalcula o Tempo de Atenção (average_engagement_seconds) considerando no denominador as sessões engajadas (que registraram tempo de atenção >= 500ms ou interação), evitando que visitas antigas sem evento de saída (0s) derrubem a média real.
 
 insert into daily_metrics (tracker_site_id, metric_date, sessions, users, new_users, page_views, conversions, whatsapp_contacts, sign_ups, logins, average_engagement_seconds, exit_rate)
 select
@@ -12,7 +12,7 @@ select
   sum(e.event_name = 'whatsapp_contact') as whatsapp_contacts,
   sum(e.event_name = 'sign_up') as sign_ups,
   sum(e.event_name = 'login') as logins,
-  coalesce(round((sum(coalesce(e.engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct e.session_id), 0)), 0) as average_engagement_seconds,
+  coalesce(round((sum(coalesce(e.engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct case when coalesce(e.engagement_time_ms, 0) >= 500 or e.event_name not in ('session_start', 'first_visit', 'page_view') then e.session_id end), 0)), 0) as average_engagement_seconds,
   round(100.0 * sum(e.event_name = 'page_view' and e.id = (
     select x.id from events x
     where x.tracker_site_id = e.tracker_site_id and x.session_id = e.session_id and x.event_name = 'page_view'
@@ -71,7 +71,7 @@ select
       i.event_name in ('button_click','whatsapp_contact','sign_up','login') or i.is_conversion = 1
     )
   )) / nullif(sum(event_name = 'page_view'), 0), 1) as exit_rate,
-  coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(case when sum(event_name = 'page_view') > 0 then sum(event_name = 'page_view') else count(distinct session_id) end, 0)), 0) as average_engagement_seconds,
+  coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct case when coalesce(engagement_time_ms, 0) >= 500 or event_name not in ('session_start', 'first_visit', 'page_view') then session_id end), 0)), 0) as average_engagement_seconds,
   count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
 from events
 where date(occurred_at) <= date('now', '-1 day')
