@@ -213,7 +213,7 @@ async function collect(request: Request, env: Env) {
       continue
     }
 
-    // Trata consolidação de Scroll Depth (econômico, sem poluir a tabela events)
+    // Trata consolidação de Scroll Depth e captura do tempo de atenção final ao sair da página/aba
     if (name === 'scroll_depth') {
       const meta = event.metadata as { depth_brackets?: string[] } | undefined
       const brackets = Array.isArray(meta?.depth_brackets) ? meta.depth_brackets : []
@@ -231,7 +231,8 @@ async function collect(request: Request, env: Env) {
           `).bind(siteId, metricDate, pagePath, devType, bracket))
         }
       }
-      continue
+      // Não dá continue: permite registrar o evento na tabela events com seu engagement_time_ms
+      // para que todo o tempo de leitura até fechar ou trocar de aba/página seja somado no Tempo de Atenção.
     }
 
     statements.push(env.ANALIZI_EVENTS.prepare(`
@@ -416,7 +417,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             coalesce(sum(m.whatsapp_contacts), 0) as whatsappContacts,
             coalesce(sum(m.sign_ups), 0) as signUps,
             coalesce(sum(m.logins), 0) as logins,
-            round(sum(m.average_engagement_seconds * m.page_views) / nullif(sum(m.page_views), 0)) as attentionSeconds
+            round(sum(m.average_engagement_seconds * coalesce(nullif(m.sessions, 0), m.page_views)) / nullif(sum(coalesce(nullif(m.sessions, 0), m.page_views)), 0)) as attentionSeconds
           from daily_metrics m
           where m.tracker_site_id = ? and m.metric_date >= ? and m.metric_date <= ?
         `).bind(safeId, start, end),
@@ -539,7 +540,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             coalesce(sum(m.whatsapp_contacts), 0) as whatsappContacts,
             coalesce(sum(m.sign_ups), 0) as signUps,
             coalesce(sum(m.logins), 0) as logins,
-            round(sum(m.average_engagement_seconds * m.page_views) / nullif(sum(m.page_views), 0)) as attentionSeconds
+            round(sum(m.average_engagement_seconds * coalesce(nullif(m.sessions, 0), m.page_views)) / nullif(sum(coalesce(nullif(m.sessions, 0), m.page_views)), 0)) as attentionSeconds
           from daily_metrics m
           where m.tracker_site_id = ? and m.metric_date >= ? and m.metric_date < ?
         `).bind(safeId, previousStart, start),
@@ -1126,7 +1127,7 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
 
       const stats = (await env.ANALIZI_EVENTS.batch([
         env.ANALIZI_EVENTS.prepare(
-          `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts, sum(event_name='whatsapp_contact') whatsappContacts, round(avg(engagement_time_ms)/1000) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ?`
+          `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts, sum(event_name='whatsapp_contact') whatsappContacts, coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct session_id), 0)), 0) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ?`
         ).bind(sId, start7, today),
         env.ANALIZI_EVENTS.prepare(
           `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?`
@@ -1135,7 +1136,7 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
           `select coalesce(source,'direto') name, count(*) value from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(source,'direto') order by value desc limit 1`
         ).bind(sId, start7, today),
         env.ANALIZI_EVENTS.prepare(
-          `select coalesce(page_path,'/') path, sum(event_name='page_view') views, round(avg(engagement_time_ms)/1000) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(page_path,'/') order by views desc limit 1`
+          `select coalesce(page_path,'/') path, sum(event_name='page_view') views, coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(case when sum(event_name='page_view') > 0 then sum(event_name='page_view') else count(distinct session_id) end, 0)), 0) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(page_path,'/') order by views desc limit 1`
         ).bind(sId, start7, today)
       ])) as Array<{ results?: Array<Record<string, unknown>> }>
 
@@ -1196,7 +1197,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           sum(e.event_name = 'whatsapp_contact') as whatsapp_contacts,
           sum(e.event_name = 'sign_up') as sign_ups,
           sum(e.event_name = 'login') as logins,
-          round(avg(e.engagement_time_ms) / 1000) as average_engagement_seconds,
+          coalesce(round((sum(coalesce(e.engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct e.session_id), 0)), 0) as average_engagement_seconds,
           round(100.0 * sum(e.event_name = 'page_view' and e.id = (
             select x.id from events x
             where x.tracker_site_id = e.tracker_site_id and x.session_id = e.session_id and x.event_name = 'page_view'
@@ -1281,7 +1282,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
               i.event_name in ('button_click','whatsapp_contact','sign_up','login') or i.is_conversion = 1
             )
           )) / nullif(sum(event_name = 'page_view'), 0), 1) as exit_rate,
-          round(avg(engagement_time_ms) / 1000) as average_engagement_seconds,
+          coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(case when sum(event_name = 'page_view') > 0 then sum(event_name = 'page_view') else count(distinct session_id) end, 0)), 0) as average_engagement_seconds,
           count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
         where date(occurred_at) <= date('now', '-1 day')
