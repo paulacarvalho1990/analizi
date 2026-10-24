@@ -43,7 +43,21 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
   const [loading, setLoading] = useState(false)
   const options = useMemo(() => segmentOptions[segment], [segment])
   const isOther = subsegment === 'Outros'
-  useEffect(() => { const paths: Record<AuthFlowMode, string> = { login: '/entrar', consent: '/consentimento', 'onboarding-business': '/cadastro/negocio', 'onboarding-source': '/cadastro/fonte-de-dados' }; const path = paths[mode]; if (window.location.pathname !== path) window.history.pushState({}, '', path) }, [mode])
+  useEffect(() => {
+    const paths: Record<AuthFlowMode, string> = { login: '/entrar', consent: '/consentimento', 'onboarding-business': '/cadastro/negocio', 'onboarding-source': '/cadastro/fonte-de-dados' };
+    const path = paths[mode];
+    if (window.location.pathname !== path) window.history.pushState({}, '', path);
+
+    const titles: Record<AuthFlowMode, string> = {
+      login: 'Entrar | Analizi',
+      consent: 'Termos e Consentimento | Analizi',
+      'onboarding-business': 'Cadastrar Negócio | Analizi',
+      'onboarding-source': 'Configurar Fonte de Dados | Analizi',
+    };
+    if (titles[mode]) {
+      document.title = titles[mode];
+    }
+  }, [mode])
 
   const ready = () => {
     if (supabase) return true
