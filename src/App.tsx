@@ -314,7 +314,7 @@ function Insights() {
   );
 }
 
-type AuthPage = 'landing' | 'login' | 'signup' | 'consent' | 'onboarding-business' | 'onboarding-source' | 'app'
+type AuthPage = 'loading' | 'landing' | 'login' | 'signup' | 'consent' | 'onboarding-business' | 'onboarding-source' | 'app'
 interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, attentionSeconds?: number, contactSessions?: number }
 interface AnalyticsData { totals: AnalyticsTotals, previousTotals?: AnalyticsTotals, sources: Array<{ name: string, value: string | number }>, pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>, daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>, sourcePages?: Array<{ source: string, path: string, views: number, users: number }>, contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>, clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>, filterPages?: Array<{ path: string }>, filterSources?: Array<{ source: string }>, periodDays?: number, sourceKind?: string }
 interface AnalyticsFilter { start: string, end: string, group: 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year', page: string, source: string }
@@ -717,7 +717,10 @@ function PageHeader({ title, subtitle }: { title: string, subtitle: string }) {
 }
 
 export function App() {
-  const [mode, setMode] = useState<AuthPage>('landing');
+  const [mode, setMode] = useState<AuthPage>(() => {
+    // Se há cliente supabase configurado, inicia em 'loading' para verificar a sessão salva sem piscar a Landing
+    return supabase ? 'loading' : 'landing';
+  });
   const [page, setPage] = useState<Page>(() => pageFromPath());
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
@@ -734,25 +737,63 @@ export function App() {
 
   useEffect(() => {
     const client = supabase;
-    if (!client) return;
+    if (!client) {
+      setMode('landing');
+      return;
+    }
     const routeAuthenticatedUser = async () => {
-      const { data: { session } } = await client.auth.getSession();
-      if (!session) { setMode('landing'); return; }
-      const { data: { user }, error: userError } = await client.auth.getUser();
-      if (userError || !user) { await client.auth.signOut(); setMode('landing'); return; }
-      const { data: consents, error: consentError } = await client.from('user_consents').select('consent_key').eq('version', CONSENT_VERSION).in('consent_key', ['service_terms', 'site_data_processing']);
-      if (!consentError && (consents?.length ?? 0) < 2) { setMode('consent'); return; }
-      if (consentError) { setMode('landing'); return; }
-      const { data: businesses } = await client.from('businesses').select('id').limit(1);
-      setMode(businesses?.length ? 'app' : 'onboarding-business');
+      try {
+        const { data: { session } } = await client.auth.getSession();
+        if (!session) { setMode('landing'); return; }
+
+        // Valida o usuário com a sessão atual
+        const currentUser = session.user;
+        if (!currentUser) { setMode('landing'); return; }
+
+        // Verifica consentimentos obrigatórios
+        const { data: consents, error: consentError } = await client
+          .from('user_consents')
+          .select('consent_key')
+          .eq('version', CONSENT_VERSION)
+          .in('consent_key', ['service_terms', 'site_data_processing']);
+
+        if (!consentError && (consents?.length ?? 0) < 2) { setMode('consent'); return; }
+
+        // Verifica se possui negócio cadastrado
+        const { data: businesses, error: bizError } = await client.from('businesses').select('id').limit(1);
+        if (!bizError && businesses && businesses.length > 0) {
+          setMode('app');
+        } else if (!bizError) {
+          setMode('onboarding-business');
+        } else {
+          // Em caso de erro transitório de rede na consulta, mantém na app se já estava autenticado
+          setMode('app');
+        }
+      } catch (err) {
+        console.warn('Erro ao verificar sessão do usuário:', err);
+        setMode('landing');
+      }
     };
     void routeAuthenticatedUser();
-    const { data: { subscription } } = client.auth.onAuthStateChange(() => { void routeAuthenticatedUser(); });
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, newSession) => {
+      if (newSession) {
+        void routeAuthenticatedUser();
+      } else {
+        setMode('landing');
+      }
+    });
     return () => subscription.unsubscribe();
   }, []);
 
   const toggleTheme = () => setTheme(current => current === 'light' ? 'dark' : 'light');
 
+  if (mode === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--background, #f5f8f7)' }}>
+        <BrandLogo />
+      </div>
+    );
+  }
   if (mode === 'landing') return <Landing setMode={setMode} />;
   if (mode === 'login' || mode === 'signup' || mode === 'consent' || mode.startsWith('onboarding')) {
     return (
