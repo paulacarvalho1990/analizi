@@ -93,6 +93,12 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     why: 'Mostra onde seus esforços de marketing estão dando mais retorno financeiro e tráfego.',
     tip: 'Invista ainda mais no canal vencedor e teste novas abordagens nos canais menores.'
   },
+  'Localização principal': {
+    caption: 'Cidade e estado com maior volume de acessos',
+    what: 'Região geográfica (Cidade, Estado e País) de onde partiu a maior parcela de visitas do seu site.',
+    why: 'Ajuda a direcionar anúncios regionais, frete, atendimento local e ofertas para onde seu público realmente está.',
+    tip: 'Use as cidades do topo para segmentar campanhas no Instagram, Google Ads e personalizar sua comunicação.'
+  },
   'Páginas acompanhadas': {
     caption: 'Total de links diferentes acessados no site',
     what: 'Quantidade de URLs distintas do site que tiveram pelo menos uma visualização no período.',

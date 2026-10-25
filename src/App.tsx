@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Lightbulb, Copy, ExternalLink, Globe, Globe2, Info, Link2, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Sparkles, Target, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Lightbulb, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Sparkles, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard } from './components/Metrics'
@@ -364,14 +364,124 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
 
 function Dashboard() { const analytics = useAnalytics(); const [dailyPage, setDailyPage] = useState(0); const t = analytics?.totals; const p = analytics?.previousTotals; const daily = analytics?.daily ?? []; const visibleDays = daily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE); const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—'; const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI'; return <><PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} /><AnalyticsFilters analytics={analytics}/><div className="period"><span className="source-badge"><span className="source-badge-dot" />{badge}</span></div><section className="metrics"><MetricCard title="Visualizações de páginas" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} /><MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} /><MetricCard title="Tempo de atenção" value={attention} note="média por usuário ativo" /><MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} /><MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} /></section><div className="dashboard-split"><MetricChart analytics={analytics} /><article className="table-card compact-table daily-table"><div className="section-heading"><div><h3>Métricas por dia</h3><p>Atividade diária</p></div></div><div className="daily-head"><span>Data</span><span>Visualizações de páginas</span><span>Usuários</span><span>Contatos</span></div>{visibleDays.map(day => <div className="daily-row" key={day.date}><span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span><span>{day.pageViews}</span><span>{day.users}</span><span>{day.contacts}</span></div>)}{!daily.length && <p className="empty-state">Ainda não recebemos acessos neste período.</p>}<TablePagination page={dailyPage} total={daily.length} setPage={setDailyPage}/></article></div></> }
 
+const COUNTRY_NAMES: Record<string, string> = {
+  BR: 'Brasil',
+  US: 'Estados Unidos',
+  PT: 'Portugal',
+  AR: 'Argentina',
+  UY: 'Uruguai',
+  PY: 'Paraguai',
+  CL: 'Chile',
+  CO: 'Colômbia',
+  MX: 'México',
+  PE: 'Peru',
+  ES: 'Espanha',
+  FR: 'França',
+  DE: 'Alemanha',
+  IT: 'Itália',
+  GB: 'Reino Unido',
+  CA: 'Canadá',
+  JP: 'Japão',
+  AU: 'Austrália',
+  AO: 'Angola',
+  MZ: 'Moçambique',
+  CH: 'Suíça',
+  NL: 'Países Baixos',
+  IE: 'Irlanda'
+}
+
+function formatCountryName(code?: string): string {
+  if (!code) return 'Não identificado'
+  const clean = code.trim().toUpperCase()
+  if (COUNTRY_NAMES[clean]) return `${COUNTRY_NAMES[clean]} (${clean})`
+  return clean
+}
+
 function Audience() {
   const analytics = useAnalytics();
   const [sourcePage, setSourcePage] = useState(0);
+  const [locationPage, setLocationPage] = useState(0);
+  const [locationTab, setLocationTab] = useState<'cities' | 'regions' | 'countries'>('cities');
   const sourcePages = analytics?.sourcePages ?? [];
+  const rawLocations = analytics?.locations ?? [];
   const p = analytics?.previousTotals;
   const visibleSources = sourcePages.slice(sourcePage * ITEMS_PER_PAGE, (sourcePage + 1) * ITEMS_PER_PAGE);
   const topSource = analytics?.sources?.[0];
   const topShare = analytics?.totals?.pageViews && topSource ? `${Math.round((Number(topSource.value) / Number(analytics.totals.pageViews)) * 100)}%` : '—';
+
+  const aggregatedLocations = (() => {
+    if (locationTab === 'cities') {
+      return rawLocations.map((loc) => ({
+        key: `${loc.country}-${loc.region}-${loc.city}`,
+        city: loc.city || 'Não identificada',
+        region: loc.region || 'Não identificado',
+        country: formatCountryName(loc.country),
+        views: Number(loc.views || 0),
+        users: Number(loc.users || 0),
+        conversions: Number(loc.conversions || 0)
+      }));
+    }
+    if (locationTab === 'regions') {
+      const map = new Map<string, { key: string; city: string; region: string; country: string; views: number; users: number; conversions: number }>();
+      for (const loc of rawLocations) {
+        const reg = loc.region || 'Não identificado';
+        const ctry = formatCountryName(loc.country);
+        const k = `${loc.country}-${reg}`;
+        const cur = map.get(k);
+        if (cur) {
+          cur.views += Number(loc.views || 0);
+          cur.users += Number(loc.users || 0);
+          cur.conversions += Number(loc.conversions || 0);
+        } else {
+          map.set(k, {
+            key: k,
+            city: 'Todos os municípios',
+            region: reg,
+            country: ctry,
+            views: Number(loc.views || 0),
+            users: Number(loc.users || 0),
+            conversions: Number(loc.conversions || 0)
+          });
+        }
+      }
+      return Array.from(map.values()).sort((a, b) => b.views - a.views);
+    }
+    const map = new Map<string, { key: string; city: string; region: string; country: string; views: number; users: number; conversions: number }>();
+    for (const loc of rawLocations) {
+      const ctry = formatCountryName(loc.country);
+      const k = loc.country || 'XX';
+      const cur = map.get(k);
+      if (cur) {
+        cur.views += Number(loc.views || 0);
+        cur.users += Number(loc.users || 0);
+        cur.conversions += Number(loc.conversions || 0);
+      } else {
+        map.set(k, {
+          key: k,
+          city: 'Todas as cidades',
+          region: 'Todos os estados',
+          country: ctry,
+          views: Number(loc.views || 0),
+          users: Number(loc.users || 0),
+          conversions: Number(loc.conversions || 0)
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.views - a.views);
+  })();
+
+  const visibleLocations = aggregatedLocations.slice(locationPage * ITEMS_PER_PAGE, (locationPage + 1) * ITEMS_PER_PAGE);
+  const topLocation = rawLocations[0];
+  const topLocationLabel = topLocation
+    ? topLocation.city && topLocation.city !== 'Não identificada'
+      ? topLocation.city
+      : topLocation.region && topLocation.region !== 'Não identificado'
+      ? topLocation.region
+      : formatCountryName(topLocation.country)
+    : '—';
+  const topLocationSub = topLocation
+    ? `${topLocation.region && topLocation.region !== 'Não identificado' ? `${topLocation.region} · ` : ''}${formatCountryName(topLocation.country)}`
+    : undefined;
 
   return (
     <>
@@ -382,6 +492,7 @@ function Audience() {
         <MetricCard title="Usuários" value={String(analytics?.totals.users ?? '—')} {...comparison(analytics?.totals.users, p?.users)} />
         <MetricCard title="Novos usuários" value={String(analytics?.totals.newUsers ?? '—')} {...comparison(analytics?.totals.newUsers, p?.newUsers)} />
         <MetricCard title="Origem principal" value={topSource?.name ? normalizeOriginName(topSource.name) : '—'} note={topSource ? `${topShare} do tráfego` : 'sem dados'} />
+        <MetricCard title="Localização principal" value={topLocationLabel} subtitle={topLocationSub} note={topLocation ? `${topLocation.views} visualizações` : 'sem dados'} />
       </section>
       <div className="audience-split">
         <OriginChart analytics={analytics}/>
@@ -410,6 +521,65 @@ function Audience() {
           <TablePagination page={sourcePage} total={sourcePages.length} setPage={setSourcePage}/>
         </article>
       </div>
+
+      <article className="table-card compact-table geo-locations-table" style={{ marginTop: 18 }}>
+        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <MapPin size={17} style={{ color: '#ff3cac' }} />
+              <h3 style={{ margin: 0 }}>Localização geográfica (Cidade, Estado e País)</h3>
+            </div>
+            <p>De quais cidades, estados e países seus visitantes estão acessando o site</p>
+          </div>
+          <div className="heatmap-segmented-control">
+            <button
+              type="button"
+              className={locationTab === 'cities' ? 'active' : ''}
+              onClick={() => { setLocationTab('cities'); setLocationPage(0); }}
+            >
+              Cidades
+            </button>
+            <button
+              type="button"
+              className={locationTab === 'regions' ? 'active' : ''}
+              onClick={() => { setLocationTab('regions'); setLocationPage(0); }}
+            >
+              Estados / Regiões
+            </button>
+            <button
+              type="button"
+              className={locationTab === 'countries' ? 'active' : ''}
+              onClick={() => { setLocationTab('countries'); setLocationPage(0); }}
+            >
+              Países
+            </button>
+          </div>
+        </div>
+        <div className="geo-locations-head">
+          <span>Cidade</span>
+          <span>Estado / Região</span>
+          <span>País</span>
+          <span>Visualizações</span>
+          <span>Usuários</span>
+          <span>Contatos</span>
+        </div>
+        {visibleLocations.map((loc) => (
+          <div className="geo-locations-row" key={loc.key}>
+            <span><b>{loc.city}</b></span>
+            <span>{loc.region}</span>
+            <span>{loc.country}</span>
+            <span><b>{loc.views}</b></span>
+            <span>{loc.users}</span>
+            <span>{loc.conversions}</span>
+          </div>
+        ))}
+        {!aggregatedLocations.length && (
+          <p className="empty-state">
+            Ainda não há dados geográficos consolidados neste período. Novos acessos já estão sendo registrados com Cidade, Estado e País.
+          </p>
+        )}
+        <TablePagination page={locationPage} total={aggregatedLocations.length} setPage={setLocationPage} />
+      </article>
     </>
   );
 }
@@ -714,7 +884,8 @@ function Insights() {
 
 type AuthPage = 'loading' | 'landing' | 'login' | 'signup' | 'consent' | 'onboarding-business' | 'onboarding-source' | 'app'
 interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, logins?: number, attentionSeconds?: number, contactSessions?: number }
-interface AnalyticsData { totals: AnalyticsTotals, previousTotals?: AnalyticsTotals, sources: Array<{ name: string, value: string | number }>, pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>, daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>, sourcePages?: Array<{ source: string, path: string, views: number, users: number }>, contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>, clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>, filterPages?: Array<{ path: string }>, filterSources?: Array<{ source: string }>, periodDays?: number, sourceKind?: string }
+interface LocationRow { country: string, region: string, city: string, views: number, users: number, sessions: number, conversions: number }
+interface AnalyticsData { totals: AnalyticsTotals, previousTotals?: AnalyticsTotals, sources: Array<{ name: string, value: string | number }>, pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>, daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>, sourcePages?: Array<{ source: string, path: string, views: number, users: number }>, locations?: LocationRow[], contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>, clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>, filterPages?: Array<{ path: string }>, filterSources?: Array<{ source: string }>, periodDays?: number, sourceKind?: string }
 interface AnalyticsFilter { start: string, end: string, group: 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year', page: string, source: string }
 
 function pageFromPath(): Page { const path = window.location.pathname; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/insights') return 'insights'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }

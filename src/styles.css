@@ -2248,6 +2248,66 @@ body { background:var(--background); color:var(--foreground); }
   }
 }
 
+/* Tabela de Localização Geográfica (Cidade, Estado e País) */
+.geo-locations-table {
+  overflow: hidden;
+}
+
+.geo-locations-head,
+.geo-locations-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1.2fr 1.1fr 0.7fr 0.7fr 0.6fr;
+  gap: 16px;
+  align-items: center;
+  padding: 13px 0;
+}
+
+.geo-locations-head {
+  border-bottom: 1px solid #edf2f0;
+  color: #7a9089;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+
+.geo-locations-row {
+  border-bottom: 1px solid #edf2f0;
+  color: var(--foreground, #365b52);
+  font-size: 12.5px;
+}
+
+.geo-locations-row:last-child {
+  border-bottom: none;
+}
+
+.geo-locations-head span:nth-child(n+4),
+.geo-locations-row span:nth-child(n+4) {
+  text-align: right;
+}
+
+[data-theme="dark"] .geo-locations-head,
+[data-theme="dark"] .geo-locations-row {
+  border-bottom-color: var(--border, #32363f);
+}
+
+[data-theme="dark"] .geo-locations-head {
+  color: var(--muted-foreground, #94a3b8);
+}
+
+@media (max-width: 780px) {
+  .geo-locations-head,
+  .geo-locations-row {
+    grid-template-columns: 1.2fr 1fr 0.9fr 0.7fr;
+    gap: 10px;
+  }
+  .geo-locations-head span:nth-child(n+5),
+  .geo-locations-row span:nth-child(n+5) {
+    display: none;
+  }
+}
+
+
 
 
 
