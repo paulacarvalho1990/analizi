@@ -649,13 +649,114 @@ body { background:var(--background); color:var(--foreground); }
 .heatmap-scroll-hint {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   font-size: 12.5px;
   color: var(--muted-foreground, #59766e);
   background: var(--card, #ffffff);
   border: 1px solid var(--border, #dce7e3);
   border-radius: 10px;
   padding: 10px 14px;
+}
+
+.heatmap-zoom-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 240px;
+}
+
+.heatmap-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.zoom-preset-btn {
+  padding: 5px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 7px;
+  border: 1px solid var(--border, #dce7e3);
+  background: var(--background, #f8faf9);
+  color: var(--muted-foreground, #4b665f);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.zoom-preset-btn:hover {
+  border-color: #3b82f6;
+  color: var(--foreground, #123d37);
+}
+
+.zoom-preset-btn.active {
+  background: var(--analizi-blue, #3b82f6);
+  border-color: var(--analizi-blue, #3b82f6);
+  color: #ffffff;
+}
+
+[data-theme="dark"] .zoom-preset-btn {
+  background: #1a1c21;
+  border-color: #383b44;
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .zoom-preset-btn.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #ffffff;
+}
+
+.zoom-step-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid var(--border, #dce7e3);
+  border-radius: 8px;
+  padding: 2px 4px;
+}
+
+[data-theme="dark"] .zoom-step-group {
+  background: #1a1c21;
+  border-color: #383b44;
+}
+
+.zoom-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--foreground, #153530);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.zoom-icon-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+[data-theme="dark"] .zoom-icon-btn {
+  color: #e2e8f0;
+}
+
+.zoom-pct-readout {
+  font-size: 11.5px;
+  font-weight: 800;
+  min-width: 40px;
+  text-align: center;
+  color: var(--foreground, #153530);
+}
+
+[data-theme="dark"] .zoom-pct-readout {
+  color: #f8fafc;
 }
 
 [data-theme="dark"] .heatmap-scroll-hint {
@@ -1028,58 +1129,44 @@ body { background:var(--background); color:var(--foreground); }
 
 /* Canvas & Wireframe Render */
 .heatmap-canvas-wrapper {
-  display: block;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  background: #090d16;
+  background: radial-gradient(circle at 50% 0%, #131c2e 0%, #090d16 100%);
   border-radius: 16px;
-  padding: 24px 24px 18px;
-  overflow-x: scroll;
+  padding: 28px 24px;
+  overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
-  scrollbar-width: auto;
-  scrollbar-color: #cbd5e1 #1e293b;
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.45);
 }
 
-.heatmap-canvas-wrapper::-webkit-scrollbar {
-  height: 16px;
-  display: block;
-}
-
-.heatmap-canvas-wrapper::-webkit-scrollbar-track {
-  background: #1e293b;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  margin-top: 12px;
-}
-
-.heatmap-canvas-wrapper::-webkit-scrollbar-thumb {
-  background: linear-gradient(90deg, #94a3b8 0%, #cbd5e1 100%);
-  border-radius: 10px;
-  border: 3px solid #1e293b;
-  min-width: 60px;
-}
-
-.heatmap-canvas-wrapper::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(90deg, #cbd5e1 0%, #f8fafc 100%);
+.heatmap-scaled-stage {
+  position: relative;
+  margin: 0 auto;
+  flex-shrink: 0;
+  transition: width 0.2s ease, height 0.2s ease;
 }
 
 .heatmap-canvas {
   margin: 0;
   background: #0f172a;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
   overflow: hidden;
-  border: 1px solid #1e293b;
+  border: 2px solid #1e293b;
+  transition: transform 0.2s ease;
 }
 
 .heatmap-canvas.mobile {
-  margin: 0 auto;
-  border: 10px solid #1e293b;
-  border-radius: 36px;
+  margin: 0;
+  border: 12px solid #1e293b;
+  border-radius: 38px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 0 0 2px rgba(255, 255, 255, 0.1);
 }
 
 .wireframe-layer {
