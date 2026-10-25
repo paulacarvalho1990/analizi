@@ -1154,6 +1154,7 @@ body { background:var(--background); color:var(--foreground); }
 
 .heatmap-canvas {
   margin: 0;
+  box-sizing: content-box;
   background: #0f172a;
   border-radius: 14px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
@@ -1167,6 +1168,7 @@ body { background:var(--background); color:var(--foreground); }
   border: 12px solid #1e293b;
   border-radius: 38px;
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 0 0 2px rgba(255, 255, 255, 0.1);
+  padding: 0 4px; /* margem interna de segurança para garantir que nenhum botão encoste na borda do celular */
 }
 
 .wireframe-layer {
