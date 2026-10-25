@@ -830,14 +830,34 @@ function Results() {
   const [conversionTab, setConversionTab] = useState<'pages' | 'channels'>('pages');
   const [conversionPage, setConversionPage] = useState(0);
   const [leadClickPage, setLeadClickPage] = useState(0);
+  const [leadClickTab, setLeadClickTab] = useState<'all' | 'whatsapp' | 'forms'>('all');
   const [generalClickPage, setGeneralClickPage] = useState(0);
+  const [generalClickTab, setGeneralClickTab] = useState<'top' | 'all'>('top');
   const [smPage, setSmPage] = useState(0);
+  const [smTab, setSmTab] = useState<'all' | 'conversions' | 'campaigns'>('all');
+
   const t = analytics?.totals;
   const p = analytics?.previousTotals;
   const allClicks = analytics?.clickDetails ?? [];
   const leadClicks = allClicks.filter(item => isLeadClick(item));
   const generalClicks = allClicks.filter(item => !isLeadClick(item));
   const rawSmResults = analytics?.sourceMediumResults ?? [];
+
+  const filteredSmResults = smTab === 'conversions'
+    ? rawSmResults.filter(item => Number(item.whatsappClicks || 0) > 0 || Number(item.contactClicks || 0) > 0)
+    : smTab === 'campaigns'
+    ? rawSmResults.filter(item => Boolean(item.campaign && item.campaign.trim().length > 0))
+    : rawSmResults;
+
+  const filteredLeadClicks = leadClickTab === 'whatsapp'
+    ? leadClicks.filter(item => /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whats)/i.test((item.destination || '') + (item.label || '')))
+    : leadClickTab === 'forms'
+    ? leadClicks.filter(item => !/(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whats)/i.test((item.destination || '') + (item.label || '')))
+    : leadClicks;
+
+  const sortedGeneralClicks = generalClickTab === 'top'
+    ? [...generalClicks].sort((a, b) => b.clicks - a.clicks)
+    : generalClicks;
 
   const pageConversions = useMemo(() => {
     const map = new Map<string, {
@@ -932,9 +952,9 @@ function Results() {
   const currentConversionList = conversionTab === 'pages' ? pageConversions : channelConversions;
   const visibleConversions = currentConversionList.slice(conversionPage * ITEMS_PER_PAGE, (conversionPage + 1) * ITEMS_PER_PAGE);
 
-  const visibleLeadClicks = leadClicks.slice(leadClickPage * ITEMS_PER_PAGE, (leadClickPage + 1) * ITEMS_PER_PAGE);
-  const visibleGeneralClicks = generalClicks.slice(generalClickPage * ITEMS_PER_PAGE, (generalClickPage + 1) * ITEMS_PER_PAGE);
-  const visibleSmResults = rawSmResults.slice(smPage * ITEMS_PER_PAGE, (smPage + 1) * ITEMS_PER_PAGE);
+  const visibleLeadClicks = filteredLeadClicks.slice(leadClickPage * ITEMS_PER_PAGE, (leadClickPage + 1) * ITEMS_PER_PAGE);
+  const visibleGeneralClicks = sortedGeneralClicks.slice(generalClickPage * ITEMS_PER_PAGE, (generalClickPage + 1) * ITEMS_PER_PAGE);
+  const visibleSmResults = filteredSmResults.slice(smPage * ITEMS_PER_PAGE, (smPage + 1) * ITEMS_PER_PAGE);
   const contactRate = t?.sessions ? `${((Number(t.contactSessions || 0) / Number(t.sessions)) * 100).toFixed(1).replace('.', ',')}%` : '—';
 
   return (
@@ -950,13 +970,36 @@ function Results() {
       </section>
 
       <article className="table-card compact-table source-medium-table" style={{ marginTop: '24px' }}>
-        <div className="section-heading">
+        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <Layers size={17} style={{ color: '#3b82f6' }} />
               <h3 style={{ margin: 0 }}>Origem, Mídia e Campanha</h3>
             </div>
             <p>Sessões, visualizações de páginas, usuários e cliques divididos por canal de tráfego</p>
+          </div>
+          <div className="heatmap-segmented-control">
+            <button
+              type="button"
+              className={smTab === 'all' ? 'active' : ''}
+              onClick={() => { setSmTab('all'); setSmPage(0); }}
+            >
+              Todos os canais
+            </button>
+            <button
+              type="button"
+              className={smTab === 'conversions' ? 'active' : ''}
+              onClick={() => { setSmTab('conversions'); setSmPage(0); }}
+            >
+              Com conversões
+            </button>
+            <button
+              type="button"
+              className={smTab === 'campaigns' ? 'active' : ''}
+              onClick={() => { setSmTab('campaigns'); setSmPage(0); }}
+            >
+              Apenas campanhas
+            </button>
           </div>
         </div>
         <div className="source-medium-head">
@@ -988,8 +1031,8 @@ function Results() {
             </div>
           );
         })}
-        {!rawSmResults.length && <p className="empty-state">Nenhum dado de origem e mídia registrado no período para os filtros selecionados.</p>}
-        <TablePagination page={smPage} total={rawSmResults.length} setPage={setSmPage} />
+        {!filteredSmResults.length && <p className="empty-state">Nenhum dado de origem e mídia registrado no período para os filtros selecionados.</p>}
+        <TablePagination page={smPage} total={filteredSmResults.length} setPage={setSmPage} />
       </article>
 
       <div className="results-tables" style={{ marginTop: '24px' }}>
@@ -1120,10 +1163,36 @@ function Results() {
         </article>
 
         <article className="table-card compact-table click-detail-table">
-          <div className="section-heading">
+          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
             <div>
-              <h3>Cliques com intenção de contato</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <MousePointerClick size={17} style={{ color: '#ff3cac' }} />
+                <h3 style={{ margin: 0 }}>Cliques com intenção de contato</h3>
+              </div>
               <p>Cliques em botões de WhatsApp, telefone e formulários</p>
+            </div>
+            <div className="heatmap-segmented-control">
+              <button
+                type="button"
+                className={leadClickTab === 'all' ? 'active' : ''}
+                onClick={() => { setLeadClickTab('all'); setLeadClickPage(0); }}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                className={leadClickTab === 'whatsapp' ? 'active' : ''}
+                onClick={() => { setLeadClickTab('whatsapp'); setLeadClickPage(0); }}
+              >
+                WhatsApp
+              </button>
+              <button
+                type="button"
+                className={leadClickTab === 'forms' ? 'active' : ''}
+                onClick={() => { setLeadClickTab('forms'); setLeadClickPage(0); }}
+              >
+                Formulários
+              </button>
             </div>
           </div>
           <div className="click-detail-head">
@@ -1137,21 +1206,40 @@ function Results() {
             <div className="click-detail-row" key={`${item.date}-${item.label}-${item.path}-${index}`}>
               <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
               <span><b>{item.label}</b>{item.buttonId ? <small>#{item.buttonId}</small> : null}</span>
-              <span>{item.path}</span>
+              <span><code className="path-code">{item.path}</code></span>
               <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
-              <span>{item.clicks}</span>
+              <span><b>{Number(item.clicks || 0).toLocaleString('pt-BR')}</b></span>
             </div>
           ))}
-          {!leadClicks.length && <p className="empty-state">Nenhum clique de contato foi identificado no período.</p>}
-          <TablePagination page={leadClickPage} total={leadClicks.length} setPage={setLeadClickPage} />
+          {!filteredLeadClicks.length && <p className="empty-state">Nenhum clique de contato foi identificado no período.</p>}
+          <TablePagination page={leadClickPage} total={filteredLeadClicks.length} setPage={setLeadClickPage} />
         </article>
       </div>
 
       <article className="table-card general-clicks-table" style={{ marginTop: '24px' }}>
-        <div className="section-heading">
+        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <h3>Cliques em botões diversos</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Target size={17} style={{ color: '#f59e0b' }} />
+              <h3 style={{ margin: 0 }}>Cliques em botões diversos</h3>
+            </div>
             <p>Todos os cliques capturados em botões e links navegacionais pelo rastreador</p>
+          </div>
+          <div className="heatmap-segmented-control">
+            <button
+              type="button"
+              className={generalClickTab === 'top' ? 'active' : ''}
+              onClick={() => { setGeneralClickTab('top'); setGeneralClickPage(0); }}
+            >
+              Mais clicados
+            </button>
+            <button
+              type="button"
+              className={generalClickTab === 'all' ? 'active' : ''}
+              onClick={() => { setGeneralClickTab('all'); setGeneralClickPage(0); }}
+            >
+              Histórico recente
+            </button>
           </div>
         </div>
         <div className="general-clicks-head">
@@ -1167,11 +1255,11 @@ function Results() {
             <span><b>{item.label}</b></span>
             <span>{item.buttonId ? <small>#{item.buttonId}</small> : '—'}</span>
             <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
-            <span>{item.clicks}</span>
+            <span><b>{Number(item.clicks || 0).toLocaleString('pt-BR')}</b></span>
           </div>
         ))}
-        {!generalClicks.length && <p className="empty-state">Nenhum clique em botões diversos foi registrado no período.</p>}
-        <TablePagination page={generalClickPage} total={generalClicks.length} setPage={setGeneralClickPage} />
+        {!sortedGeneralClicks.length && <p className="empty-state">Nenhum clique em botões diversos foi registrado no período.</p>}
+        <TablePagination page={generalClickPage} total={sortedGeneralClicks.length} setPage={setGeneralClickPage} />
       </article>
     </>
   );
@@ -1772,9 +1860,21 @@ function ConnectionStatus() {
 function Pages() {
   const analytics = useAnalytics();
   const [tablePage, setTablePage] = useState(0);
+  const [pageSortTab, setPageSortTab] = useState<'views' | 'attention' | 'exit'>('views');
   const pages = analytics?.pages ?? [];
   const p = analytics?.previousTotals;
-  const visiblePages = pages.slice(tablePage * ITEMS_PER_PAGE, (tablePage + 1) * ITEMS_PER_PAGE);
+
+  const sortedPages = [...pages].sort((a, b) => {
+    if (pageSortTab === 'attention') {
+      return Number(b.attentionSeconds || 0) - Number(a.attentionSeconds || 0);
+    }
+    if (pageSortTab === 'exit') {
+      return Number(a.exitRate ?? 100) - Number(b.exitRate ?? 100);
+    }
+    return Number(b.views || 0) - Number(a.views || 0);
+  });
+
+  const visiblePages = sortedPages.slice(tablePage * ITEMS_PER_PAGE, (tablePage + 1) * ITEMS_PER_PAGE);
   const duration = (seconds?: number) => seconds ? `${Math.floor(seconds / 60)}min ${seconds % 60}s` : '—';
   const totalViews = pages.reduce((sum, item) => sum + Number(item.views || 0), 0);
   const pagesWithExit = pages.filter(item => item.exitRate != null && Number(item.views || 0) > 0);
@@ -1799,32 +1899,65 @@ function Pages() {
       <section className="pages-split">
         <PageChart pages={pages}/>
         <article className="table-card compact-table pages-table">
-          <div className="section-heading">
+          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
             <div>
-              <h3>Desempenho das páginas</h3>
-              <p>Período selecionado</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <FileText size={17} style={{ color: '#3b82f6' }} />
+                <h3 style={{ margin: 0 }}>Desempenho das páginas</h3>
+              </div>
+              <p>Visualizações, tempo de atenção e taxa de saída por URL</p>
             </div>
-            <button className="filter-button">Ordenado por visualizações <ChevronDown size={15}/></button>
+            <div className="heatmap-segmented-control">
+              <button
+                type="button"
+                className={pageSortTab === 'views' ? 'active' : ''}
+                onClick={() => { setPageSortTab('views'); setTablePage(0); }}
+              >
+                Mais acessadas
+              </button>
+              <button
+                type="button"
+                className={pageSortTab === 'attention' ? 'active' : ''}
+                onClick={() => { setPageSortTab('attention'); setTablePage(0); }}
+              >
+                Maior atenção
+              </button>
+              <button
+                type="button"
+                className={pageSortTab === 'exit' ? 'active' : ''}
+                onClick={() => { setPageSortTab('exit'); setTablePage(0); }}
+              >
+                Menor saída
+              </button>
+            </div>
           </div>
           <div className="table-head">
             <span>Página</span>
-            <span>Visualizações de páginas</span>
+            <span>Visualizações</span>
             <span>Tempo de atenção</span>
             <span title="Porcentagem de sessões que duraram menos de 10s, viram apenas 1 página e não converteram (padrão GA4)">Taxa de saída</span>
           </div>
-          {visiblePages.map((item) => (
-            <div className="page-row" key={item.path}>
-              <span>
-                <b>{item.title || item.path}</b>
-                <small>{item.path}</small>
-              </span>
-              <span><b>{item.views}</b></span>
-              <span>{duration(item.attentionSeconds)}</span>
-              <span>{item.exitRate == null ? '—' : `${item.exitRate}%`}</span>
-            </div>
-          ))}
+          {visiblePages.map((item) => {
+            const exit = item.exitRate;
+            const exitColor = exit != null ? (exit <= 30 ? '#10b981' : exit <= 55 ? 'inherit' : '#f59e0b') : undefined;
+            return (
+              <div className="page-row" key={item.path}>
+                <span>
+                  <b>{item.title || item.path}</b>
+                  <code className="path-code" style={{ marginTop: 3 }}>{item.path}</code>
+                </span>
+                <span><b>{Number(item.views || 0).toLocaleString('pt-BR')}</b></span>
+                <span>{duration(item.attentionSeconds)}</span>
+                <span>
+                  <b style={{ color: exitColor }}>
+                    {item.exitRate == null ? '—' : `${item.exitRate}%`}
+                  </b>
+                </span>
+              </div>
+            );
+          })}
           {!pages.length && <p className="empty-state">Ainda não recebemos visualizações de páginas neste período.</p>}
-          <TablePagination page={tablePage} total={pages.length} setPage={setTablePage}/>
+          <TablePagination page={tablePage} total={sortedPages.length} setPage={setTablePage}/>
         </article>
       </section>
     </>
