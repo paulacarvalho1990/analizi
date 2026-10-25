@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   Flame, Monitor, Smartphone, MousePointer, ArrowDown, RefreshCw, Clock,
   Image as ImageIcon, Video, Type, CheckSquare, Layout, Navigation,
-  CreditCard, Flag, TextCursorInput, Link as LinkIcon, MoveHorizontal,
+  CreditCard, Flag, TextCursorInput, Link as LinkIcon,
   BarChart3, SlidersHorizontal, Table as TableIcon, MapPin, HelpCircle,
-  MessageSquareQuote, Volume2, GalleryHorizontal
+  MessageSquareQuote, Volume2, GalleryHorizontal, ZoomIn, ZoomOut, Maximize2
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
@@ -22,7 +22,7 @@ interface LayoutBlock {
  * Filtra e organiza blocos estruturais para garantir que NENHUM visual fique empilhado
  * ou sobreposto no wireframe. Gráficos, vídeos, mapas, filtros, tabelas, FAQs e elementos interativos têm prioridade.
  */
-function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number): LayoutBlock[] {
+function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number, targetViewportWidth: number): LayoutBlock[] {
   if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) return []
 
   const priorityMap: Record<string, number> = {
@@ -50,7 +50,7 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
     section: 1
   }
 
-  // 1. Normaliza, infere tipos compostos (chart, filter, table, faq, video, map, testimonial) e remove wrappers gigantes
+  // 1. Normaliza, infere tipos compostos (chart, filter, table, faq, video, map, testimonial), ajusta limites laterais e remove wrappers gigantes
   const valid = rawBlocks
     .map((b) => {
       const rawLabel = String(b.label || '').replace(/\s+/g, ' ').trim()
@@ -70,19 +70,25 @@ function buildNonOverlappingBlocks(rawBlocks: LayoutBlock[], pageHeight: number)
           inferredType = 'map'
         }
       }
+      const rawLeft = Math.max(0, Math.round(b.left || 0))
+      const clampedLeft = Math.min(rawLeft, Math.max(0, targetViewportWidth - 32))
+      const maxAllowedWidth = Math.max(24, targetViewportWidth - clampedLeft)
+      const clampedWidth = Math.min(Math.max(24, Math.round(b.width || 0)), maxAllowedWidth)
       return {
         ...b,
         type: inferredType,
         top: Math.max(0, Math.round(b.top || 0)),
-        left: Math.max(0, Math.round(b.left || 0)),
-        width: Math.max(24, Math.round(b.width || 0)),
+        left: clampedLeft,
+        width: clampedWidth,
         height: Math.max(20, Math.round(b.height || 0)),
         label: rawLabel
       }
     })
     .filter((b) => {
+      // Descarta elementos totalmente fora da tela (ex.: slides ocultos de carrossel)
+      if ((b.left || 0) >= targetViewportWidth - 16) return false
       // Descarta seções genéricas gigantes que englobam múltiplos blocos
-      if (b.type === 'section' && b.height > 450 && b.width > 900) return false
+      if (b.type === 'section' && b.height > 450 && b.width > targetViewportWidth * 0.75) return false
       if (b.height > pageHeight * 0.75 && b.height > 900) return false
       return true
     })
@@ -495,6 +501,10 @@ export function Heatmap() {
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<HeatmapPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [zoomMode, setZoomMode] = useState<'fit' | 'compact' | 'actual'>('fit')
+  const [customScale, setCustomScale] = useState<number | null>(null)
+  const [wrapperWidth, setWrapperWidth] = useState<number>(1000)
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
 
   const targetSiteId = currentSite?.tracker_site_id || (currentSite?.id?.startsWith('ANLZ') ? currentSite.id : '')
 
@@ -528,13 +538,50 @@ export function Heatmap() {
 
   const layout = data?.layout
   const rawBlocks = layout?.blocks || []
+  const maxRawBlockRight = rawBlocks.reduce((max, b) => Math.max(max, (b.left || 0) + (b.width || 0)), 0)
+  const targetViewportWidth =
+    device === 'mobile'
+      ? Math.min(480, Math.max(layout?.viewportWidth || 390, 360))
+      : Math.max(layout?.viewportWidth || 1280, Math.min(maxRawBlockRight + 40, 1600), 1280)
   const maxBlockBottom = rawBlocks.reduce((max, b) => Math.max(max, (b.top || 0) + (b.height || 0)), 0)
   const pageHeight = Math.max(layout?.pageHeight || 1200, maxBlockBottom + 80, 800)
-  const blocks = buildNonOverlappingBlocks(rawBlocks, pageHeight)
-  const maxBlockRight = blocks.reduce((max, b) => Math.max(max, (b.left || 0) + (b.width || 0)), 0)
-  const baseWidth = device === 'mobile' ? 390 : Math.max(layout?.viewportWidth || 1280, maxBlockRight + 40, 1280)
+  const blocks = buildNonOverlappingBlocks(rawBlocks, pageHeight, targetViewportWidth)
+  const baseWidth = targetViewportWidth
   const clicks = data?.clicks || []
   const maxClickCount = Math.max(...clicks.map((c) => c.count), 1)
+
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    const updateWidth = () => {
+      const w = el.clientWidth
+      if (w > 0) setWrapperWidth(w)
+    }
+    updateWidth()
+    const observer = new ResizeObserver(() => updateWidth())
+    observer.observe(el)
+    window.addEventListener('resize', updateWidth)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateWidth)
+    }
+  }, [layout, device])
+
+  // Calcula o fator de escala (zoom out) para que a réplica da página caiba perfeitamente sem scroll lateral
+  const availableCanvasWidth = Math.max(240, wrapperWidth - 48)
+  const fitScale = Math.min(1, Number((availableCanvasWidth / baseWidth).toFixed(3)))
+  const defaultDeviceScale = device === 'mobile' ? Math.min(fitScale, 0.85) : Math.min(fitScale, 0.72)
+  const activeScale =
+    customScale !== null
+      ? customScale
+      : zoomMode === 'fit'
+      ? defaultDeviceScale
+      : zoomMode === 'compact'
+      ? Math.min(fitScale, device === 'mobile' ? 0.65 : 0.5)
+      : 1
+
+  const scaledWidth = Math.round(baseWidth * activeScale)
+  const scaledHeight = Math.round(pageHeight * activeScale)
 
   return (
     <div className="heatmap-container">
@@ -701,81 +748,151 @@ export function Heatmap() {
             </div>
           )}
 
-          {/* Indicador de Largura e Scroll Horizontal */}
-          <div className="heatmap-scroll-hint">
-            <MoveHorizontal size={15} />
-            <span>
-              Largura real renderizada: <b>{baseWidth}px</b> ({blocks.length} blocos sem sobreposição) — role a barra horizontal abaixo para explorar toda a largura da página.
-            </span>
+          {/* Controles de Escala (Zoom Out) e Informações da Réplica */}
+          <div className="heatmap-scroll-hint heatmap-zoom-bar">
+            <div className="heatmap-zoom-info">
+              <Maximize2 size={15} />
+              <span>
+                Réplica proporcional da página (<b>{baseWidth}px × {pageHeight}px</b>, {blocks.length} blocos) — exibida em escala{' '}
+                <b>{Math.round(activeScale * 100)}%</b> para caber na tela sem precisar rolar para o lado.
+              </span>
+            </div>
+
+            <div className="heatmap-zoom-controls">
+              <button
+                type="button"
+                className={`zoom-preset-btn ${customScale === null && zoomMode === 'compact' ? 'active' : ''}`}
+                onClick={() => {
+                  setCustomScale(null)
+                  setZoomMode('compact')
+                }}
+                title="Miniatura ainda menor para ver mais da página de uma vez"
+              >
+                Miniatura
+              </button>
+              <button
+                type="button"
+                className={`zoom-preset-btn ${customScale === null && zoomMode === 'fit' ? 'active' : ''}`}
+                onClick={() => {
+                  setCustomScale(null)
+                  setZoomMode('fit')
+                }}
+                title="Ajustar automaticamente na tela com zoom out"
+              >
+                Ajustar à tela
+              </button>
+              <button
+                type="button"
+                className={`zoom-preset-btn ${customScale === null && zoomMode === 'actual' ? 'active' : ''}`}
+                onClick={() => {
+                  setCustomScale(null)
+                  setZoomMode('actual')
+                }}
+                title="Ver em tamanho real 100%"
+              >
+                100%
+              </button>
+
+              <div className="zoom-step-group">
+                <button
+                  type="button"
+                  className="zoom-icon-btn"
+                  onClick={() => setCustomScale(Math.max(0.3, Number((activeScale - 0.1).toFixed(2))))}
+                  title="Diminuir zoom (Zoom Out)"
+                >
+                  <ZoomOut size={14} />
+                </button>
+                <span className="zoom-pct-readout">{Math.round(activeScale * 100)}%</span>
+                <button
+                  type="button"
+                  className="zoom-icon-btn"
+                  onClick={() => setCustomScale(Math.min(1, Number((activeScale + 0.1).toFixed(2))))}
+                  title="Aumentar zoom (Zoom In)"
+                >
+                  <ZoomIn size={14} />
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* Área do Wireframe + Heatmap com Scroll Lateral Suave e Contido */}
-          <div className="heatmap-canvas-wrapper">
+          {/* Área do Wireframe + Heatmap em Réplica Reduzida (Zoom Out) */}
+          <div className="heatmap-canvas-wrapper" ref={wrapperRef}>
             <div
-              className={`heatmap-canvas ${device}`}
+              className="heatmap-scaled-stage"
               style={{
-                width: `${baseWidth}px`,
-                minWidth: `${baseWidth}px`,
-                minHeight: `${pageHeight}px`,
-                position: 'relative'
+                width: `${scaledWidth}px`,
+                height: `${scaledHeight}px`
               }}
             >
-              {/* Wireframe Sintético (Placeholders Estruturais e Ricos) */}
-              <div className="wireframe-layer" style={{ height: `${pageHeight}px` }}>
-                {blocks.map((block, idx) => (
-                  <RenderWireframeBlock key={idx} block={block} baseWidth={baseWidth} />
-                ))}
-              </div>
-
-              {/* Camada 1: Cliques (Pontos térmicos sobrepostos) */}
-              {activeLayer === 'clicks' && (
-                <div className="heatmap-layer-clicks" style={{ height: `${pageHeight}px` }}>
-                  {clicks.map((click, i) => {
-                    const intensity = Math.min(1, click.count / maxClickCount)
-                    const size = Math.round(36 + intensity * 28)
-                    const hue = Math.round(180 - intensity * 180) // 180 (azul frio) a 0 (vermelho quente)
-                    return (
-                      <div
-                        key={i}
-                        className="heatmap-click-point"
-                        style={{
-                          left: `${click.x_pct}%`,
-                          top: `${click.y_px}px`,
-                          width: `${size}px`,
-                          height: `${size}px`,
-                          background: `radial-gradient(circle, hsla(${hue}, 100%, 50%, 0.85) 0%, hsla(${hue}, 100%, 50%, 0.35) 45%, transparent 75%)`
-                        }}
-                        title={`${click.count} clique(s) em: ${click.label || click.tag}`}
-                      >
-                        <span className="heatmap-click-badge">{click.count}</span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-
-              {/* Camada 2: Scroll Depth (Gradiente vertical com linhas guias) */}
-              {activeLayer === 'scroll' && data?.scrollRetention && (
-                <div className="heatmap-layer-scroll" style={{ height: `${pageHeight}px` }}>
-                  {[
-                    { label: 'Dobra Superior (25%)', pct: 25, data: data.scrollRetention['25%'] },
-                    { label: 'Metade da Página (50%)', pct: 50, data: data.scrollRetention['50%'] },
-                    { label: 'Três Quartos (75%)', pct: 75, data: data.scrollRetention['75%'] },
-                    { label: 'Rodapé Completo (100%)', pct: 98, data: data.scrollRetention['100%'] }
-                  ].map((line, idx) => (
-                    <div
-                      key={idx}
-                      className="scroll-guideline"
-                      style={{ top: `${(pageHeight * line.pct) / 100}px` }}
-                    >
-                      <div className="scroll-tag">
-                        <b>{line.label}</b>
-                        <span>{line.data?.percentage || 0}% dos visitantes atingiram</span>
-                      </div>
-                    </div>
+              <div
+                className={`heatmap-canvas ${device}`}
+                style={{
+                  width: `${baseWidth}px`,
+                  minWidth: `${baseWidth}px`,
+                  height: `${pageHeight}px`,
+                  minHeight: `${pageHeight}px`,
+                  position: 'relative',
+                  transform: `scale(${activeScale})`,
+                  transformOrigin: 'top left'
+                }}
+              >
+                {/* Wireframe Sintético (Placeholders Estruturais e Ricos) */}
+                <div className="wireframe-layer" style={{ height: `${pageHeight}px` }}>
+                  {blocks.map((block, idx) => (
+                    <RenderWireframeBlock key={idx} block={block} baseWidth={baseWidth} />
                   ))}
                 </div>
-              )}
+
+                {/* Camada 1: Cliques (Pontos térmicos sobrepostos na réplica) */}
+                {activeLayer === 'clicks' && (
+                  <div className="heatmap-layer-clicks" style={{ height: `${pageHeight}px` }}>
+                    {clicks.map((click, i) => {
+                      const intensity = Math.min(1, click.count / maxClickCount)
+                      const size = Math.round(42 + intensity * 32)
+                      const hue = Math.round(180 - intensity * 180) // 180 (azul frio) a 0 (vermelho quente)
+                      return (
+                        <div
+                          key={i}
+                          className="heatmap-click-point"
+                          style={{
+                            left: `${click.x_pct}%`,
+                            top: `${click.y_px}px`,
+                            width: `${size}px`,
+                            height: `${size}px`,
+                            background: `radial-gradient(circle, hsla(${hue}, 100%, 50%, 0.88) 0%, hsla(${hue}, 100%, 50%, 0.4) 45%, transparent 75%)`
+                          }}
+                          title={`${click.count} clique(s) em: ${click.label || click.tag}`}
+                        >
+                          <span className="heatmap-click-badge">{click.count}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Camada 2: Scroll Depth (Gradiente vertical com linhas guias) */}
+                {activeLayer === 'scroll' && data?.scrollRetention && (
+                  <div className="heatmap-layer-scroll" style={{ height: `${pageHeight}px` }}>
+                    {[
+                      { label: 'Dobra Superior (25%)', pct: 25, data: data.scrollRetention['25%'] },
+                      { label: 'Metade da Página (50%)', pct: 50, data: data.scrollRetention['50%'] },
+                      { label: 'Três Quartos (75%)', pct: 75, data: data.scrollRetention['75%'] },
+                      { label: 'Rodapé Completo (100%)', pct: 98, data: data.scrollRetention['100%'] }
+                    ].map((line, idx) => (
+                      <div
+                        key={idx}
+                        className="scroll-guideline"
+                        style={{ top: `${(pageHeight * line.pct) / 100}px` }}
+                      >
+                        <div className="scroll-tag">
+                          <b>{line.label}</b>
+                          <span>{line.data?.percentage || 0}% dos visitantes atingiram</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </>

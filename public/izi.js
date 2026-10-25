@@ -246,7 +246,8 @@
     const sentKey = getLayoutSentKey(currentPath)
     if (get(session, sentKey)) return
     try {
-      const docW = Math.max(document.documentElement.scrollWidth, window.innerWidth || 0)
+      const vpW = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 1280)
+      const docW = vpW
       const docH = Math.max(document.documentElement.scrollHeight, window.innerHeight || 0)
       if (docH <= 0 || docW <= 0) return
 
@@ -306,8 +307,10 @@
         }
 
         const top = Math.round(rect.top + window.scrollY)
-        const left = Math.round(rect.left + window.scrollX)
-        const width = Math.round(rect.width)
+        const rawLeft = Math.round(rect.left + window.scrollX)
+        if (rawLeft >= docW - 12 || rawLeft + rect.width <= 12) continue
+        const left = Math.max(0, rawLeft)
+        const width = Math.min(Math.round(rect.width), Math.max(24, docW - left))
         const height = Math.round(rect.height)
         const cls = typeof el.className === 'string' ? el.className.toLowerCase() : ''
         const src = (el.getAttribute('src') || el.getAttribute('data-src') || '').toLowerCase()
@@ -607,7 +610,7 @@
     const rect = target.getBoundingClientRect()
     const clickX = event.clientX
     const clickY = event.clientY + window.scrollY
-    const docW = Math.max(document.documentElement.scrollWidth, window.innerWidth || 1)
+    const docW = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 1)
     const clickXPct = Math.min(100, Math.max(0, Math.round((clickX / docW) * 100)))
     const targetTag = target.tagName.toUpperCase()
 
