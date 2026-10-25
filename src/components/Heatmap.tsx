@@ -541,7 +541,7 @@ export function Heatmap() {
   const maxRawBlockRight = rawBlocks.reduce((max, b) => Math.max(max, (b.left || 0) + (b.width || 0)), 0)
   const targetViewportWidth =
     device === 'mobile'
-      ? Math.min(480, Math.max(layout?.viewportWidth || 390, 360))
+      ? Math.max(layout?.viewportWidth || 390, maxRawBlockRight + 24, 360)
       : Math.max(layout?.viewportWidth || 1280, Math.min(maxRawBlockRight + 40, 1600), 1280)
   const maxBlockBottom = rawBlocks.reduce((max, b) => Math.max(max, (b.top || 0) + (b.height || 0)), 0)
   const pageHeight = Math.max(layout?.pageHeight || 1200, maxBlockBottom + 80, 800)
@@ -567,10 +567,14 @@ export function Heatmap() {
     }
   }, [layout, device])
 
-  // Calcula o fator de escala (zoom out) para que a réplica da página caiba perfeitamente sem scroll lateral
-  const availableCanvasWidth = Math.max(240, wrapperWidth - 48)
-  const fitScale = Math.min(1, Number((availableCanvasWidth / baseWidth).toFixed(3)))
-  const defaultDeviceScale = device === 'mobile' ? Math.min(fitScale, 0.85) : Math.min(fitScale, 0.72)
+  // Espessura da borda da moldura do dispositivo (12px * 2 no mobile, 2px * 2 no desktop)
+  const frameBorderPadding = device === 'mobile' ? 24 : 4
+  const totalDeviceWidth = baseWidth + frameBorderPadding
+
+  // Calcula o fator de escala (zoom out) para que a réplica da página caiba com folga sem cortar os blocos
+  const availableCanvasWidth = Math.max(220, wrapperWidth - 56)
+  const fitScale = Math.min(1, Number((availableCanvasWidth / totalDeviceWidth).toFixed(3)))
+  const defaultDeviceScale = device === 'mobile' ? Math.min(fitScale, 0.88) : Math.min(fitScale, 0.72)
   const activeScale =
     customScale !== null
       ? customScale
@@ -580,8 +584,8 @@ export function Heatmap() {
       ? Math.min(fitScale, device === 'mobile' ? 0.65 : 0.5)
       : 1
 
-  const scaledWidth = Math.round(baseWidth * activeScale)
-  const scaledHeight = Math.round(pageHeight * activeScale)
+  const scaledStageWidth = Math.round(totalDeviceWidth * activeScale)
+  const scaledStageHeight = Math.round((pageHeight + frameBorderPadding) * activeScale)
 
   return (
     <div className="heatmap-container">
@@ -820,8 +824,8 @@ export function Heatmap() {
             <div
               className="heatmap-scaled-stage"
               style={{
-                width: `${scaledWidth}px`,
-                height: `${scaledHeight}px`
+                width: `${scaledStageWidth}px`,
+                height: `${scaledStageHeight}px`
               }}
             >
               <div
