@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
@@ -827,19 +827,111 @@ function isLeadClick(item: { intent?: string, isContactLead?: number, label: str
 
 function Results() {
   const analytics = useAnalytics();
-  const [contactPage, setContactPage] = useState(0);
+  const [conversionTab, setConversionTab] = useState<'pages' | 'channels'>('pages');
+  const [conversionPage, setConversionPage] = useState(0);
   const [leadClickPage, setLeadClickPage] = useState(0);
   const [generalClickPage, setGeneralClickPage] = useState(0);
   const [smPage, setSmPage] = useState(0);
   const t = analytics?.totals;
   const p = analytics?.previousTotals;
-  const contactDetails = analytics?.contactDetails ?? [];
   const allClicks = analytics?.clickDetails ?? [];
   const leadClicks = allClicks.filter(item => isLeadClick(item));
   const generalClicks = allClicks.filter(item => !isLeadClick(item));
   const rawSmResults = analytics?.sourceMediumResults ?? [];
 
-  const visibleContacts = contactDetails.slice(contactPage * ITEMS_PER_PAGE, (contactPage + 1) * ITEMS_PER_PAGE);
+  const pageConversions = useMemo(() => {
+    const map = new Map<string, {
+      path: string;
+      views: number;
+      whatsapp: number;
+      signups: number;
+      total: number;
+      conversionRate: number;
+    }>();
+
+    (analytics?.pages ?? []).forEach(item => {
+      map.set(item.path, {
+        path: item.path,
+        views: Number(item.views || 0),
+        whatsapp: 0,
+        signups: 0,
+        total: 0,
+        conversionRate: 0,
+      });
+    });
+
+    (analytics?.contactDetails ?? []).forEach(c => {
+      const existing = map.get(c.path) || {
+        path: c.path,
+        views: 0,
+        whatsapp: 0,
+        signups: 0,
+        total: 0,
+        conversionRate: 0,
+      };
+      const count = Number(c.contacts || 0);
+      if (c.type === 'whatsapp_contact') existing.whatsapp += count;
+      else existing.signups += count;
+      existing.total += count;
+      map.set(c.path, existing);
+    });
+
+    return Array.from(map.values())
+      .map(item => ({
+        ...item,
+        conversionRate: item.views > 0 ? (item.total / item.views) * 100 : (item.total > 0 ? 100 : 0)
+      }))
+      .filter(item => item.total > 0 || item.views > 0)
+      .sort((a, b) => b.total - a.total || b.conversionRate - a.conversionRate || b.views - a.views);
+  }, [analytics?.pages, analytics?.contactDetails]);
+
+  const channelConversions = useMemo(() => {
+    const map = new Map<string, {
+      source: string;
+      medium: string;
+      sessions: number;
+      whatsapp: number;
+      others: number;
+      total: number;
+      conversionRate: number;
+    }>();
+
+    (analytics?.sourceMediumResults ?? []).forEach(item => {
+      const source = item.source || '(direto)';
+      const medium = item.medium || '(nenhum)';
+      const key = `${source}|${medium}`;
+      const sess = Number(item.sessions || 0);
+      const wa = Number(item.whatsappClicks || 0);
+      const cont = Number(item.contactClicks || item.whatsappClicks || 0);
+      const others = Math.max(0, cont - wa);
+
+      const existing = map.get(key) || {
+        source,
+        medium,
+        sessions: 0,
+        whatsapp: 0,
+        others: 0,
+        total: 0,
+        conversionRate: 0,
+      };
+      existing.sessions += sess;
+      existing.whatsapp += wa;
+      existing.others += others;
+      existing.total += cont;
+      map.set(key, existing);
+    });
+
+    return Array.from(map.values())
+      .map(item => ({
+        ...item,
+        conversionRate: item.sessions > 0 ? (item.total / item.sessions) * 100 : 0
+      }))
+      .sort((a, b) => b.total - a.total || b.conversionRate - a.conversionRate || b.sessions - a.sessions);
+  }, [analytics?.sourceMediumResults]);
+
+  const currentConversionList = conversionTab === 'pages' ? pageConversions : channelConversions;
+  const visibleConversions = currentConversionList.slice(conversionPage * ITEMS_PER_PAGE, (conversionPage + 1) * ITEMS_PER_PAGE);
+
   const visibleLeadClicks = leadClicks.slice(leadClickPage * ITEMS_PER_PAGE, (leadClickPage + 1) * ITEMS_PER_PAGE);
   const visibleGeneralClicks = generalClicks.slice(generalClickPage * ITEMS_PER_PAGE, (generalClickPage + 1) * ITEMS_PER_PAGE);
   const visibleSmResults = rawSmResults.slice(smPage * ITEMS_PER_PAGE, (smPage + 1) * ITEMS_PER_PAGE);
@@ -901,29 +993,130 @@ function Results() {
       </article>
 
       <div className="results-tables" style={{ marginTop: '24px' }}>
-        <article className="table-card compact-table results-detail-table">
-          <div className="section-heading">
+        <article className="table-card compact-table results-conversion-table">
+          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
             <div>
-              <h3>Ações confirmadas</h3>
-              <p>Contatos, cadastros e acessos registrados</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Target size={17} style={{ color: '#10b981' }} />
+                <h3 style={{ margin: 0 }}>Desempenho de conversão</h3>
+              </div>
+              <p>
+                {conversionTab === 'pages'
+                  ? 'Páginas do site que mais convertem visitantes em contatos e leads'
+                  : 'Canais e fontes de tráfego com maior taxa de conversão'}
+              </p>
+            </div>
+            <div className="heatmap-segmented-control">
+              <button
+                type="button"
+                className={conversionTab === 'pages' ? 'active' : ''}
+                onClick={() => { setConversionTab('pages'); setConversionPage(0); }}
+              >
+                Por Página
+              </button>
+              <button
+                type="button"
+                className={conversionTab === 'channels' ? 'active' : ''}
+                onClick={() => { setConversionTab('channels'); setConversionPage(0); }}
+              >
+                Por Canal
+              </button>
             </div>
           </div>
-          <div className="contact-detail-head">
-            <span>Data</span>
-            <span>Tipo</span>
-            <span>Página</span>
-            <span>Total</span>
-          </div>
-          {visibleContacts.map((item, index) => (
-            <div className="contact-detail-row" key={`${item.date}-${item.type}-${item.path}-${index}`}>
-              <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
-              <span>{item.type === 'whatsapp_contact' ? 'WhatsApp' : item.type === 'sign_up' ? 'Cadastro' : item.type === 'login' ? 'Login' : item.type}</span>
-              <span>{item.path}</span>
-              <span>{item.contacts}</span>
-            </div>
-          ))}
-          {!contactDetails.length && <p className="empty-state">Nenhuma ação foi registrada no período.</p>}
-          <TablePagination page={contactPage} total={contactDetails.length} setPage={setContactPage} />
+
+          {conversionTab === 'pages' ? (
+            <>
+              <div className="conversion-detail-head">
+                <span>Página</span>
+                <span>Acessos</span>
+                <span>WhatsApp</span>
+                <span>Cadastros</span>
+                <span>Total</span>
+                <span>Taxa conv.</span>
+              </div>
+              {visibleConversions.map((rawItem, index) => {
+                const item = rawItem as typeof pageConversions[number];
+                const hasConv = item.total > 0;
+                return (
+                  <div className="conversion-detail-row" key={`${item.path}-${index}`}>
+                    <span title={item.path} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <code className="path-code">{item.path}</code>
+                    </span>
+                    <span>{Number(item.views || 0).toLocaleString('pt-BR')}</span>
+                    <span>
+                      <b style={{ color: item.whatsapp > 0 ? '#10b981' : undefined }}>
+                        {item.whatsapp > 0 ? Number(item.whatsapp).toLocaleString('pt-BR') : '—'}
+                      </b>
+                    </span>
+                    <span>
+                      {item.signups > 0 ? Number(item.signups).toLocaleString('pt-BR') : '—'}
+                    </span>
+                    <span>
+                      <b style={{ color: hasConv ? '#10b981' : undefined }}>
+                        {Number(item.total).toLocaleString('pt-BR')}
+                      </b>
+                    </span>
+                    <span>
+                      <span className={`conversion-rate-badge ${item.conversionRate > 0 ? 'active' : 'empty'}`}>
+                        {item.conversionRate > 0 ? `${item.conversionRate.toFixed(1).replace('.', ',')}%` : '0%'}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+              {!pageConversions.length && (
+                <p className="empty-state">Nenhuma página com acessos ou conversões no período selecionado.</p>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="conversion-detail-head">
+                <span>Canal</span>
+                <span>Sessões</span>
+                <span>WhatsApp</span>
+                <span>Outros</span>
+                <span>Total</span>
+                <span>Taxa conv.</span>
+              </div>
+              {visibleConversions.map((rawItem, index) => {
+                const item = rawItem as typeof channelConversions[number];
+                const sourceDisplay = normalizeOriginName(item.source);
+                const mediumDisplay = formatMediumName(item.medium);
+                const hasConv = item.total > 0;
+                return (
+                  <div className="conversion-detail-row" key={`${item.source}-${item.medium}-${index}`}>
+                    <span title={`${sourceDisplay} / ${mediumDisplay}`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <b>{sourceDisplay}</b> <small style={{ color: 'var(--muted-foreground, #64748b)' }}>/ {mediumDisplay}</small>
+                    </span>
+                    <span>{Number(item.sessions || 0).toLocaleString('pt-BR')}</span>
+                    <span>
+                      <b style={{ color: item.whatsapp > 0 ? '#10b981' : undefined }}>
+                        {item.whatsapp > 0 ? Number(item.whatsapp).toLocaleString('pt-BR') : '—'}
+                      </b>
+                    </span>
+                    <span>
+                      {item.others > 0 ? Number(item.others).toLocaleString('pt-BR') : '—'}
+                    </span>
+                    <span>
+                      <b style={{ color: hasConv ? '#10b981' : undefined }}>
+                        {Number(item.total).toLocaleString('pt-BR')}
+                      </b>
+                    </span>
+                    <span>
+                      <span className={`conversion-rate-badge ${item.conversionRate > 0 ? 'active' : 'empty'}`}>
+                        {item.conversionRate > 0 ? `${item.conversionRate.toFixed(1).replace('.', ',')}%` : '0%'}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+              {!channelConversions.length && (
+                <p className="empty-state">Nenhum canal com tráfego registrado no período selecionado.</p>
+              )}
+            </>
+          )}
+
+          <TablePagination page={conversionPage} total={currentConversionList.length} setPage={setConversionPage} />
         </article>
 
         <article className="table-card compact-table click-detail-table">
