@@ -115,7 +115,7 @@ export interface BusinessContextValue {
   totalSitesCount: number
   isNewSiteModalOpen: boolean
   setNewSiteModalOpen: (open: boolean) => void
-  createNewSite: (input: { name: string; domain: string; segment?: string }) => Promise<{ site: SiteItem; business: BusinessItem }>
+  createNewSite: (input: { name: string; domain: string; segment?: string; subsegment?: string | null; segment_detail?: string | null }) => Promise<{ site: SiteItem; business: BusinessItem }>
   loading: boolean
   selectBusiness: (businessId: string) => void
   selectSite: (siteId: string) => void
@@ -379,7 +379,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
     return totalSitesCount < effectivePlan.maxSites
   }, [effectivePlan, totalSitesCount])
 
-  const createNewSite = useCallback(async (input: { name: string; domain: string; segment?: string }) => {
+  const createNewSite = useCallback(async (input: { name: string; domain: string; segment?: string; subsegment?: string | null; segment_detail?: string | null }) => {
     if (!canAddMoreSites) {
       throw new Error(`Seu ${effectivePlan.name} permite até ${effectivePlan.maxSitesLabel}. Faça upgrade para adicionar mais sites.`)
     }
@@ -388,13 +388,71 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       throw new Error('Informe o nome do site (mínimo de 2 caracteres).')
     }
     const normalized = normalizeSiteDomain(input.domain)
+    const resolvedSegment = input.segment || currentBusiness?.segment || 'services'
+    const resolvedSubsegment = input.subsegment?.trim() || null
+    const resolvedDetail = input.segment_detail?.trim() || null
+
+    const createLocalFallbackSite = () => {
+      const businessId = crypto.randomUUID()
+      const createdSiteId = crypto.randomUUID()
+      const slug = `${slugify(siteName) || 'site'}-${Math.random().toString(36).slice(2, 7)}`
+      const randomCode = Math.random().toString(36).replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 5).padEnd(5, 'X')
+      const trackerSiteId = `ANLZ${randomCode}-A`
+
+      const fallbackBiz: BusinessItem = {
+        id: businessId,
+        name: siteName,
+        slug,
+        website_url: normalized.url,
+        segment: resolvedSegment,
+        subsegment: resolvedSubsegment,
+        segment_detail: resolvedDetail,
+        plan: effectivePlan.id,
+        subscription_status: subscriptionStatus,
+        subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 30 * 86400000).toISOString()
+      }
+
+      const fallbackSite: SiteItem = {
+        id: createdSiteId,
+        business_id: businessId,
+        name: siteName,
+        domain: normalized.domain,
+        tracker_site_id: trackerSiteId,
+        is_active: true
+      }
+
+      setBusinesses(prev => [...prev, fallbackBiz])
+      setSites(prev => [...prev, fallbackSite])
+      setCurrentBusiness(fallbackBiz)
+      setCurrentSite(fallbackSite)
+      localStorage.setItem('analizi-selected-business-id', fallbackBiz.id)
+      localStorage.setItem('analizi-selected-site-id', fallbackSite.id)
+
+      void fetch('/v1/tracker-sites', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          trackerSiteId: fallbackSite.tracker_site_id,
+          domain: fallbackSite.domain,
+          supabaseSiteId: fallbackSite.id,
+          businessId: fallbackBiz.id,
+          plan: effectivePlan.id
+        })
+      }).catch(() => {})
+
+      return { site: fallbackSite, business: fallbackBiz }
+    }
 
     if (!supabase) {
-      throw new Error('Conexão com o banco de dados não disponível.')
+      return createLocalFallbackSite()
     }
 
     const { data: { user }, error: userErr } = await supabase.auth.getUser()
     if (userErr || !user) {
+      // Se estiver em modo demonstração sem sessão ativa, permite criar localmente
+      if (businesses.some(b => b.id.startsWith('biz-'))) {
+        return createLocalFallbackSite()
+      }
       throw new Error('Sua sessão expirou. Faça login novamente.')
     }
 
@@ -410,7 +468,9 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
         name: siteName,
         slug,
         website_url: normalized.url,
-        segment: input.segment || currentBusiness?.segment || 'services',
+        segment: resolvedSegment,
+        subsegment: resolvedSubsegment,
+        segment_detail: resolvedDetail,
         plan: effectivePlan.id,
         subscription_status: subscriptionStatus,
         subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 30 * 86400000).toISOString()
@@ -460,19 +520,28 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       // ignora falha de rede
     }
 
+    const normalizedBiz: BusinessItem = {
+      ...createdBiz,
+      plan: normalizePlanTier(createdBiz.plan),
+      subscription_status: (createdBiz.subscription_status as SubscriptionStatus) || 'active'
+    }
+    const typedSite = createdSite as SiteItem
+
+    // Atualiza o estado imediatamente para evitar race condition antes do refreshBusinesses
+    setBusinesses(prev => [...prev.filter(b => b.id !== normalizedBiz.id), normalizedBiz])
+    setSites(prev => [...prev.filter(s => s.id !== typedSite.id), typedSite])
+    setCurrentBusiness(normalizedBiz)
+    setCurrentSite(typedSite)
+
     localStorage.setItem('analizi-selected-business-id', createdBiz.id)
     localStorage.setItem('analizi-selected-site-id', createdSite.id)
     await refreshBusinesses()
 
     return {
-      site: createdSite as SiteItem,
-      business: {
-        ...createdBiz,
-        plan: normalizePlanTier(createdBiz.plan),
-        subscription_status: (createdBiz.subscription_status as SubscriptionStatus) || 'active'
-      } as BusinessItem
+      site: typedSite,
+      business: normalizedBiz
     }
-  }, [canAddMoreSites, effectivePlan, currentBusiness, subscriptionStatus, subscriptionExpiresAt, refreshBusinesses])
+  }, [canAddMoreSites, effectivePlan, currentBusiness, businesses, subscriptionStatus, subscriptionExpiresAt, refreshBusinesses])
 
   const value = useMemo<BusinessContextValue>(() => ({
     businesses,

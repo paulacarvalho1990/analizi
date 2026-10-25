@@ -2158,6 +2158,19 @@ body { background:var(--background); color:var(--foreground); }
   margin-top: 12px;
 }
 
+.new-site-form .two-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .new-site-form .two-fields {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
 .new-site-form label {
   display: flex;
   flex-direction: column;

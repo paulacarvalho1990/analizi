@@ -1,7 +1,49 @@
-import { useState, useRef, useEffect, type FormEvent } from 'react'
+import { useState, useRef, useEffect, useMemo, type FormEvent } from 'react'
 import { Check, ChevronDown, Globe, Settings, Plus, X, Sparkles, Lock } from 'lucide-react'
 import { useBusiness } from '../lib/business-context'
 import { Button } from './ui/Button'
+
+type SegmentKey = 'products' | 'services' | 'health'
+
+const SEGMENT_SUBOPTIONS: Record<SegmentKey, string[]> = {
+  products: [
+    'Moda e acessórios',
+    'Beleza e cosméticos',
+    'Alimentos e bebidas',
+    'Casa e decoração',
+    'Eletrônicos',
+    'Saúde e bem-estar',
+    'Pet shop',
+    'Autopeças e acessórios',
+    'Livros e papelaria',
+    'Produtos infantis',
+    'Outros'
+  ],
+  services: [
+    'Advocacia',
+    'Contabilidade',
+    'Arquitetura e engenharia',
+    'Construção e reformas',
+    'Tecnologia',
+    'Educação',
+    'Consultoria',
+    'Fotografia e eventos',
+    'Beleza e estética',
+    'Serviços automotivos',
+    'Outros'
+  ],
+  health: [
+    'Clínica médica',
+    'Odontologia',
+    'Psicologia',
+    'Fisioterapia',
+    'Nutrição',
+    'Dermatologia',
+    'Exames e diagnóstico',
+    'Bem-estar e terapias',
+    'Outros'
+  ]
+}
 
 interface WorkspaceSelectorProps {
   onNavigateSettings?: () => void
@@ -21,14 +63,22 @@ export function NewSiteModal({ onSiteCreated }: { onSiteCreated?: () => void }) 
 
   const [siteName, setSiteName] = useState('')
   const [domain, setDomain] = useState('')
-  const [segment, setSegment] = useState('services')
+  const [segment, setSegment] = useState<SegmentKey>('services')
+  const [subsegment, setSubsegment] = useState('')
+  const [segmentDetail, setSegmentDetail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const subsegmentOptions = useMemo(() => SEGMENT_SUBOPTIONS[segment] || [], [segment])
+  const isOtherSubsegment = subsegment === 'Outros'
 
   useEffect(() => {
     if (isNewSiteModalOpen) {
       setSiteName('')
       setDomain('')
+      setSegment('services')
+      setSubsegment('')
+      setSegmentDetail('')
       setError('')
     }
   }, [isNewSiteModalOpen])
@@ -42,9 +92,23 @@ export function NewSiteModal({ onSiteCreated }: { onSiteCreated?: () => void }) 
       setError(`Seu ${effectivePlan.name} permite até ${effectivePlan.maxSitesLabel}.`)
       return
     }
+    if (!subsegment) {
+      setError('Selecione o segmento secundário do site.')
+      return
+    }
+    if (isOtherSubsegment && segmentDetail.trim().length < 2) {
+      setError('Descreva os detalhes do segmento do seu negócio.')
+      return
+    }
     setLoading(true)
     try {
-      await createNewSite({ name: siteName, domain, segment })
+      await createNewSite({
+        name: siteName,
+        domain,
+        segment,
+        subsegment,
+        segment_detail: segmentDetail.trim() || null
+      })
       setNewSiteModalOpen(false)
       if (onSiteCreated) onSiteCreated()
     } catch (err) {
@@ -116,13 +180,50 @@ export function NewSiteModal({ onSiteCreated }: { onSiteCreated?: () => void }) 
                 placeholder="Ex.: minhaloja.com.br"
               />
             </label>
+            <div className="two-fields">
+              <label>
+                Segmento principal
+                <select
+                  value={segment}
+                  onChange={(e) => {
+                    setSegment(e.target.value as SegmentKey)
+                    setSubsegment('')
+                  }}
+                >
+                  <option value="services">Serviços</option>
+                  <option value="products">Produtos / E-commerce</option>
+                  <option value="health">Saúde e Bem-estar</option>
+                </select>
+              </label>
+
+              <label>
+                Segmento secundário
+                <select
+                  required
+                  value={subsegment}
+                  onChange={(e) => setSubsegment(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Selecione uma opção
+                  </option>
+                  {subsegmentOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             <label>
-              Segmento principal
-              <select value={segment} onChange={(e) => setSegment(e.target.value)}>
-                <option value="services">Serviços</option>
-                <option value="products">Produtos / E-commerce</option>
-                <option value="health">Saúde e Bem-estar</option>
-              </select>
+              {isOtherSubsegment ? 'Detalhes do segmento (obrigatório)' : 'Detalhes do segmento (opcional)'}
+              <input
+                type="text"
+                required={isOtherSubsegment}
+                value={segmentDetail}
+                onChange={(e) => setSegmentDetail(e.target.value)}
+                placeholder="Ex.: Clínica odontológica especializada em implantes e estética"
+              />
             </label>
 
             {error && <p className="form-feedback error">{error}</p>}
