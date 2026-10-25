@@ -501,7 +501,7 @@ export function Heatmap() {
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<HeatmapPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [zoomMode, setZoomMode] = useState<'fit' | 'compact' | 'actual'>('fit')
+  const [zoomMode, setZoomMode] = useState<'fit' | 'compact' | 'actual'>('compact')
   const [customScale, setCustomScale] = useState<number | null>(null)
   const [wrapperWidth, setWrapperWidth] = useState<number>(1000)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
