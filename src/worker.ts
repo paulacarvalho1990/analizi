@@ -128,6 +128,14 @@ async function collect(request: Request, env: Env) {
 
   const statements: D1Statement[] = []
   const usageMonth = new Date().toISOString().slice(0, 7)
+
+  // Captura localização geográfica anônima via Cloudflare Edge (request.cf) sem armazenar IP
+  const cf = (request as Request & { cf?: { country?: string; region?: string; regionCode?: string; city?: string } }).cf
+  const rawCountry = compactText(cf?.country || request.headers.get('cf-ipcountry'), 64)
+  const geoCountry = rawCountry && rawCountry !== 'XX' && rawCountry !== 'T1' ? rawCountry : null
+  const geoRegion = compactText(cf?.region || cf?.regionCode, 120) || null
+  const geoCity = compactText(cf?.city, 120) || null
+
   const isAuthSource = (s?: string | null) => {
     if (!s) return false
     return /accounts\.google\.com|appleid\.apple\.com|login\.microsoftonline\.com|auth0\.com|supabase\.co/i.test(s) ||
@@ -235,13 +243,16 @@ async function collect(request: Request, env: Env) {
       // para que todo o tempo de leitura até fechar ou trocar de aba/página seja somado no Tempo de Atenção.
     }
 
+    const metricDate = (compactText(event.occurredAt, 40) || new Date().toISOString()).slice(0, 10)
+
     statements.push(env.ANALIZI_EVENTS.prepare(`
       insert into events (
         id, tracker_site_id, occurred_at, received_at, event_name, visitor_id, session_id, session_number,
         page_path, page_title, page_url, page_hostname, referrer_host, referrer_url,
         source, medium, campaign, device_type, browser, operating_system, language,
+        country, region, city,
         engagement_time_ms, is_conversion, metadata_json
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id, siteId, compactText(event.occurredAt, 40) || new Date().toISOString(), new Date().toISOString(), name, visitorId, sessionId,
       Number.isInteger(event.sessionNumber) ? event.sessionNumber : null,
@@ -251,9 +262,37 @@ async function collect(request: Request, env: Env) {
       rawSource, rawMedium, compactText(event.campaign, 240),
       compactText(event.deviceType, 32) || null, compactText(event.browser, 80) || null,
       compactText(event.operatingSystem, 80) || null, compactText(event.language, 35) || null,
+      geoCountry, geoRegion, geoCity,
       Number.isFinite(event.engagementTimeMs) ? Math.max(0, Math.min(Number(event.engagementTimeMs), 3_600_000)) : null,
       event.isConversion ? 1 : 0, safeMetadata(event.metadata),
     ))
+
+    // Atualiza consolidação diária de localização geográfica em tempo real para page_view, session_start e conversões
+    if (geoCountry && (name === 'page_view' || name === 'session_start' || name === 'first_visit' || name === 'whatsapp_contact' || name === 'sign_up' || event.isConversion)) {
+      const addPv = name === 'page_view' ? 1 : 0
+      const addSess = name === 'session_start' ? 1 : 0
+      const addUser = name === 'first_visit' || name === 'session_start' ? 1 : 0
+      const addConv = name === 'whatsapp_contact' || name === 'sign_up' || event.isConversion ? 1 : 0
+      statements.push(env.ANALIZI_EVENTS.prepare(`
+        insert into daily_locations (tracker_site_id, metric_date, country, region, city, page_views, users, sessions, conversions)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(tracker_site_id, metric_date, country, region, city) do update set
+          page_views = daily_locations.page_views + excluded.page_views,
+          users = max(daily_locations.users, daily_locations.users + excluded.users),
+          sessions = daily_locations.sessions + excluded.sessions,
+          conversions = daily_locations.conversions + excluded.conversions
+      `).bind(
+        siteId,
+        metricDate,
+        geoCountry,
+        geoRegion || 'Não identificado',
+        geoCity || 'Não identificada',
+        addPv,
+        addUser,
+        addSess,
+        addConv
+      ))
+    }
   }
 
   if (!statements.length) return json({ error: 'Eventos inválidos.' }, 400)
@@ -566,6 +605,21 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     env.ANALIZI_EVENTS.prepare(`
       select distinct ${SQL_NORMALIZED_SOURCE} as source from daily_sources where tracker_site_id = ? and metric_date >= ? and metric_date <= ? order by source limit 100
     `).bind(safeId, start, end),
+    // 11: locations (Cidade, Estado e País consolidados)
+    env.ANALIZI_EVENTS.prepare(`
+      select
+        country,
+        region,
+        city,
+        sum(page_views) as views,
+        sum(users) as users,
+        sum(sessions) as sessions,
+        sum(conversions) as conversions
+      from daily_locations
+      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
+      group by country, region, city
+      order by views desc, users desc limit 250
+    `).bind(safeId, start, end),
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
   const responseBody = {
@@ -580,6 +634,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     pageComparison: results[8]?.results ?? [],
     filterPages: results[9]?.results ?? [],
     filterSources: results[10]?.results ?? [],
+    locations: results[11]?.results ?? [],
     periodDays: period, start, end, group,
     sourceKind: 'consolidated'
   }
@@ -1378,6 +1433,28 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         group by tracker_site_id, date(occurred_at), event_name, coalesce(page_path, '/')
         on conflict (tracker_site_id, metric_date, contact_type, page_path) do update set
           contacts = excluded.contacts;
+      `),
+      // 7. Consolida localização geográfica (País, Estado/Região e Cidade)
+      env.ANALIZI_EVENTS.prepare(`
+        insert into daily_locations (tracker_site_id, metric_date, country, region, city, page_views, users, sessions, conversions)
+        select
+          tracker_site_id,
+          date(occurred_at) as metric_date,
+          coalesce(nullif(country, ''), 'BR') as country,
+          coalesce(nullif(region, ''), 'Não identificado') as region,
+          coalesce(nullif(city, ''), 'Não identificada') as city,
+          sum(event_name = 'page_view') as page_views,
+          count(distinct visitor_id) as users,
+          count(distinct session_id) as sessions,
+          count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
+        from events
+        where country is not null and country != '' and date(occurred_at) <= date('now', '-1 day')
+        group by tracker_site_id, date(occurred_at), coalesce(nullif(country, ''), 'BR'), coalesce(nullif(region, ''), 'Não identificado'), coalesce(nullif(city, ''), 'Não identificada')
+        on conflict (tracker_site_id, metric_date, country, region, city) do update set
+          page_views = excluded.page_views,
+          users = excluded.users,
+          sessions = excluded.sessions,
+          conversions = excluded.conversions;
       `)
     ])
 

@@ -23,4 +23,4 @@ Para marcar botões existentes de login ou cadastro, adicione um atributo ao bot
 <button data-analizi-event="login">Entrar</button>
 ```
 
-Não são coletados IP, conteúdo de formulários, senhas, e-mails ou telefones. A origem é identificada por UTM quando presente; sem UTM, o rastreador usa o referenciador ou marca o acesso como direto.
+Não são coletados IP, conteúdo de formulários, senhas, e-mails ou telefones. A localização geográfica (Cidade, Estado/Região e País) é identificada de forma anônima pela borda da Cloudflare (`request.cf`) sem armazenar o endereço IP do visitante. A origem é identificada por UTM quando presente; sem UTM, o rastreador usa o referenciador ou marca o acesso como direto.
