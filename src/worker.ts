@@ -47,6 +47,8 @@ type TrackerEvent = {
   source?: string
   medium?: string
   campaign?: string
+  campaignContent?: string
+  campaignTerm?: string
   deviceType?: string
   browser?: string
   operatingSystem?: string
@@ -182,6 +184,9 @@ async function collect(request: Request, env: Env) {
 
     let rawSource = compactText(event.source, 120) || null
     let rawMedium = compactText(event.medium, 120)
+    let rawCampaign = compactText(event.campaign, 240)
+    const rawContent = compactText(event.campaignContent, 240) || null
+    const rawTerm = compactText(event.campaignTerm, 240) || null
     const refHost = compactText(event.referrerHost, 253) || null
 
     if (isAuthSource(rawSource)) {
@@ -249,17 +254,17 @@ async function collect(request: Request, env: Env) {
       insert into events (
         id, tracker_site_id, occurred_at, received_at, event_name, visitor_id, session_id, session_number,
         page_path, page_title, page_url, page_hostname, referrer_host, referrer_url,
-        source, medium, campaign, device_type, browser, operating_system, language,
+        source, medium, campaign, campaign_content, campaign_term, device_type, browser, operating_system, language,
         country, region, city,
         engagement_time_ms, is_conversion, metadata_json
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id, siteId, compactText(event.occurredAt, 40) || new Date().toISOString(), new Date().toISOString(), name, visitorId, sessionId,
       Number.isInteger(event.sessionNumber) ? event.sessionNumber : null,
       compactText(event.pagePath, 1_024) || null, compactText(event.pageTitle, 512) || null,
       compactText(event.pageUrl, 2_048) || null, compactText(event.pageHostname, 253) || null,
       compactText(event.referrerHost, 253) || null, compactText(event.referrerUrl, 2_048) || null,
-      rawSource, rawMedium, compactText(event.campaign, 240),
+      rawSource, rawMedium, rawCampaign, rawContent, rawTerm,
       compactText(event.deviceType, 32) || null, compactText(event.browser, 80) || null,
       compactText(event.operatingSystem, 80) || null, compactText(event.language, 35) || null,
       geoCountry, geoRegion, geoCity,
@@ -723,6 +728,19 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
       group by source, medium, campaign
       order by sessions desc, pageViews desc limit 250
     `).bind(safeId, start, end, ...smWhere.params),
+    // 18: peakHours (Distribuição por Dia da Semana e Hora do Dia para mapa de horários de pico)
+    env.ANALIZI_EVENTS.prepare(`
+      select
+        cast(strftime('%w', occurred_at) as integer) as dayOfWeek,
+        cast(strftime('%H', occurred_at) as integer) as hourOfDay,
+        count(distinct session_id) as sessions,
+        sum(event_name = 'page_view') as views,
+        sum(event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1) as contacts
+      from events
+      where tracker_site_id = ? and date(occurred_at) >= ? and date(occurred_at) <= ?
+      group by dayOfWeek, hourOfDay
+      order by dayOfWeek asc, hourOfDay asc
+    `).bind(safeId, start, end),
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
   const responseBody = {
@@ -744,6 +762,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     filterBrowsers: results[15]?.results ?? [],
     devices: results[16]?.results ?? [],
     sourceMediumResults: results[17]?.results ?? [],
+    peakHours: results[18]?.results ?? [],
     periodDays: period, start, end, group,
     sourceKind: 'consolidated'
   }

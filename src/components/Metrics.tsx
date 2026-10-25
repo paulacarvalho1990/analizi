@@ -116,6 +116,24 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     what: 'Porcentagem de visualizações em que o visitante encerrou a navegação sem clicar em nada.',
     why: 'Quanto menor, melhor! Taxa de saída alta pode significar que a página não agradou.',
     tip: 'Coloque a informação mais importante no topo da página e dê uma opção clara de próximo passo.'
+  },
+  'Páginas por visita': {
+    caption: 'Média de páginas navegadas em cada visita',
+    what: 'Quantidade média de páginas carregadas pelo usuário ao longo de uma sessão contínua.',
+    why: 'Demonstra a profundidade da navegação e o interesse em conhecer mais detalhes da sua oferta.',
+    tip: 'Use links internos inteligentes e botões de recomendação para estimular a leitura de outras páginas.'
+  },
+  'Taxa de engajamento': {
+    caption: 'Visitas com interação real no site',
+    what: 'Porcentagem de sessões que duraram 10s ou mais, visualizaram 2+ páginas ou iniciaram um contato.',
+    why: 'Padrão moderno do GA4 que substitui a rejeição: mede o tráfego qualificado que realmente prestou atenção.',
+    tip: 'Garanta títulos chamativos e conteúdo escaneável logo no primeiro scroll.'
+  },
+  'Usuários recorrentes': {
+    caption: 'Pessoas que já conheciam o site e voltaram',
+    what: 'Visitantes que já haviam acessado seu site em dias anteriores e retornaram para uma nova visita.',
+    why: 'Mede fidelidade e ciclo de decisão: a maioria das compras acontece na 2ª ou 3ª visita ao site.',
+    tip: 'Divulgue novidades nas redes sociais e use e-mails informativos para trazer o público de volta.'
   }
 }
 

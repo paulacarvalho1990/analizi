@@ -13,15 +13,34 @@
   const session = storage('sessionStorage')
   const get = (store, key) => store?.getItem(key) || ''
   const set = (store, key, value) => { try { store?.setItem(key, value) } catch {} }
+  const getCookie = (name) => {
+    try {
+      const match = document.cookie.match(new RegExp('(^|;\\s*)' + name + '=([^;]*)'))
+      return match ? decodeURIComponent(match[2]) : ''
+    } catch { return '' }
+  }
+  const setCookie = (name, value, days = 730) => {
+    try {
+      const expires = new Date(Date.now() + days * 86400000).toUTCString()
+      document.cookie = `${name}=${encodeURIComponent(value)};expires=${expires};path=/;SameSite=Lax`
+    } catch {}
+  }
+
   const randomId = () => crypto.randomUUID ? crypto.randomUUID() : `${now()}-${Math.random().toString(36).slice(2)}`
   const visitorKey = `analizi:${siteId}:visitor`
   const sessionKey = `analizi:${siteId}:session`
   const activityKey = `analizi:${siteId}:activity`
   const countKey = `analizi:${siteId}:sessions`
   const attrKey = `analizi:${siteId}:attribution`
-  const isFirstVisit = !get(local, visitorKey)
-  const visitorId = get(local, visitorKey) || randomId()
+  const cookieVisitorKey = `_anlz_v_${siteId}`
+
+  // Resiliência contra limpeza de storage: checa localStorage E cookie durável de 2 anos
+  const storedVisitor = get(local, visitorKey) || getCookie(cookieVisitorKey)
+  const isFirstVisit = !storedVisitor
+  const visitorId = storedVisitor || randomId()
   set(local, visitorKey, visitorId)
+  setCookie(cookieVisitorKey, visitorId, 730)
+
   const inactive = now() - Number(get(session, activityKey) || 0) > 30 * 60 * 1000
   const isNewSession = !get(session, sessionKey) || inactive
   const sessionId = isNewSession ? randomId() : get(session, sessionKey)
@@ -119,10 +138,18 @@
     const utmSource = params.get('utm_source')
     const utmMedium = params.get('utm_medium')
     const utmCampaign = params.get('utm_campaign')
+    const utmContent = params.get('utm_content')
+    const utmTerm = params.get('utm_term')
 
-    // Se a sessão já tem atribuição salva e não há novos parâmetros UTM explícitos, mantém a origem da sessão
+    // Identificadores de auto-tagging de tráfego pago (Google, Meta, TikTok, Microsoft/Bing)
+    const gclid = params.get('gclid') || params.get('gbraid') || params.get('wbraid')
+    const fbclid = params.get('fbclid')
+    const ttclid = params.get('ttclid')
+    const msclkid = params.get('msclkid')
+
+    // Se a sessão já tem atribuição salva e não há novos parâmetros explícitos, mantém a origem da sessão
     const saved = get(session, attrKey)
-    if (saved && !utmSource && !utmCampaign) {
+    if (saved && !utmSource && !utmCampaign && !gclid && !fbclid && !ttclid && !msclkid) {
       try {
         const parsed = JSON.parse(saved)
         if (parsed && parsed.source) return parsed
@@ -131,7 +158,28 @@
 
     let source = utmSource || ''
     let medium = utmMedium || ''
-    const campaign = utmCampaign || ''
+    let campaign = utmCampaign || ''
+    let campaignContent = utmContent || ''
+    let campaignTerm = utmTerm || ''
+
+    // Auto-classificação inteligente de Tráfego Pago caso não haja UTM explícita
+    if (gclid && !source) {
+      source = 'Google Ads'
+      medium = medium || 'cpc'
+      campaign = campaign || '(google-ads)'
+    } else if (fbclid && !source) {
+      source = 'Meta Ads'
+      medium = medium || 'paid-social'
+      campaign = campaign || '(meta-ads)'
+    } else if (ttclid && !source) {
+      source = 'TikTok Ads'
+      medium = medium || 'paid-social'
+      campaign = campaign || '(tiktok-ads)'
+    } else if (msclkid && !source) {
+      source = 'Bing Ads'
+      medium = medium || 'cpc'
+      campaign = campaign || '(bing-ads)'
+    }
 
     if (!source) {
       if (document.referrer) {
@@ -163,7 +211,7 @@
       medium = medium || 'direto'
     }
 
-    const attrData = { source, medium, campaign }
+    const attrData = { source, medium, campaign, campaignContent, campaignTerm }
     set(session, attrKey, JSON.stringify(attrData))
     return attrData
   }

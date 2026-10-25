@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Layers, Lightbulb, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard } from './components/Metrics'
@@ -362,7 +362,91 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
   );
 }
 
-function Dashboard() { const analytics = useAnalytics(); const [dailyPage, setDailyPage] = useState(0); const t = analytics?.totals; const p = analytics?.previousTotals; const daily = analytics?.daily ?? []; const visibleDays = daily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE); const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—'; const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI'; return <><PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} /><AnalyticsFilters analytics={analytics}/><div className="period"><span className="source-badge"><span className="source-badge-dot" />{badge}</span></div><section className="metrics"><MetricCard title="Visualizações de páginas" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} /><MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} /><MetricCard title="Tempo de atenção" value={attention} note="média por usuário ativo" /><MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} /><MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} /></section><div className="dashboard-split"><MetricChart analytics={analytics} /><article className="table-card compact-table daily-table"><div className="section-heading"><div><h3>Métricas por dia</h3><p>Atividade diária</p></div></div><div className="daily-head"><span>Data</span><span>Visualizações de páginas</span><span>Usuários</span><span>Contatos</span></div>{visibleDays.map(day => <div className="daily-row" key={day.date}><span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span><span>{day.pageViews}</span><span>{day.users}</span><span>{day.contacts}</span></div>)}{!daily.length && <p className="empty-state">Ainda não recebemos acessos neste período.</p>}<TablePagination page={dailyPage} total={daily.length} setPage={setDailyPage}/></article></div></> }
+function Dashboard() {
+  const analytics = useAnalytics();
+  const [dailyPage, setDailyPage] = useState(0);
+  const [dailyTab, setDailyTab] = useState<'all' | 'conversions'>('all');
+  const t = analytics?.totals;
+  const p = analytics?.previousTotals;
+  const daily = analytics?.daily ?? [];
+  const filteredDaily = dailyTab === 'conversions' ? daily.filter(d => Number(d.contacts || 0) > 0) : daily;
+  const visibleDays = filteredDaily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE);
+  const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—';
+  const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI';
+
+  return (
+    <>
+      <PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} />
+      <AnalyticsFilters analytics={analytics} />
+      <div className="period">
+        <span className="source-badge"><span className="source-badge-dot" />{badge}</span>
+      </div>
+      <section className="metrics">
+        <MetricCard title="Visualizações de páginas" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} />
+        <MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} />
+        <MetricCard title="Tempo de atenção" value={attention} note="média por usuário ativo" />
+        <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
+        <MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} />
+      </section>
+      <div className="dashboard-split">
+        <MetricChart analytics={analytics} />
+        <article className="table-card compact-table daily-table">
+          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Calendar size={17} style={{ color: '#3b82f6' }} />
+                <h3 style={{ margin: 0 }}>Métricas por dia</h3>
+              </div>
+              <p>Histórico diário de acessos, visitantes e contatos</p>
+            </div>
+            <div className="heatmap-segmented-control">
+              <button
+                type="button"
+                className={dailyTab === 'all' ? 'active' : ''}
+                onClick={() => { setDailyTab('all'); setDailyPage(0); }}
+              >
+                Todos os dias
+              </button>
+              <button
+                type="button"
+                className={dailyTab === 'conversions' ? 'active' : ''}
+                onClick={() => { setDailyTab('conversions'); setDailyPage(0); }}
+              >
+                Com conversões
+              </button>
+            </div>
+          </div>
+          <div className="daily-head">
+            <span>Data</span>
+            <span>Visualizações</span>
+            <span>Usuários</span>
+            <span>Contatos</span>
+          </div>
+          {visibleDays.map(day => (
+            <div className="daily-row" key={day.date}>
+              <span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span>
+              <span><b>{Number(day.pageViews || 0).toLocaleString('pt-BR')}</b></span>
+              <span>{Number(day.users || 0).toLocaleString('pt-BR')}</span>
+              <span>
+                <b style={{ color: Number(day.contacts || 0) > 0 ? '#10b981' : undefined }}>
+                  {Number(day.contacts || 0).toLocaleString('pt-BR')}
+                </b>
+              </span>
+            </div>
+          ))}
+          {!filteredDaily.length && (
+            <p className="empty-state">
+              {dailyTab === 'conversions'
+                ? 'Nenhum dia com contatos ou conversões registrado no período.'
+                : 'Ainda não recebemos acessos neste período.'}
+            </p>
+          )}
+          <TablePagination page={dailyPage} total={filteredDaily.length} setPage={setDailyPage} />
+        </article>
+      </div>
+    </>
+  );
+}
 
 const COUNTRY_NAMES: Record<string, string> = {
   BR: 'Brasil',
@@ -416,6 +500,7 @@ function formatMediumName(raw?: string): string {
 function Audience() {
   const analytics = useAnalytics();
   const [sourcePage, setSourcePage] = useState(0);
+  const [sourceTab, setSourceTab] = useState<'all' | 'top'>('all');
   const [devicePage, setDevicePage] = useState(0);
   const [deviceTab, setDeviceTab] = useState<'devices' | 'browsers'>('devices');
   const [locationPage, setLocationPage] = useState(0);
@@ -424,7 +509,8 @@ function Audience() {
   const rawDevices = analytics?.devices ?? [];
   const rawLocations = analytics?.locations ?? [];
   const p = analytics?.previousTotals;
-  const visibleSources = sourcePages.slice(sourcePage * ITEMS_PER_PAGE, (sourcePage + 1) * ITEMS_PER_PAGE);
+  const filteredSources = sourceTab === 'top' ? sourcePages.slice(0, 10) : sourcePages;
+  const visibleSources = filteredSources.slice(sourcePage * ITEMS_PER_PAGE, (sourcePage + 1) * ITEMS_PER_PAGE);
   const topSource = analytics?.sources?.[0];
   const topShare = analytics?.totals?.pageViews && topSource ? `${Math.round((Number(topSource.value) / Number(analytics.totals.pageViews)) * 100)}%` : '—';
 
@@ -558,28 +644,47 @@ function Audience() {
       <div className="audience-split">
         <OriginChart analytics={analytics}/>
         <article className="table-card compact-table source-pages-table">
-          <div className="section-heading">
+          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
             <div>
-              <h3>Origem por página</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Compass size={17} style={{ color: '#ff3cac' }} />
+                <h3 style={{ margin: 0 }}>Origem por página</h3>
+              </div>
               <p>Onde o tráfego de cada canal desembarcou</p>
+            </div>
+            <div className="heatmap-segmented-control">
+              <button
+                type="button"
+                className={sourceTab === 'all' ? 'active' : ''}
+                onClick={() => { setSourceTab('all'); setSourcePage(0); }}
+              >
+                Todos os canais
+              </button>
+              <button
+                type="button"
+                className={sourceTab === 'top' ? 'active' : ''}
+                onClick={() => { setSourceTab('top'); setSourcePage(0); }}
+              >
+                Top 10 páginas
+              </button>
             </div>
           </div>
           <div className="source-pages-head">
             <span>Canal</span>
             <span>Página de destino</span>
-            <span>Visualizações de páginas</span>
+            <span>Visualizações</span>
             <span>Usuários</span>
           </div>
           {visibleSources.map(item => (
             <div className="source-pages-row" key={`${item.source}-${item.path}`}>
               <span><b>{normalizeOriginName(item.source)}</b></span>
-              <span>{item.path}</span>
-              <span>{item.views}</span>
-              <span>{item.users}</span>
+              <span><code className="path-code">{item.path}</code></span>
+              <span><b>{Number(item.views || 0).toLocaleString('pt-BR')}</b></span>
+              <span>{Number(item.users || 0).toLocaleString('pt-BR')}</span>
             </div>
           ))}
-          {!sourcePages.length && <p className="empty-state">Ainda não recebemos dados de origens de tráfego.</p>}
-          <TablePagination page={sourcePage} total={sourcePages.length} setPage={setSourcePage}/>
+          {!filteredSources.length && <p className="empty-state">Ainda não recebemos dados de origens de tráfego.</p>}
+          <TablePagination page={sourcePage} total={filteredSources.length} setPage={setSourcePage}/>
         </article>
       </div>
 
@@ -630,10 +735,10 @@ function Audience() {
                 <b>{dev.device}</b>
               </span>
               <span>{dev.browser}</span>
-              <span>{dev.sessions}</span>
-              <span><b>{dev.views}</b></span>
-              <span>{dev.users}</span>
-              <span>{dev.newUsers}</span>
+              <span>{Number(dev.sessions || 0).toLocaleString('pt-BR')}</span>
+              <span><b>{Number(dev.views || 0).toLocaleString('pt-BR')}</b></span>
+              <span>{Number(dev.users || 0).toLocaleString('pt-BR')}</span>
+              <span>{Number(dev.newUsers || 0).toLocaleString('pt-BR')}</span>
               <span><b>{share}</b></span>
             </div>
           );
@@ -692,9 +797,13 @@ function Audience() {
             <span><b>{loc.city}</b></span>
             <span>{loc.region}</span>
             <span>{loc.country}</span>
-            <span><b>{loc.views}</b></span>
-            <span>{loc.users}</span>
-            <span>{loc.conversions}</span>
+            <span><b>{Number(loc.views || 0).toLocaleString('pt-BR')}</b></span>
+            <span>{Number(loc.users || 0).toLocaleString('pt-BR')}</span>
+            <span>
+              <b style={{ color: Number(loc.conversions || 0) > 0 ? '#10b981' : undefined }}>
+                {Number(loc.conversions || 0).toLocaleString('pt-BR')}
+              </b>
+            </span>
           </div>
         ))}
         {!aggregatedLocations.length && (
