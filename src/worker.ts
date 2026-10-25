@@ -380,6 +380,15 @@ const SQL_NORMALIZED_SOURCE = `case
   else source
 end`
 
+const SQL_NORMALIZED_MEDIUM = `case
+  when lower(coalesce(medium, '')) in ('', 'none', '(none)', 'null') then 'direto'
+  else lower(trim(medium))
+end`
+
+const SQL_NORMALIZED_DEVICE = `coalesce(nullif(lower(trim(device_type)), ''), 'desktop')`
+const SQL_NORMALIZED_BROWSER = `coalesce(nullif(trim(browser), ''), 'Outro')`
+const SQL_NORMALIZED_CAMPAIGN = `coalesce(trim(campaign), '')`
+
 async function analytics(id: string, env: Env, query: URLSearchParams) {
   const safeId = trackerId(id)
   if (!safeId) return json({ error: 'Identificação inválida.' }, 400)
@@ -408,45 +417,54 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   const groupConsolidated = groupExpressionsConsolidated[group] || groupExpressionsConsolidated.day
   const page = compactText(query.get('page'), 1024)
   const source = compactText(query.get('source'), 120)
+  const medium = compactText(query.get('medium'), 120)
+  const campaign = compactText(query.get('campaign'), 240)
+  const device = compactText(query.get('device'), 32)
+  const browser = compactText(query.get('browser'), 80)
 
+  const hasDimensionFilter = Boolean(page || source || medium || campaign || device || browser)
+
+  const buildSmWhere = (alias = '') => {
+    const p = alias ? `${alias}.` : ''
+    let sql = ''
+    const params: unknown[] = []
+    if (page) { sql += ` and ${p}page_path = ?`; params.push(page) }
+    if (source) { sql += ` and lower(${p}source) = lower(?)`; params.push(source) }
+    if (medium) { sql += ` and lower(${p}medium) = lower(?)`; params.push(medium) }
+    if (campaign) { sql += ` and lower(${p}campaign) = lower(?)`; params.push(campaign) }
+    if (device) { sql += ` and lower(${p}device_type) = lower(?)`; params.push(device) }
+    if (browser) { sql += ` and lower(${p}browser) = lower(?)`; params.push(browser) }
+    return { sql, params }
+  }
+
+  const smWhere = buildSmWhere()
   const pageFilterDaily = page ? ' and page_path = ?' : ''
   const sourceFilterDaily = source ? ' and lower(source) = lower(?)' : ''
 
   // 100% das métricas são extraídas das tabelas consolidadas diárias
   const results = await env.ANALIZI_EVENTS.batch([
     // 0: totals (Conceitos alinhados ao GA4: Key Events para contacts, Sessões convertidas para contactSessions, e Tempo médio de engajamento por usuário ativo)
-    page
+    hasDimensionFilter
       ? env.ANALIZI_EVENTS.prepare(`
           select
-            coalesce(sum(p.page_views), 0) as pageViews,
-            coalesce(sum(p.users), 0) as users,
-            0 as sessions,
-            0 as newUsers,
-            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date <= ? and dc.page_path = p.page_path and dc.contact_type in ('whatsapp_contact', 'sign_up')), 0) as contacts,
-            coalesce(sum(p.conversions), 0) as contactSessions,
-            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date <= ? and dc.page_path = p.page_path and dc.contact_type = 'whatsapp_contact'), 0) as whatsappContacts,
-            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date <= ? and dc.page_path = p.page_path and dc.contact_type = 'sign_up'), 0) as signUps,
-            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date <= ? and dc.page_path = p.page_path and dc.contact_type = 'login'), 0) as logins,
-            round(sum(p.average_engagement_seconds * coalesce(nullif(p.users, 0), p.page_views)) / nullif(sum(coalesce(nullif(p.users, 0), p.page_views)), 0)) as attentionSeconds
-          from daily_pages p
-          where p.tracker_site_id = ? and p.metric_date >= ? and p.metric_date <= ? and p.page_path = ?
-        `).bind(start, end, start, end, start, end, start, end, safeId, start, end, page)
-      : source
-      ? env.ANALIZI_EVENTS.prepare(`
-          select
-            coalesce(sum(s.page_views), 0) as pageViews,
-            coalesce(sum(s.sessions), 0) as sessions,
-            coalesce(sum(s.users), 0) as users,
-            coalesce(sum(s.new_users), 0) as newUsers,
-            coalesce(sum(s.conversions), 0) as contacts,
-            coalesce(sum(s.conversions), 0) as contactSessions,
-            0 as whatsappContacts,
-            0 as signUps,
-            0 as logins,
-            null as attentionSeconds
-          from daily_sources s
-          where s.tracker_site_id = ? and s.metric_date >= ? and s.metric_date <= ? and lower(s.source) = lower(?)
-        `).bind(safeId, start, end, source)
+            coalesce(sum(r.page_views), 0) as pageViews,
+            coalesce(sum(r.sessions), 0) as sessions,
+            coalesce(sum(r.users), 0) as users,
+            coalesce(sum(r.new_users), 0) as newUsers,
+            coalesce(sum(r.whatsapp_clicks + r.sign_ups), 0) as contacts,
+            coalesce(sum(r.conversions), 0) as contactSessions,
+            coalesce(sum(r.whatsapp_clicks), 0) as whatsappContacts,
+            coalesce(sum(r.sign_ups), 0) as signUps,
+            coalesce(sum(r.logins), 0) as logins,
+            coalesce(
+              (select round(sum(p.average_engagement_seconds * coalesce(nullif(p.users, 0), p.page_views)) / nullif(sum(coalesce(nullif(p.users, 0), p.page_views)), 0))
+               from daily_pages p
+               where p.tracker_site_id = ? and p.metric_date >= ? and p.metric_date <= ?${page ? ' and p.page_path = ?' : ''}),
+              0
+            ) as attentionSeconds
+          from daily_source_medium_results r
+          where r.tracker_site_id = ? and r.metric_date >= ? and r.metric_date <= ?${smWhere.sql}
+        `).bind(...[safeId, start, end, ...(page ? [page] : []), safeId, start, end, ...smWhere.params])
       : env.ANALIZI_EVENTS.prepare(`
           select
             coalesce(sum(m.page_views), 0) as pageViews,
@@ -463,51 +481,99 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
           where m.tracker_site_id = ? and m.metric_date >= ? and m.metric_date <= ?
         `).bind(safeId, start, end),
     // 1: sources
-    env.ANALIZI_EVENTS.prepare(`
-      select ${SQL_NORMALIZED_SOURCE} as name, sum(page_views) as value
-      from daily_sources
-      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
-      group by ${SQL_NORMALIZED_SOURCE}
-      order by value desc limit 8
-    `).bind(safeId, start, end),
+    hasDimensionFilter
+      ? env.ANALIZI_EVENTS.prepare(`
+          select source as name, sum(page_views) as value
+          from daily_source_medium_results
+          where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
+          group by source
+          order by value desc limit 8
+        `).bind(safeId, start, end, ...smWhere.params)
+      : env.ANALIZI_EVENTS.prepare(`
+          select ${SQL_NORMALIZED_SOURCE} as name, sum(page_views) as value
+          from daily_sources
+          where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
+          group by ${SQL_NORMALIZED_SOURCE}
+          order by value desc limit 8
+        `).bind(safeId, start, end),
     // 2: pages (GA4: Tempo médio de engajamento por usuário na página e Taxa de saída = sessões não engajadas / sessões da página)
-    env.ANALIZI_EVENTS.prepare(`
-      select
-        coalesce(page_path, '/') as path,
-        max(page_title) as title,
-        sum(page_views) as views,
-        round(sum(average_engagement_seconds * coalesce(nullif(users, 0), page_views)) / nullif(sum(coalesce(nullif(users, 0), page_views)), 0)) as attentionSeconds,
-        round(sum(exit_rate * page_views) / nullif(sum(page_views), 0), 1) as exitRate
-      from daily_pages
-      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
-      group by coalesce(page_path, '/')
-      order by views desc limit 250
-    `).bind(safeId, start, end),
+    hasDimensionFilter
+      ? env.ANALIZI_EVENTS.prepare(`
+          select
+            r.page_path as path,
+            (select max(dp.page_title) from daily_pages dp where dp.tracker_site_id = r.tracker_site_id and dp.page_path = r.page_path) as title,
+            sum(r.page_views) as views,
+            (select round(sum(dp.average_engagement_seconds * coalesce(nullif(dp.users, 0), dp.page_views)) / nullif(sum(coalesce(nullif(dp.users, 0), dp.page_views)), 0))
+             from daily_pages dp where dp.tracker_site_id = r.tracker_site_id and dp.page_path = r.page_path and dp.metric_date >= ? and dp.metric_date <= ?) as attentionSeconds,
+            (select round(sum(dp.exit_rate * dp.page_views) / nullif(sum(dp.page_views), 0), 1)
+             from daily_pages dp where dp.tracker_site_id = r.tracker_site_id and dp.page_path = r.page_path and dp.metric_date >= ? and dp.metric_date <= ?) as exitRate
+          from daily_source_medium_results r
+          where r.tracker_site_id = ? and r.metric_date >= ? and r.metric_date <= ?${smWhere.sql}
+          group by r.page_path
+          order by views desc limit 250
+        `).bind(start, end, start, end, safeId, start, end, ...smWhere.params)
+      : env.ANALIZI_EVENTS.prepare(`
+          select
+            coalesce(page_path, '/') as path,
+            max(page_title) as title,
+            sum(page_views) as views,
+            round(sum(average_engagement_seconds * coalesce(nullif(users, 0), page_views)) / nullif(sum(coalesce(nullif(users, 0), page_views)), 0)) as attentionSeconds,
+            round(sum(exit_rate * page_views) / nullif(sum(page_views), 0), 1) as exitRate
+          from daily_pages
+          where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
+          group by coalesce(page_path, '/')
+          order by views desc limit 250
+        `).bind(safeId, start, end),
     // 3: daily
-    env.ANALIZI_EVENTS.prepare(`
-      select
-        ${groupConsolidated} as date,
-        sum(sessions) as sessions,
-        sum(users) as users,
-        sum(page_views) as pageViews,
-        sum(whatsapp_contacts + sign_ups) as contacts
-      from daily_metrics
-      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
-      group by ${groupConsolidated}
-      order by date
-    `).bind(safeId, start, end),
+    hasDimensionFilter
+      ? env.ANALIZI_EVENTS.prepare(`
+          select
+            ${groupConsolidated} as date,
+            sum(sessions) as sessions,
+            sum(users) as users,
+            sum(page_views) as pageViews,
+            sum(whatsapp_clicks + sign_ups) as contacts
+          from daily_source_medium_results
+          where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
+          group by ${groupConsolidated}
+          order by date
+        `).bind(safeId, start, end, ...smWhere.params)
+      : env.ANALIZI_EVENTS.prepare(`
+          select
+            ${groupConsolidated} as date,
+            sum(sessions) as sessions,
+            sum(users) as users,
+            sum(page_views) as pageViews,
+            sum(whatsapp_contacts + sign_ups) as contacts
+          from daily_metrics
+          where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
+          group by ${groupConsolidated}
+          order by date
+        `).bind(safeId, start, end),
     // 4: sourcePages
-    env.ANALIZI_EVENTS.prepare(`
-      select
-        ${SQL_NORMALIZED_SOURCE} as source,
-        page_path as path,
-        sum(page_views) as views,
-        sum(users) as users
-      from daily_source_pages
-      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${pageFilterDaily}${sourceFilterDaily}
-      group by ${SQL_NORMALIZED_SOURCE}, page_path
-      order by views desc limit 250
-    `).bind(...[safeId, start, end, ...(page ? [page] : []), ...(source ? [source] : [])]),
+    hasDimensionFilter
+      ? env.ANALIZI_EVENTS.prepare(`
+          select
+            source,
+            page_path as path,
+            sum(page_views) as views,
+            sum(users) as users
+          from daily_source_medium_results
+          where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
+          group by source, page_path
+          order by views desc limit 250
+        `).bind(safeId, start, end, ...smWhere.params)
+      : env.ANALIZI_EVENTS.prepare(`
+          select
+            ${SQL_NORMALIZED_SOURCE} as source,
+            page_path as path,
+            sum(page_views) as views,
+            sum(users) as users
+          from daily_source_pages
+          where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${pageFilterDaily}${sourceFilterDaily}
+          group by ${SQL_NORMALIZED_SOURCE}, page_path
+          order by views desc limit 250
+        `).bind(...[safeId, start, end, ...(page ? [page] : []), ...(source ? [source] : [])]),
     // 5: contactDetails
     env.ANALIZI_EVENTS.prepare(`
       select
@@ -538,38 +604,27 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
       order by clicks desc, date desc limit 250
     `).bind(...[safeId, start, end, ...(page ? [page] : [])]),
     // 7: previousTotals
-    page
+    hasDimensionFilter
       ? env.ANALIZI_EVENTS.prepare(`
           select
-            coalesce(sum(p.page_views), 0) as pageViews,
-            coalesce(sum(p.users), 0) as users,
-            0 as sessions,
-            0 as newUsers,
-            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date < ? and dc.page_path = p.page_path and dc.contact_type in ('whatsapp_contact', 'sign_up')), 0) as contacts,
-            coalesce(sum(p.conversions), 0) as contactSessions,
-            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date < ? and dc.page_path = p.page_path and dc.contact_type = 'whatsapp_contact'), 0) as whatsappContacts,
-            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date < ? and dc.page_path = p.page_path and dc.contact_type = 'sign_up'), 0) as signUps,
-            coalesce((select sum(dc.contacts) from daily_contacts dc where dc.tracker_site_id = p.tracker_site_id and dc.metric_date >= ? and dc.metric_date < ? and dc.page_path = p.page_path and dc.contact_type = 'login'), 0) as logins,
-            round(sum(p.average_engagement_seconds * coalesce(nullif(p.users, 0), p.page_views)) / nullif(sum(coalesce(nullif(p.users, 0), p.page_views)), 0)) as attentionSeconds
-          from daily_pages p
-          where p.tracker_site_id = ? and p.metric_date >= ? and p.metric_date < ? and p.page_path = ?
-        `).bind(previousStart, start, previousStart, start, previousStart, start, previousStart, start, safeId, previousStart, start, page)
-      : source
-      ? env.ANALIZI_EVENTS.prepare(`
-          select
-            coalesce(sum(s.page_views), 0) as pageViews,
-            coalesce(sum(s.sessions), 0) as sessions,
-            coalesce(sum(s.users), 0) as users,
-            coalesce(sum(s.new_users), 0) as newUsers,
-            coalesce(sum(s.conversions), 0) as contacts,
-            coalesce(sum(s.conversions), 0) as contactSessions,
-            0 as whatsappContacts,
-            0 as signUps,
-            0 as logins,
-            null as attentionSeconds
-          from daily_sources s
-          where s.tracker_site_id = ? and s.metric_date >= ? and s.metric_date < ? and lower(s.source) = lower(?)
-        `).bind(safeId, previousStart, start, source)
+            coalesce(sum(r.page_views), 0) as pageViews,
+            coalesce(sum(r.sessions), 0) as sessions,
+            coalesce(sum(r.users), 0) as users,
+            coalesce(sum(r.new_users), 0) as newUsers,
+            coalesce(sum(r.whatsapp_clicks + r.sign_ups), 0) as contacts,
+            coalesce(sum(r.conversions), 0) as contactSessions,
+            coalesce(sum(r.whatsapp_clicks), 0) as whatsappContacts,
+            coalesce(sum(r.sign_ups), 0) as signUps,
+            coalesce(sum(r.logins), 0) as logins,
+            coalesce(
+              (select round(sum(p.average_engagement_seconds * coalesce(nullif(p.users, 0), p.page_views)) / nullif(sum(coalesce(nullif(p.users, 0), p.page_views)), 0))
+               from daily_pages p
+               where p.tracker_site_id = ? and p.metric_date >= ? and p.metric_date < ?${page ? ' and p.page_path = ?' : ''}),
+              0
+            ) as attentionSeconds
+          from daily_source_medium_results r
+          where r.tracker_site_id = ? and r.metric_date >= ? and r.metric_date < ?${smWhere.sql}
+        `).bind(...[safeId, previousStart, start, ...(page ? [page] : []), safeId, previousStart, start, ...smWhere.params])
       : env.ANALIZI_EVENTS.prepare(`
           select
             coalesce(sum(m.page_views), 0) as pageViews,
@@ -603,7 +658,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     `).bind(safeId, start, end),
     // 10: filterSources
     env.ANALIZI_EVENTS.prepare(`
-      select distinct ${SQL_NORMALIZED_SOURCE} as source from daily_sources where tracker_site_id = ? and metric_date >= ? and metric_date <= ? order by source limit 100
+      select distinct source from daily_source_medium_results where tracker_site_id = ? and metric_date >= ? and metric_date <= ? and source != '' order by source limit 100
     `).bind(safeId, start, end),
     // 11: locations (Cidade, Estado e País consolidados)
     env.ANALIZI_EVENTS.prepare(`
@@ -620,6 +675,54 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
       group by country, region, city
       order by views desc, users desc limit 250
     `).bind(safeId, start, end),
+    // 12: filterMediums
+    env.ANALIZI_EVENTS.prepare(`
+      select distinct medium from daily_source_medium_results where tracker_site_id = ? and metric_date >= ? and metric_date <= ? and medium != '' order by medium limit 100
+    `).bind(safeId, start, end),
+    // 13: filterCampaigns
+    env.ANALIZI_EVENTS.prepare(`
+      select distinct campaign from daily_source_medium_results where tracker_site_id = ? and metric_date >= ? and metric_date <= ? and campaign != '' order by campaign limit 100
+    `).bind(safeId, start, end),
+    // 14: filterDevices
+    env.ANALIZI_EVENTS.prepare(`
+      select distinct device_type as device from daily_source_medium_results where tracker_site_id = ? and metric_date >= ? and metric_date <= ? and device_type != '' order by device limit 50
+    `).bind(safeId, start, end),
+    // 15: filterBrowsers
+    env.ANALIZI_EVENTS.prepare(`
+      select distinct browser from daily_source_medium_results where tracker_site_id = ? and metric_date >= ? and metric_date <= ? and browser != '' order by browser limit 50
+    `).bind(safeId, start, end),
+    // 16: devices (Tabela de Dispositivo na tela de Público)
+    env.ANALIZI_EVENTS.prepare(`
+      select
+        device_type as device,
+        browser,
+        sum(sessions) as sessions,
+        sum(page_views) as views,
+        sum(users) as users,
+        sum(new_users) as newUsers,
+        sum(conversions) as conversions
+      from daily_source_medium_results
+      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
+      group by device_type, browser
+      order by views desc, sessions desc limit 100
+    `).bind(safeId, start, end, ...smWhere.params),
+    // 17: sourceMediumResults (Tabela de Source/Medium na tela de Resultados)
+    env.ANALIZI_EVENTS.prepare(`
+      select
+        source,
+        medium,
+        campaign,
+        sum(sessions) as sessions,
+        sum(page_views) as pageViews,
+        sum(users) as users,
+        sum(general_clicks) as generalClicks,
+        sum(contact_clicks) as contactClicks,
+        sum(whatsapp_clicks) as whatsappClicks
+      from daily_source_medium_results
+      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
+      group by source, medium, campaign
+      order by sessions desc, pageViews desc limit 250
+    `).bind(safeId, start, end, ...smWhere.params),
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
   const responseBody = {
@@ -635,6 +738,12 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     filterPages: results[9]?.results ?? [],
     filterSources: results[10]?.results ?? [],
     locations: results[11]?.results ?? [],
+    filterMediums: results[12]?.results ?? [],
+    filterCampaigns: results[13]?.results ?? [],
+    filterDevices: results[14]?.results ?? [],
+    filterBrowsers: results[15]?.results ?? [],
+    devices: results[16]?.results ?? [],
+    sourceMediumResults: results[17]?.results ?? [],
     periodDays: period, start, end, group,
     sourceKind: 'consolidated'
   }
@@ -648,10 +757,21 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
 
   const pagePath = searchParams.get('page') || '/'
   const deviceType = searchParams.get('device') || 'desktop'
+  const browser = compactText(searchParams.get('browser'), 80)
+  const source = compactText(searchParams.get('source'), 120)
+  const medium = compactText(searchParams.get('medium'), 120)
+  const campaign = compactText(searchParams.get('campaign'), 240)
   const period = Math.min(Math.max(Number(searchParams.get('period')) || 30, 1), 90)
 
   const endDate = new Date().toISOString().slice(0, 10)
   const startDate = new Date(Date.now() - (period - 1) * 86400000).toISOString().slice(0, 10)
+
+  let extraEventWhere = ''
+  const extraEventParams: unknown[] = []
+  if (browser) { extraEventWhere += ' and lower(coalesce(browser, \'\')) = lower(?)'; extraEventParams.push(browser) }
+  if (source) { extraEventWhere += ` and lower(${SQL_NORMALIZED_SOURCE}) = lower(?)`; extraEventParams.push(source) }
+  if (medium) { extraEventWhere += ` and lower(${SQL_NORMALIZED_MEDIUM}) = lower(?)`; extraEventParams.push(medium) }
+  if (campaign) { extraEventWhere += ' and lower(coalesce(campaign, \'\')) = lower(?)'; extraEventParams.push(campaign) }
 
   // 1. Busca layout salvo
   const layoutQuery = env.ANALIZI_EVENTS.prepare(`
@@ -680,11 +800,11 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
       and (device_type = ? or (? = 'desktop' and device_type is null))
       and event_name in ('button_click', 'media_click', 'whatsapp_contact', 'sign_up', 'login')
       and json_extract(metadata_json, '$.click_x_pct') is not null
-      and date(occurred_at) >= ? and date(occurred_at) <= ?
+      and date(occurred_at) >= ? and date(occurred_at) <= ?${extraEventWhere}
     group by x_pct, round(y_px / 15), tag, label
     order by count desc
     limit 250
-  `).bind(safeId, pagePath, deviceType, deviceType, startDate, endDate)
+  `).bind(safeId, pagePath, deviceType, deviceType, startDate, endDate, ...extraEventParams)
 
   // 4. Busca consolidação de scroll depth
   const scrollQuery = env.ANALIZI_EVENTS.prepare(`
@@ -1454,6 +1574,93 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           page_views = excluded.page_views,
           users = excluded.users,
           sessions = excluded.sessions,
+          conversions = excluded.conversions;
+      `),
+      // 8. Consolida dispositivos e navegadores (daily_devices)
+      env.ANALIZI_EVENTS.prepare(`
+        insert into daily_devices (tracker_site_id, metric_date, device_type, browser, sessions, users, new_users, page_views, conversions)
+        select
+          tracker_site_id,
+          date(occurred_at) as metric_date,
+          ${SQL_NORMALIZED_DEVICE} as device_type,
+          ${SQL_NORMALIZED_BROWSER} as browser,
+          count(distinct session_id) as sessions,
+          count(distinct visitor_id) as users,
+          sum(event_name = 'first_visit') as new_users,
+          sum(event_name = 'page_view') as page_views,
+          count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
+        from events
+        where date(occurred_at) <= date('now', '-1 day')
+        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}
+        on conflict (tracker_site_id, metric_date, device_type, browser) do update set
+          sessions = excluded.sessions,
+          users = excluded.users,
+          new_users = excluded.new_users,
+          page_views = excluded.page_views,
+          conversions = excluded.conversions;
+      `),
+      // 9. Consolida resultados por Source, Medium, Campaign, Dispositivo, Navegador e Página (daily_source_medium_results)
+      env.ANALIZI_EVENTS.prepare(`
+        insert into daily_source_medium_results (
+          tracker_site_id, metric_date, source, medium, campaign, device_type, browser, page_path,
+          sessions, page_views, users, new_users, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, logins, conversions
+        )
+        select
+          tracker_site_id,
+          date(occurred_at) as metric_date,
+          ${SQL_NORMALIZED_SOURCE} as source,
+          ${SQL_NORMALIZED_MEDIUM} as medium,
+          ${SQL_NORMALIZED_CAMPAIGN} as campaign,
+          ${SQL_NORMALIZED_DEVICE} as device_type,
+          ${SQL_NORMALIZED_BROWSER} as browser,
+          coalesce(page_path, '/') as page_path,
+          count(distinct session_id) as sessions,
+          sum(event_name = 'page_view') as page_views,
+          count(distinct visitor_id) as users,
+          sum(event_name = 'first_visit') as new_users,
+          sum(case
+            when event_name in ('button_click', 'media_click', 'login')
+              and coalesce(cast(json_extract(metadata_json, '$.is_contact_lead') as integer), 0) = 0
+              and coalesce(json_extract(metadata_json, '$.contact_intent'), 'geral') in ('geral', 'outro', 'login')
+            then 1 else 0
+          end) as general_clicks,
+          sum(case
+            when event_name in ('whatsapp_contact', 'sign_up')
+              or coalesce(cast(json_extract(metadata_json, '$.is_contact_lead') as integer), 0) = 1
+              or coalesce(json_extract(metadata_json, '$.contact_intent'), 'geral') not in ('geral', 'outro', 'login')
+            then 1 else 0
+          end) as contact_clicks,
+          sum(case
+            when event_name = 'whatsapp_contact'
+              or coalesce(json_extract(metadata_json, '$.contact_intent'), '') = 'whatsapp'
+              or lower(coalesce(json_extract(metadata_json, '$.destination'), '')) like '%wa.me%'
+              or lower(coalesce(json_extract(metadata_json, '$.destination'), '')) like '%whatsapp.com%'
+            then 1 else 0
+          end) as whatsapp_clicks,
+          sum(event_name = 'sign_up') as sign_ups,
+          sum(event_name = 'login') as logins,
+          count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
+        from events
+        where date(occurred_at) <= date('now', '-1 day')
+        group by
+          tracker_site_id,
+          date(occurred_at),
+          ${SQL_NORMALIZED_SOURCE},
+          ${SQL_NORMALIZED_MEDIUM},
+          ${SQL_NORMALIZED_CAMPAIGN},
+          ${SQL_NORMALIZED_DEVICE},
+          ${SQL_NORMALIZED_BROWSER},
+          coalesce(page_path, '/')
+        on conflict (tracker_site_id, metric_date, source, medium, campaign, device_type, browser, page_path) do update set
+          sessions = excluded.sessions,
+          page_views = excluded.page_views,
+          users = excluded.users,
+          new_users = excluded.new_users,
+          general_clicks = excluded.general_clicks,
+          contact_clicks = excluded.contact_clicks,
+          whatsapp_clicks = excluded.whatsapp_clicks,
+          sign_ups = excluded.sign_ups,
+          logins = excluded.logins,
           conversions = excluded.conversions;
       `)
     ])

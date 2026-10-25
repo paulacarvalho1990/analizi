@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Lightbulb, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Sparkles, Target, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Layers, Lightbulb, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard } from './components/Metrics'
@@ -397,17 +397,78 @@ function formatCountryName(code?: string): string {
   return clean
 }
 
+function formatDeviceName(raw?: string): string {
+  if (!raw) return 'Desktop'
+  const s = raw.trim().toLowerCase()
+  if (s === 'mobile') return 'Mobile (Celular)'
+  if (s === 'tablet') return 'Tablet'
+  if (s === 'desktop') return 'Desktop (Computador)'
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
+function formatMediumName(raw?: string): string {
+  if (!raw) return 'direto'
+  const s = raw.trim().toLowerCase()
+  if (s === '' || s === 'none' || s === '(none)' || s === 'null') return 'direto'
+  return s
+}
+
 function Audience() {
   const analytics = useAnalytics();
   const [sourcePage, setSourcePage] = useState(0);
+  const [devicePage, setDevicePage] = useState(0);
+  const [deviceTab, setDeviceTab] = useState<'devices' | 'browsers'>('devices');
   const [locationPage, setLocationPage] = useState(0);
   const [locationTab, setLocationTab] = useState<'cities' | 'regions' | 'countries'>('cities');
   const sourcePages = analytics?.sourcePages ?? [];
+  const rawDevices = analytics?.devices ?? [];
   const rawLocations = analytics?.locations ?? [];
   const p = analytics?.previousTotals;
   const visibleSources = sourcePages.slice(sourcePage * ITEMS_PER_PAGE, (sourcePage + 1) * ITEMS_PER_PAGE);
   const topSource = analytics?.sources?.[0];
   const topShare = analytics?.totals?.pageViews && topSource ? `${Math.round((Number(topSource.value) / Number(analytics.totals.pageViews)) * 100)}%` : '—';
+
+  const aggregatedDevices = (() => {
+    if (deviceTab === 'devices') {
+      const map = new Map<string, { key: string; device: string; browser: string; sessions: number; views: number; users: number; newUsers: number; conversions: number }>();
+      for (const d of rawDevices) {
+        const devKey = (d.device || 'desktop').toLowerCase();
+        const cur = map.get(devKey);
+        if (cur) {
+          cur.sessions += Number(d.sessions || 0);
+          cur.views += Number(d.views || 0);
+          cur.users += Number(d.users || 0);
+          cur.newUsers += Number(d.newUsers || 0);
+          cur.conversions += Number(d.conversions || 0);
+        } else {
+          map.set(devKey, {
+            key: devKey,
+            device: formatDeviceName(d.device),
+            browser: 'Todos os navegadores',
+            sessions: Number(d.sessions || 0),
+            views: Number(d.views || 0),
+            users: Number(d.users || 0),
+            newUsers: Number(d.newUsers || 0),
+            conversions: Number(d.conversions || 0)
+          });
+        }
+      }
+      return Array.from(map.values()).sort((a, b) => b.views - a.views || b.sessions - a.sessions);
+    }
+    return rawDevices.map((d, i) => ({
+      key: `${d.device}-${d.browser}-${i}`,
+      device: formatDeviceName(d.device),
+      browser: d.browser || 'Outro',
+      sessions: Number(d.sessions || 0),
+      views: Number(d.views || 0),
+      users: Number(d.users || 0),
+      newUsers: Number(d.newUsers || 0),
+      conversions: Number(d.conversions || 0)
+    }));
+  })();
+
+  const totalDeviceViews = aggregatedDevices.reduce((sum, item) => sum + item.views, 0);
+  const visibleDevices = aggregatedDevices.slice(devicePage * ITEMS_PER_PAGE, (devicePage + 1) * ITEMS_PER_PAGE);
 
   const aggregatedLocations = (() => {
     if (locationTab === 'cities') {
@@ -522,6 +583,69 @@ function Audience() {
         </article>
       </div>
 
+      <article className="table-card compact-table devices-table" style={{ marginTop: 18 }}>
+        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Monitor size={17} style={{ color: '#3b82f6' }} />
+              <h3 style={{ margin: 0 }}>Dispositivos e navegadores</h3>
+            </div>
+            <p>Quais aparelhos e navegadores as pessoas utilizam para acessar o seu site</p>
+          </div>
+          <div className="heatmap-segmented-control">
+            <button
+              type="button"
+              className={deviceTab === 'devices' ? 'active' : ''}
+              onClick={() => { setDeviceTab('devices'); setDevicePage(0); }}
+            >
+              Por Dispositivo
+            </button>
+            <button
+              type="button"
+              className={deviceTab === 'browsers' ? 'active' : ''}
+              onClick={() => { setDeviceTab('browsers'); setDevicePage(0); }}
+            >
+              Dispositivo + Navegador
+            </button>
+          </div>
+        </div>
+        <div className="devices-head">
+          <span>Dispositivo</span>
+          <span>Navegador</span>
+          <span>Sessões</span>
+          <span>Visualizações</span>
+          <span>Usuários</span>
+          <span>Novos usuários</span>
+          <span>Participação</span>
+        </div>
+        {visibleDevices.map((dev) => {
+          const share = totalDeviceViews > 0 ? `${Math.round((dev.views / totalDeviceViews) * 100)}%` : '0%';
+          const isMobile = dev.device.toLowerCase().includes('mobile');
+          const isTablet = dev.device.toLowerCase().includes('tablet');
+          const DevIcon = isMobile ? Smartphone : isTablet ? Tablet : Monitor;
+          return (
+            <div className="devices-row" key={dev.key}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <DevIcon size={14} style={{ color: isMobile ? '#ff3cac' : '#3b82f6', flexShrink: 0 }} />
+                <b>{dev.device}</b>
+              </span>
+              <span>{dev.browser}</span>
+              <span>{dev.sessions}</span>
+              <span><b>{dev.views}</b></span>
+              <span>{dev.users}</span>
+              <span>{dev.newUsers}</span>
+              <span><b>{share}</b></span>
+            </div>
+          );
+        })}
+        {!aggregatedDevices.length && (
+          <p className="empty-state">
+            Ainda não recebemos dados de dispositivos para os filtros selecionados neste período.
+          </p>
+        )}
+        <TablePagination page={devicePage} total={aggregatedDevices.length} setPage={setDevicePage} />
+      </article>
+
       <article className="table-card compact-table geo-locations-table" style={{ marginTop: 18 }}>
         <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
           <div>
@@ -597,16 +721,19 @@ function Results() {
   const [contactPage, setContactPage] = useState(0);
   const [leadClickPage, setLeadClickPage] = useState(0);
   const [generalClickPage, setGeneralClickPage] = useState(0);
+  const [smPage, setSmPage] = useState(0);
   const t = analytics?.totals;
   const p = analytics?.previousTotals;
   const contactDetails = analytics?.contactDetails ?? [];
   const allClicks = analytics?.clickDetails ?? [];
   const leadClicks = allClicks.filter(item => isLeadClick(item));
   const generalClicks = allClicks.filter(item => !isLeadClick(item));
+  const rawSmResults = analytics?.sourceMediumResults ?? [];
 
   const visibleContacts = contactDetails.slice(contactPage * ITEMS_PER_PAGE, (contactPage + 1) * ITEMS_PER_PAGE);
   const visibleLeadClicks = leadClicks.slice(leadClickPage * ITEMS_PER_PAGE, (leadClickPage + 1) * ITEMS_PER_PAGE);
   const visibleGeneralClicks = generalClicks.slice(generalClickPage * ITEMS_PER_PAGE, (generalClickPage + 1) * ITEMS_PER_PAGE);
+  const visibleSmResults = rawSmResults.slice(smPage * ITEMS_PER_PAGE, (smPage + 1) * ITEMS_PER_PAGE);
   const contactRate = t?.sessions ? `${((Number(t.contactSessions || 0) / Number(t.sessions)) * 100).toFixed(1).replace('.', ',')}%` : '—';
 
   return (
@@ -621,7 +748,50 @@ function Results() {
         <MetricCard title="Taxa de contato" value={contactRate} note="sessões com ação" />
       </section>
 
-      <div className="results-tables">
+      <article className="table-card compact-table source-medium-table" style={{ marginTop: '24px' }}>
+        <div className="section-heading">
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Layers size={17} style={{ color: '#3b82f6' }} />
+              <h3 style={{ margin: 0 }}>Origem, Mídia e Campanha</h3>
+            </div>
+            <p>Sessões, visualizações de páginas, usuários e cliques divididos por canal de tráfego</p>
+          </div>
+        </div>
+        <div className="source-medium-head">
+          <span>Origem / Mídia</span>
+          <span>Campanha</span>
+          <span>Sessões</span>
+          <span>Visualizações</span>
+          <span>Usuários</span>
+          <span>Cliques gerais</span>
+          <span>Cliques contatos</span>
+          <span>Cliques WhatsApp</span>
+        </div>
+        {visibleSmResults.map((item, index) => {
+          const sourceDisplay = normalizeOriginName(item.source);
+          const mediumDisplay = formatMediumName(item.medium);
+          const campaignDisplay = item.campaign && item.campaign.trim().length > 0 ? item.campaign : '—';
+          return (
+            <div className="source-medium-row" key={`${item.source}-${item.medium}-${item.campaign}-${index}`}>
+              <span>
+                <b>{sourceDisplay}</b> <small style={{ color: 'var(--muted-foreground, #64748b)' }}>/ {mediumDisplay}</small>
+              </span>
+              <span>{campaignDisplay !== '—' ? <b>{campaignDisplay}</b> : '—'}</span>
+              <span>{Number(item.sessions || 0).toLocaleString('pt-BR')}</span>
+              <span><b>{Number(item.pageViews ?? item.views ?? 0).toLocaleString('pt-BR')}</b></span>
+              <span>{Number(item.users || 0).toLocaleString('pt-BR')}</span>
+              <span>{Number(item.generalClicks || 0).toLocaleString('pt-BR')}</span>
+              <span>{Number(item.contactClicks || 0).toLocaleString('pt-BR')}</span>
+              <span><b style={{ color: Number(item.whatsappClicks || 0) > 0 ? '#10b981' : undefined }}>{Number(item.whatsappClicks || 0).toLocaleString('pt-BR')}</b></span>
+            </div>
+          );
+        })}
+        {!rawSmResults.length && <p className="empty-state">Nenhum dado de origem e mídia registrado no período para os filtros selecionados.</p>}
+        <TablePagination page={smPage} total={rawSmResults.length} setPage={setSmPage} />
+      </article>
+
+      <div className="results-tables" style={{ marginTop: '24px' }}>
         <article className="table-card compact-table results-detail-table">
           <div className="section-heading">
             <div>
@@ -885,8 +1055,58 @@ function Insights() {
 type AuthPage = 'loading' | 'landing' | 'login' | 'signup' | 'consent' | 'onboarding-business' | 'onboarding-source' | 'app'
 interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, logins?: number, attentionSeconds?: number, contactSessions?: number }
 interface LocationRow { country: string, region: string, city: string, views: number, users: number, sessions: number, conversions: number }
-interface AnalyticsData { totals: AnalyticsTotals, previousTotals?: AnalyticsTotals, sources: Array<{ name: string, value: string | number }>, pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>, daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>, sourcePages?: Array<{ source: string, path: string, views: number, users: number }>, locations?: LocationRow[], contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>, clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>, filterPages?: Array<{ path: string }>, filterSources?: Array<{ source: string }>, periodDays?: number, sourceKind?: string }
-interface AnalyticsFilter { start: string, end: string, group: 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year', page: string, source: string }
+interface DeviceRow { device: string, browser: string, sessions: number, users: number, newUsers: number, views: number, conversions: number }
+interface SourceMediumResultRow {
+  source: string,
+  medium: string,
+  campaign: string,
+  device?: string,
+  browser?: string,
+  page?: string,
+  sessions: number,
+  pageViews?: number,
+  views?: number,
+  users: number,
+  newUsers?: number,
+  generalClicks: number,
+  contactClicks: number,
+  whatsappClicks: number,
+  signUps?: number,
+  logins?: number,
+  conversions?: number
+}
+interface AnalyticsData {
+  totals: AnalyticsTotals,
+  previousTotals?: AnalyticsTotals,
+  sources: Array<{ name: string, value: string | number }>,
+  pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>,
+  daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>,
+  sourcePages?: Array<{ source: string, path: string, views: number, users: number }>,
+  locations?: LocationRow[],
+  devices?: DeviceRow[],
+  sourceMediumResults?: SourceMediumResultRow[],
+  contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>,
+  clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>,
+  filterPages?: Array<{ path: string }>,
+  filterSources?: Array<{ source: string }>,
+  filterMediums?: Array<{ medium: string }>,
+  filterCampaigns?: Array<{ campaign: string }>,
+  filterDevices?: Array<{ device: string }>,
+  filterBrowsers?: Array<{ browser: string }>,
+  periodDays?: number,
+  sourceKind?: string
+}
+interface AnalyticsFilter {
+  start: string,
+  end: string,
+  group: 'day' | 'week' | 'month' | 'quarter' | 'semester' | 'year',
+  page: string,
+  source: string,
+  medium?: string,
+  campaign?: string,
+  device?: string,
+  browser?: string
+}
 
 function pageFromPath(): Page { const path = window.location.pathname; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/insights') return 'insights'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
 function dateString(date: Date) { return date.toISOString().slice(0, 10) }
@@ -907,7 +1127,11 @@ function readAnalyticsFilter(): AnalyticsFilter {
     end,
     group: group === 'week' || group === 'month' || group === 'quarter' || group === 'semester' || group === 'year' ? group : 'day',
     page: params.get('page') || '',
-    source: params.get('source') || ''
+    source: params.get('source') || '',
+    medium: params.get('medium') || '',
+    campaign: params.get('campaign') || '',
+    device: params.get('device') || '',
+    browser: params.get('browser') || ''
   };
 }
 function selectedDays() { const filter = readAnalyticsFilter(); return Math.floor((Date.parse(`${filter.end}T00:00:00Z`) - Date.parse(`${filter.start}T00:00:00Z`)) / 86_400_000) + 1 }
@@ -931,6 +1155,10 @@ function useAnalytics() {
       const query = new URLSearchParams({ start: filter.start, end: filter.end, group: filter.group });
       if (filter.page) query.set('page', filter.page);
       if (filter.source) query.set('source', filter.source);
+      if (filter.medium) query.set('medium', filter.medium);
+      if (filter.campaign) query.set('campaign', filter.campaign);
+      if (filter.device) query.set('device', filter.device);
+      if (filter.browser) query.set('browser', filter.browser);
       try {
         const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/analytics/${currentSite.tracker_site_id}?${query}`);
         if (response.ok) {
@@ -977,6 +1205,14 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
     else url.searchParams.delete('page');
     if (next.source) url.searchParams.set('source', next.source);
     else url.searchParams.delete('source');
+    if (next.medium) url.searchParams.set('medium', next.medium);
+    else url.searchParams.delete('medium');
+    if (next.campaign) url.searchParams.set('campaign', next.campaign);
+    else url.searchParams.delete('campaign');
+    if (next.device) url.searchParams.set('device', next.device);
+    else url.searchParams.delete('device');
+    if (next.browser) url.searchParams.set('browser', next.browser);
+    else url.searchParams.delete('browser');
 
     window.history.pushState({}, '', url);
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -986,6 +1222,12 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
     const end = maxAvailableDate;
     apply({ ...filter, start: shiftDays(end, -days + 1), end });
   };
+
+  const uniqueSources = Array.from(new Set((analytics?.filterSources ?? []).map(item => normalizeOriginName(item.source))));
+  const uniqueMediums = Array.from(new Set((analytics?.filterMediums ?? []).map(item => item.medium).filter(Boolean)));
+  const uniqueCampaigns = Array.from(new Set((analytics?.filterCampaigns ?? []).map(item => item.campaign).filter(Boolean)));
+  const uniqueDevices = Array.from(new Set((analytics?.filterDevices ?? []).map(item => item.device).filter(Boolean)));
+  const uniqueBrowsers = Array.from(new Set((analytics?.filterBrowsers ?? []).map(item => item.browser).filter(Boolean)));
 
   return (
     <div className="analytics-filters">
@@ -1028,11 +1270,38 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
         </select>
       </label>
       <label>
+        Dispositivo
+        <select value={filter.device || ''} onChange={(event) => apply({ ...filter, device: event.target.value })}>
+          <option value="">Todos os dispositivos</option>
+          {uniqueDevices.map(dev => <option key={dev} value={dev}>{formatDeviceName(dev)}</option>)}
+        </select>
+      </label>
+      <label>
+        Navegador
+        <select value={filter.browser || ''} onChange={(event) => apply({ ...filter, browser: event.target.value })}>
+          <option value="">Todos os navegadores</option>
+          {uniqueBrowsers.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+      </label>
+      <label>
         Origem
         <select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}>
           <option value="">Todas as origens</option>
-          {Array.from(new Set((analytics?.filterSources ?? []).map(item => normalizeOriginName(item.source))))
-            .map(sourceName => <option key={sourceName} value={sourceName}>{sourceName}</option>)}
+          {uniqueSources.map(sourceName => <option key={sourceName} value={sourceName}>{sourceName}</option>)}
+        </select>
+      </label>
+      <label>
+        Mídia
+        <select value={filter.medium || ''} onChange={(event) => apply({ ...filter, medium: event.target.value })}>
+          <option value="">Todas as mídias</option>
+          {uniqueMediums.map(m => <option key={m} value={m}>{formatMediumName(m)}</option>)}
+        </select>
+      </label>
+      <label>
+        Campanha
+        <select value={filter.campaign || ''} onChange={(event) => apply({ ...filter, campaign: event.target.value })}>
+          <option value="">Todas as campanhas</option>
+          {uniqueCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </label>
       <div className="filter-presets">

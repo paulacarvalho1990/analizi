@@ -26,10 +26,18 @@ const nav = [
 
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
   const paths: Partial<Record<Page, string>> = { dashboard: '/painel', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics' }
-  const navigate = (next: Page) => { const path = paths[next]; if (path && window.location.pathname !== path) window.history.pushState({}, '', path); setPage(next) }
+  const navigate = (next: Page) => {
+    const path = paths[next];
+    if (path && window.location.pathname !== path) {
+      window.history.pushState({}, '', `${path}${window.location.search}`);
+    }
+    setPage(next);
+  }
   useEffect(() => {
     const path = paths[page];
-    if (path && window.location.pathname !== path) window.history.pushState({}, '', path);
+    if (path && window.location.pathname !== path) {
+      window.history.pushState({}, '', `${path}${window.location.search}`);
+    }
     if (PAGE_TITLES[page]) {
       document.title = PAGE_TITLES[page];
     }

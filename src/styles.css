@@ -2394,6 +2394,126 @@ body { background:var(--background); color:var(--foreground); }
   }
 }
 
+/* Tabela de Dispositivos e Navegadores (Público) */
+.devices-table {
+  overflow: hidden;
+}
+
+.devices-head,
+.devices-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1.3fr 0.8fr 0.9fr 0.8fr 0.9fr 0.8fr;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 0;
+}
+
+.devices-head {
+  border-bottom: 1px solid #edf2f0;
+  color: #7a9089;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+
+.devices-row {
+  border-bottom: 1px solid #edf2f0;
+  color: var(--foreground, #365b52);
+  font-size: 12.5px;
+}
+
+.devices-row:last-child {
+  border-bottom: none;
+}
+
+.devices-head span:nth-child(n+3),
+.devices-row span:nth-child(n+3) {
+  text-align: right;
+}
+
+[data-theme="dark"] .devices-head,
+[data-theme="dark"] .devices-row {
+  border-bottom-color: var(--border, #32363f);
+}
+
+[data-theme="dark"] .devices-head {
+  color: var(--muted-foreground, #94a3b8);
+}
+
+@media (max-width: 820px) {
+  .devices-table {
+    overflow-x: auto;
+  }
+  .devices-head,
+  .devices-row {
+    min-width: 660px;
+  }
+}
+
+/* Tabela de Origem, Mídia e Campanha (Resultados) */
+.source-medium-table {
+  overflow: hidden;
+}
+
+.source-medium-head,
+.source-medium-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1.2fr 0.8fr 0.9fr 0.8fr 0.85fr 0.85fr 0.85fr;
+  gap: 12px;
+  align-items: center;
+  padding: 13px 0;
+}
+
+.source-medium-head {
+  border-bottom: 1px solid #edf2f0;
+  color: #7a9089;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-top: 8px;
+}
+
+.source-medium-row {
+  border-bottom: 1px solid #edf2f0;
+  color: var(--foreground, #365b52);
+  font-size: 12.5px;
+}
+
+.source-medium-row:last-child {
+  border-bottom: none;
+}
+
+.source-medium-head span:nth-child(n+3),
+.source-medium-row span:nth-child(n+3) {
+  text-align: right;
+}
+
+[data-theme="dark"] .source-medium-head,
+[data-theme="dark"] .source-medium-row {
+  border-bottom-color: var(--border, #32363f);
+}
+
+[data-theme="dark"] .source-medium-head {
+  color: var(--muted-foreground, #94a3b8);
+}
+
+@media (max-width: 960px) {
+  .source-medium-table {
+    overflow-x: auto;
+  }
+  .source-medium-head,
+  .source-medium-row {
+    min-width: 840px;
+  }
+}
+
+.analytics-filters select {
+  max-width: 190px;
+  text-overflow: ellipsis;
+}
+
+
 
 
 
