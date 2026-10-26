@@ -818,11 +818,19 @@ function Audience() {
 }
 function isLeadClick(item: { intent?: string, isContactLead?: number, label: string, destination?: string }): boolean {
   if (item.isContactLead === 1) return true;
-  if (item.intent && item.intent !== 'geral' && item.intent !== 'outro') return true;
+  if (item.intent && item.intent !== 'geral' && item.intent !== 'outro' && item.intent !== 'download' && item.intent !== 'link_externo') return true;
   const href = item.destination || '';
   if (/(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|^tel:|^mailto:)/i.test(href)) return true;
   const label = item.label || '';
   return /\b(fale\s*(com|conosco)|entre\s*em\s*contato|contato|whats(?:app)?|agend[ea]|marc[ae]\s*(uma\s*)?(consulta|reuni[aã]o)|solicite|pedir|pe[cç]a\s*(um\s*)?or[cç]amento|or[cç]amento|quero\s*(saber|agendar|falar|receber)|ligue|telefone|enviar\s*(mensagem|formul[aá]rio)|tirar\s*d[uú]vidas|falar\s*com\s*(um\s*)?(especialista|consultor)|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?|cadastre-se|inscreva-se)\b/i.test(label);
+}
+
+function isDownloadClick(item: { intent?: string, destination?: string }): boolean {
+  return item.intent === 'download' || /\.(pdf|xlsx?|docx?|pptx?|csv|zip|rar|tar|gz|mp3|mp4|dmg|exe|apk)(\?.*)?$/i.test(item.destination || '');
+}
+
+function isOutboundClick(item: { intent?: string }): boolean {
+  return item.intent === 'link_externo';
 }
 
 function Results() {
@@ -832,7 +840,7 @@ function Results() {
   const [leadClickPage, setLeadClickPage] = useState(0);
   const [leadClickTab, setLeadClickTab] = useState<'all' | 'whatsapp' | 'forms'>('all');
   const [generalClickPage, setGeneralClickPage] = useState(0);
-  const [generalClickTab, setGeneralClickTab] = useState<'top' | 'all'>('top');
+  const [generalClickTab, setGeneralClickTab] = useState<'top' | 'downloads' | 'outbound' | 'all'>('top');
   const [smPage, setSmPage] = useState(0);
   const [smTab, setSmTab] = useState<'all' | 'conversions' | 'campaigns'>('all');
 
@@ -842,6 +850,17 @@ function Results() {
   const leadClicks = allClicks.filter(item => isLeadClick(item));
   const generalClicks = allClicks.filter(item => !isLeadClick(item));
   const rawSmResults = analytics?.sourceMediumResults ?? [];
+
+  const totalDownloads = allClicks.filter(item => isDownloadClick(item)).reduce((sum, item) => sum + Number(item.clicks || 0), 0);
+  const totalOutbound = allClicks.filter(item => isOutboundClick(item)).reduce((sum, item) => sum + Number(item.clicks || 0), 0);
+
+  const formStarts = (analytics?.contactDetails ?? [])
+    .filter(c => c.type === 'form_start')
+    .reduce((sum, c) => sum + Number(c.contacts || 0), 0);
+  const formAbandons = (analytics?.contactDetails ?? [])
+    .filter(c => c.type === 'form_abandon')
+    .reduce((sum, c) => sum + Number(c.contacts || 0), 0);
+  const formAbandonRate = formStarts > 0 ? Math.round((formAbandons / formStarts) * 100) : 0;
 
   const filteredSmResults = smTab === 'conversions'
     ? rawSmResults.filter(item => Number(item.whatsappClicks || 0) > 0 || Number(item.contactClicks || 0) > 0)
@@ -855,9 +874,15 @@ function Results() {
     ? leadClicks.filter(item => !/(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whats)/i.test((item.destination || '') + (item.label || '')))
     : leadClicks;
 
-  const sortedGeneralClicks = generalClickTab === 'top'
-    ? [...generalClicks].sort((a, b) => b.clicks - a.clicks)
+  const filteredGeneralClicks = generalClickTab === 'downloads'
+    ? generalClicks.filter(item => isDownloadClick(item))
+    : generalClickTab === 'outbound'
+    ? generalClicks.filter(item => isOutboundClick(item))
     : generalClicks;
+
+  const sortedGeneralClicks = generalClickTab === 'top'
+    ? [...filteredGeneralClicks].sort((a, b) => b.clicks - a.clicks)
+    : filteredGeneralClicks;
 
   const pageConversions = useMemo(() => {
     const map = new Map<string, {
@@ -965,7 +990,17 @@ function Results() {
         <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
         <MetricCard title="WhatsApp" value={String(t?.whatsappContacts ?? '—')} {...comparison(t?.whatsappContacts, p?.whatsappContacts)} />
         <MetricCard title="Cadastros" value={String(t?.signUps ?? '—')} {...comparison(t?.signUps, p?.signUps)} />
-        <MetricCard title="Logins" value={String(t?.logins ?? '—')} {...comparison(t?.logins, p?.logins)} />
+        <MetricCard title="Downloads de arquivos" value={String(totalDownloads || '—')} note="arquivos baixados no site" />
+        <MetricCard title="Cliques de saída" value={String(totalOutbound || '—')} note="links externos clicados" />
+        {formStarts > 0 ? (
+          <MetricCard
+            title="Abandono de formulário"
+            value={`${formAbandonRate}%`}
+            note={`${formAbandons} saíram de ${formStarts} iniciados`}
+          />
+        ) : (
+          <MetricCard title="Logins" value={String(t?.logins ?? '—')} {...comparison(t?.logins, p?.logins)} />
+        )}
         <MetricCard title="Taxa de contato" value={contactRate} note="sessões com ação" />
       </section>
 
@@ -1235,6 +1270,20 @@ function Results() {
             </button>
             <button
               type="button"
+              className={generalClickTab === 'downloads' ? 'active' : ''}
+              onClick={() => { setGeneralClickTab('downloads'); setGeneralClickPage(0); }}
+            >
+              Downloads {totalDownloads > 0 ? `(${totalDownloads})` : ''}
+            </button>
+            <button
+              type="button"
+              className={generalClickTab === 'outbound' ? 'active' : ''}
+              onClick={() => { setGeneralClickTab('outbound'); setGeneralClickPage(0); }}
+            >
+              Links externos {totalOutbound > 0 ? `(${totalOutbound})` : ''}
+            </button>
+            <button
+              type="button"
               className={generalClickTab === 'all' ? 'active' : ''}
               onClick={() => { setGeneralClickTab('all'); setGeneralClickPage(0); }}
             >
@@ -1249,15 +1298,25 @@ function Results() {
           <span>Destino / Href</span>
           <span>Cliques</span>
         </div>
-        {visibleGeneralClicks.map((item, index) => (
-          <div className="general-clicks-row" key={`${item.date}-${item.label}-${item.buttonId}-${item.destination}-${index}`}>
-            <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
-            <span><b>{item.label}</b></span>
-            <span>{item.buttonId ? <small>#{item.buttonId}</small> : '—'}</span>
-            <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
-            <span><b>{Number(item.clicks || 0).toLocaleString('pt-BR')}</b></span>
-          </div>
-        ))}
+        {visibleGeneralClicks.map((item, index) => {
+          const isDownload = isDownloadClick(item);
+          const isOutbound = isOutboundClick(item);
+          return (
+            <div className="general-clicks-row" key={`${item.date}-${item.label}-${item.buttonId}-${item.destination}-${index}`}>
+              <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
+              <span>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <b>{item.label}</b>
+                  {isDownload && <span className="action-badge download">Download</span>}
+                  {isOutbound && <span className="action-badge outbound">Externo</span>}
+                </div>
+              </span>
+              <span>{item.buttonId ? <small>#{item.buttonId}</small> : '—'}</span>
+              <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
+              <span><b>{Number(item.clicks || 0).toLocaleString('pt-BR')}</b></span>
+            </div>
+          );
+        })}
         {!sortedGeneralClicks.length && <p className="empty-state">Nenhum clique em botões diversos foi registrado no período.</p>}
         <TablePagination page={generalClickPage} total={sortedGeneralClicks.length} setPage={setGeneralClickPage} />
       </article>
@@ -1469,7 +1528,7 @@ interface AnalyticsData {
   totals: AnalyticsTotals,
   previousTotals?: AnalyticsTotals,
   sources: Array<{ name: string, value: string | number }>,
-  pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number }>,
+  pages: Array<{ path: string, views: string | number, title?: string, attentionSeconds?: number, exitRate?: number, loadTimeMs?: number }>,
   daily: Array<{ date: string, pageViews: number, users: number, contacts: number, sessions?: number }>,
   sourcePages?: Array<{ source: string, path: string, views: number, users: number }>,
   locations?: LocationRow[],
@@ -1860,7 +1919,7 @@ function ConnectionStatus() {
 function Pages() {
   const analytics = useAnalytics();
   const [tablePage, setTablePage] = useState(0);
-  const [pageSortTab, setPageSortTab] = useState<'views' | 'attention' | 'exit'>('views');
+  const [pageSortTab, setPageSortTab] = useState<'views' | 'attention' | 'exit' | 'speed'>('views');
   const pages = analytics?.pages ?? [];
   const p = analytics?.previousTotals;
 
@@ -1871,17 +1930,34 @@ function Pages() {
     if (pageSortTab === 'exit') {
       return Number(a.exitRate ?? 100) - Number(b.exitRate ?? 100);
     }
+    if (pageSortTab === 'speed') {
+      const aSpeed = a.loadTimeMs && a.loadTimeMs > 0 ? a.loadTimeMs : 999999;
+      const bSpeed = b.loadTimeMs && b.loadTimeMs > 0 ? b.loadTimeMs : 999999;
+      return aSpeed - bSpeed;
+    }
     return Number(b.views || 0) - Number(a.views || 0);
   });
 
   const visiblePages = sortedPages.slice(tablePage * ITEMS_PER_PAGE, (tablePage + 1) * ITEMS_PER_PAGE);
   const duration = (seconds?: number) => seconds ? `${Math.floor(seconds / 60)}min ${seconds % 60}s` : '—';
+  const formatSpeed = (ms?: number) => {
+    if (!ms || ms <= 0) return '—';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1).replace('.', ',')}s`;
+  };
   const totalViews = pages.reduce((sum, item) => sum + Number(item.views || 0), 0);
   const pagesWithExit = pages.filter(item => item.exitRate != null && Number(item.views || 0) > 0);
   const totalExitViews = pagesWithExit.reduce((sum, item) => sum + Number(item.views || 0), 0);
   const averageExit = totalExitViews > 0
     ? pagesWithExit.reduce((sum, item) => sum + Number(item.exitRate || 0) * Number(item.views || 0), 0) / totalExitViews
     : 0;
+
+  const pagesWithLoad = pages.filter(item => item.loadTimeMs != null && item.loadTimeMs > 0 && Number(item.views || 0) > 0);
+  const totalLoadViews = pagesWithLoad.reduce((sum, item) => sum + Number(item.views || 0), 0);
+  const averageLoadMs = totalLoadViews > 0
+    ? Math.round(pagesWithLoad.reduce((sum, item) => sum + Number(item.loadTimeMs || 0) * Number(item.views || 0), 0) / totalLoadViews)
+    : 0;
+
   const topPage = pages[0];
   const topTitle = topPage ? (topPage.title || topPage.path) : '—';
   const topPath = topPage ? topPage.path : undefined;
@@ -1894,6 +1970,7 @@ function Pages() {
         <MetricCard title="Páginas acompanhadas" value={String(pages.length || '—')} note="páginas com atividade no período"/>
         <MetricCard title="Visualizações de páginas" value={String(totalViews || '—')} {...comparison(totalViews, p?.pageViews)}/>
         <MetricCard title="Página mais vista" value={topTitle} subtitle={topPath} note="mais visualizada no período"/>
+        <MetricCard title="Velocidade média" value={formatSpeed(averageLoadMs)} note="carregamento das páginas"/>
         <MetricCard title="Taxa média de saída" value={averageExit ? `${averageExit.toFixed(1).replace('.', ',')}%` : '—'} note="sessões não engajadas"/>
       </section>
       <section className="pages-split">
@@ -1905,7 +1982,7 @@ function Pages() {
                 <FileText size={17} style={{ color: '#3b82f6' }} />
                 <h3 style={{ margin: 0 }}>Desempenho das páginas</h3>
               </div>
-              <p>Visualizações, tempo de atenção e taxa de saída por URL</p>
+              <p>Visualizações, velocidade, tempo de atenção e taxa de saída por URL</p>
             </div>
             <div className="heatmap-segmented-control">
               <button
@@ -1914,6 +1991,13 @@ function Pages() {
                 onClick={() => { setPageSortTab('views'); setTablePage(0); }}
               >
                 Mais acessadas
+              </button>
+              <button
+                type="button"
+                className={pageSortTab === 'speed' ? 'active' : ''}
+                onClick={() => { setPageSortTab('speed'); setTablePage(0); }}
+              >
+                Mais rápidas
               </button>
               <button
                 type="button"
@@ -1935,11 +2019,13 @@ function Pages() {
             <span>Página</span>
             <span>Visualizações</span>
             <span>Tempo de atenção</span>
+            <span title="Duração média de carregamento da página">Velocidade</span>
             <span title="Porcentagem de sessões que duraram menos de 10s, viram apenas 1 página e não converteram (padrão GA4)">Taxa de saída</span>
           </div>
           {visiblePages.map((item) => {
             const exit = item.exitRate;
             const exitColor = exit != null ? (exit <= 30 ? '#10b981' : exit <= 55 ? 'inherit' : '#f59e0b') : undefined;
+            const speedColor = item.loadTimeMs ? (item.loadTimeMs <= 1800 ? '#10b981' : item.loadTimeMs <= 3000 ? 'inherit' : '#f59e0b') : undefined;
             return (
               <div className="page-row" key={item.path}>
                 <span>
@@ -1948,6 +2034,11 @@ function Pages() {
                 </span>
                 <span><b>{Number(item.views || 0).toLocaleString('pt-BR')}</b></span>
                 <span>{duration(item.attentionSeconds)}</span>
+                <span>
+                  <b style={{ color: speedColor }}>
+                    {formatSpeed(item.loadTimeMs)}
+                  </b>
+                </span>
                 <span>
                   <b style={{ color: exitColor }}>
                     {item.exitRate == null ? '—' : `${item.exitRate}%`}
