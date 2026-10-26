@@ -117,6 +117,30 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     why: 'Quanto menor, melhor! Taxa de saída alta pode significar que a página não agradou.',
     tip: 'Coloque a informação mais importante no topo da página e dê uma opção clara de próximo passo.'
   },
+  'Velocidade média': {
+    caption: 'Tempo que as páginas levam para abrir',
+    what: 'Duração média do carregamento completo da página (Core Web Vitals navigation timing).',
+    why: 'Páginas que demoram mais de 3 segundos para carregar perdem até 53% dos visitantes antes mesmo da primeira leitura.',
+    tip: 'Comprima imagens pesadas e evite excesso de scripts externos que atrasam a abertura.'
+  },
+  'Downloads de arquivos': {
+    caption: 'Arquivos baixados pelos visitantes',
+    what: 'Contagem de cliques em links de download de PDFs, planilhas, documentos e instaladores.',
+    why: 'Indica alto interesse em materiais educativos, orçamentos, tabelas de preço ou softwares.',
+    tip: 'Ofereça materiais ricos e de fácil leitura para capturar interesse qualificado.'
+  },
+  'Cliques de saída': {
+    caption: 'Cliques para sites externos',
+    what: 'Cliques em links que direcionam o visitante para domínios fora do seu site.',
+    why: 'Ajuda a rastrear parcerias, redes sociais, ferramentas externas ou perda de tráfego.',
+    tip: 'Use links externos com target="_blank" para manter o seu site aberto na aba original.'
+  },
+  'Abandono de formulário': {
+    caption: 'Visitantes que começaram mas não enviaram',
+    what: 'Taxa de formulários que receberam foco em algum campo, mas o visitante saiu sem enviar.',
+    why: 'Formulários longos ou confusos costumam perder potenciais clientes no meio do caminho.',
+    tip: 'Diminua a quantidade de campos obrigatórios e remova perguntas desnecessárias.'
+  },
   'Páginas por visita': {
     caption: 'Média de páginas navegadas em cada visita',
     what: 'Quantidade média de páginas carregadas pelo usuário ao longo de uma sessão contínua.',

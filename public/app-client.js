@@ -252,6 +252,21 @@
     return engagedCarryMs + activeDelta
   }
 
+  const getPageLoadTimeMs = () => {
+    try {
+      if (window.performance) {
+        const navEntries = performance.getEntriesByType('navigation')
+        if (navEntries && navEntries[0] && navEntries[0].duration > 0) {
+          return Math.round(navEntries[0].duration)
+        }
+        if (performance.timing && performance.timing.loadEventEnd > 0) {
+          return Math.max(0, performance.timing.loadEventEnd - performance.timing.navigationStart)
+        }
+      }
+    } catch {}
+    return null
+  }
+
   const context = (overridePath, overrideTitle) => {
     const referrerUrl = cleanUrl(document.referrer)
     const referrerHost = referrerUrl ? new URL(referrerUrl).hostname.replace(/^www\./, '') : ''
@@ -267,12 +282,14 @@
   const send = (eventName, metadata = {}, options = {}) => {
     const consumeTime = options.consumeTime !== false
     const elapsed = consumeTime ? consumeEngagementMs() : 0
+    const loadTime = options.loadTime !== undefined ? options.loadTime : (eventName === 'page_view' ? getPageLoadTimeMs() : null)
     const payload = JSON.stringify({
       events: [{
         id: randomId(),
         occurredAt: new Date().toISOString(),
         eventName,
         engagementTimeMs: elapsed,
+        loadTimeMs: loadTime,
         isConversion: eventName === 'sign_up' || eventName === 'whatsapp_contact',
         metadata,
         ...context(options.pagePath, options.pageTitle),
@@ -651,11 +668,26 @@
     const hasLeadIntent = /\b(fale\s*(com|conosco)|entre\s*em\s*contato|contato|whats(?:app)?|agend[ea]|marc[ae]\s*(uma\s*)?(consulta|reuni[aã]o)|solicite|pedir|pe[cç]a\s*(um\s*)?or[cç]amento|or[cç]amento|quero\s*(saber|agendar|falar|receber)|ligue|telefone|enviar\s*(mensagem|formul[aá]rio)|tirar\s*d[uú]vidas|falar\s*com\s*(um\s*)?(especialista|consultor)|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?|cadastre-se|inscreva-se)\b/i.test(label)
     const isContactLead = isWhatsapp || isPhone || isEmail || hasLeadIntent
     const isMedia = target.tagName === 'IMG' || target.tagName === 'VIDEO'
-    const eventName = isWhatsapp ? 'whatsapp_contact' : isSignup ? 'sign_up' : isLogin ? 'login' : isMedia ? 'media_click' : 'button_click'
-    const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : isSignup ? 'cadastro' : isLogin ? 'login' : hasLeadIntent ? 'contato' : 'geral'
+
+    // GA4 Enhanced: Detecção de Download de Arquivo e Clique de Saída
+    let isFileDownload = false
+    let isOutbound = false
+    if (href && target instanceof HTMLAnchorElement) {
+      try {
+        const urlObj = new URL(href, location.href)
+        const extMatch = urlObj.pathname.match(/\.(pdf|xlsx?|docx?|pptx?|csv|zip|rar|tar|gz|mp3|mp4|dmg|exe|apk)$/i)
+        if (extMatch) {
+          isFileDownload = true
+        } else if (urlObj.hostname && urlObj.hostname.replace(/^www\./, '') !== location.hostname.replace(/^www\./, '') && !urlObj.protocol.startsWith('javascript')) {
+          isOutbound = true
+        }
+      } catch {}
+    }
+
+    const eventName = isWhatsapp ? 'whatsapp_contact' : isSignup ? 'sign_up' : isLogin ? 'login' : isFileDownload ? 'file_download' : isOutbound ? 'outbound_click' : isMedia ? 'media_click' : 'button_click'
+    const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : isSignup ? 'cadastro' : isLogin ? 'login' : isFileDownload ? 'download' : isOutbound ? 'link_externo' : hasLeadIntent ? 'contato' : 'geral'
 
     // Coordenadas para o Heatmap
-    const rect = target.getBoundingClientRect()
     const clickX = event.clientX
     const clickY = event.clientY + window.scrollY
     const docW = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 1)
@@ -663,7 +695,7 @@
     const targetTag = target.tagName.toUpperCase()
 
     send(eventName, {
-      button_label: label || (isMedia ? `Mídia (${targetTag.toLowerCase()})` : 'Elemento sem texto'),
+      button_label: label || (isFileDownload ? 'Download de arquivo' : isOutbound ? 'Link externo' : isMedia ? `Mídia (${targetTag.toLowerCase()})` : 'Elemento sem texto'),
       button_id: truncate(target.id, 120),
       destination: cleanUrl(href),
       contact_intent: intent,
@@ -673,4 +705,45 @@
       target_tag: targetTag
     })
   }, { capture: true })
+
+  // --- GA4 Enhanced: Início e Abandono de Formulários (100% Anônimo, sem capturar campos ou senhas) ---
+  let formStarted = false
+  let formSubmitted = false
+  let activeFormEl = null
+
+  document.addEventListener('focusin', (e) => {
+    const el = e.target
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+      if (el.type === 'hidden' || el.type === 'password' || el.type === 'submit' || el.type === 'button') return
+      const form = el.closest('form') || el.closest('[class*="form"]')
+      if (!formStarted) {
+        formStarted = true
+        activeFormEl = form
+        send('form_start', {
+          form_id: truncate(form?.id || '', 120),
+          form_name: truncate(form?.getAttribute('name') || '', 120),
+          input_type: truncate(el.type || 'text', 32)
+        }, { consumeTime: false })
+      }
+    }
+  }, { capture: true })
+
+  document.addEventListener('submit', (e) => {
+    formSubmitted = true
+  }, { capture: true })
+
+  const checkFormAbandon = () => {
+    if (formStarted && !formSubmitted) {
+      formSubmitted = true // evita disparar múltiplos abandonos
+      send('form_abandon', {
+        form_id: truncate(activeFormEl?.id || '', 120),
+        form_name: truncate(activeFormEl?.getAttribute('name') || '', 120)
+      })
+    }
+  }
+
+  window.addEventListener('beforeunload', checkFormAbandon)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') checkFormAbandon()
+  })
 })()
