@@ -6,6 +6,7 @@ import { BrandLogo } from './components/BrandLogo'
 import { MetricCard, DualMetricCard } from './components/Metrics'
 import { Button } from './components/ui/Button'
 import { AuthFlow, CONSENT_VERSION, type AuthFlowMode } from './components/AuthFlow'
+import { LandingPage } from './components/LandingPage'
 import { supabase } from './lib/supabase'
 import { BusinessProvider, useBusiness, type BusinessItem, type SiteItem } from './lib/business-context'
 import { BrazilGeoMap } from './components/BrazilMap'
@@ -2239,9 +2240,18 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
 
 function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) {
   useEffect(() => {
-    document.title = 'Analizi — Analytics Simples para Negócios Reais';
+    if (window.location.pathname !== '/') {
+      window.history.pushState({}, '', '/');
+    }
   }, []);
-  return <div className="landing"><header className="landing-nav"><BrandLogo /><nav><a href="#funcionalidades">Funcionalidades</a><a href="#como-funciona">Como funciona</a><a href="#preco">Preço</a></nav><div><Button variant="ghost" onClick={() => setMode('login')}>Entrar</Button><Button onClick={() => setMode('signup')}>Teste grátis</Button></div></header><main><section className="landing-hero"><div><span className="eyebrow">ANALYTICS SIMPLES PARA NEGÓCIOS REAIS</span><h1>Seu site fala. O Analizi traduz.</h1><p>Descubra o que atrai pessoas, o que gera contatos e onde melhorar — sem precisar entender de analytics.</p><div className="hero-actions"><Button onClick={() => setMode('signup')}>Testar 7 dias grátis <ArrowRight size={18}/></Button><Button variant="secondary" onClick={() => setMode('login')}>Já tenho uma conta</Button></div><small>Sem cartão de crédito. Cancele quando quiser.</small></div><div className="hero-product"><div className="product-bar"><span/><span/><span/></div><div className="product-head"><span>Visão geral</span><b>Últimos 7 dias</b></div><div className="product-metrics"><div><small>Visualizações de páginas</small><b>852</b><i>+18%</i></div><div><small>Contatos iniciados</small><b>38</b><i>+6%</i></div><div><small>Taxa de saída</small><b>32,4%</b><em>quanto menor, melhor</em></div></div><div className="mini-chart"><span/><span/><span/><span/><span/><span/><span/></div><div className="product-insight"><Sparkles size={18}/><span><b>Seu site está crescendo</b><small>As visualizações aumentaram 18% nesta semana.</small></span></div></div></section><section className="landing-proof"><span>FEITO PARA QUEM QUER DECIDIR COM CLAREZA</span><div><b>Sites mais compreensíveis.</b><b>Decisões mais seguras.</b><b>Negócios mais próximos dos clientes.</b></div></section><section id="funcionalidades" className="landing-section"><div className="section-intro"><span className="eyebrow">TUDO O QUE IMPORTA</span><h2>Menos telas técnicas. Mais respostas úteis.</h2><p>O Analizi organiza as informações do seu site em uma visão que faz sentido para a rotina do seu negócio.</p></div><div className="feature-grid"><article><div className="feature-icon blue"><Globe2 size={22}/></div><h3>Entenda seus visitantes</h3><p>Veja de onde as pessoas chegam e quais páginas despertam mais interesse.</p></article><article><div className="feature-icon pink"><Sparkles size={22}/></div><h3>Receba insights claros</h3><p>Identifique mudanças importantes sem interpretar gráficos complexos.</p></article><article><div className="feature-icon orange"><MousePointerClick size={22}/></div><h3>Acompanhe os contatos</h3><p>Saiba quais páginas geram contatos pelo WhatsApp e novos cadastros.</p></article><article><div className="feature-icon blue"><CircleCheck size={22}/></div><h3>Melhore a experiência</h3><p>Use a Taxa de saída para encontrar páginas que precisam de atenção.</p></article></div></section><section id="como-funciona" className="steps-section"><div className="section-intro"><span className="eyebrow">COMECE EM MINUTOS</span><h2>Como funciona</h2></div><div className="steps-grid"><article><i>01</i><h3>Conecte seu site</h3><p>Use o Google Analytics que você já tem ou instale o rastreador Analizi.</p></article><article><i>02</i><h3>Acompanhe o essencial</h3><p>Veja usuários, origens, páginas e contatos em uma visão simples.</p></article><article><i>03</i><h3>Faça escolhas melhores</h3><p>Transforme dados em melhorias reais para o seu site e negócio.</p></article></div></section><section className="benefits-section"><div><span className="eyebrow">FEITO PARA PEQUENOS NEGÓCIOS</span><h2>Uma ferramenta que respeita seu tempo.</h2><ul><li><Check size={18}/>Em português e sem jargões técnicos</li><li><Check size={18}/>Acesse seus dados de qualquer lugar</li><li><Check size={18}/>Dados organizados e isolados por negócio</li><li><Check size={18}/>Relatório semanal direto no seu e-mail</li></ul></div><aside><span className="eyebrow">DESTAQUE</span><h3>Não espere uma planilha para saber como foi sua semana.</h3><p>Receba um resumo objetivo dos resultados e uma oportunidade para melhorar.</p><Sparkles size={34}/></aside></section><section id="preco" className="pricing-section"><span className="eyebrow">PLANOS SIMPLES PARA CRESCER COM VOCÊ</span><h2>Comece a entender seu site hoje.</h2><p className="pricing-subtitle">Os relatórios são os mesmos. Você escolhe a quantidade de sites, eventos e se precisa exportar os dados.</p><div className="pricing-grid"><article className="price-card"><div><span>ESSENCIAL</span><h3>R$ <b>39,90</b><small>/mês</small></h3><p>Para acompanhar um site com clareza.</p></div><ul><li><Check size={17}/>1 site</li><li><Check size={17}/>Até 20 mil eventos por mês</li><li><Check size={17}/>Dashboard e relatório semanal</li><li><Check size={17}/>Google Analytics ou Rastreador Analizi</li><li><Check size={17}/>Sem exportação de dados</li></ul><p className="plan-notice"><b>Mais de 1 site?</b> Conheça o Crescimento.</p><Button className="full" onClick={() => setMode('signup')}>Começar teste de 7 dias <ArrowRight size={18}/></Button><small>Sem cartão de crédito.</small></article><article className="price-card featured"><span className="plan-badge">PARA QUEM ESTÁ CRESCENDO</span><div><span>CRESCIMENTO</span><h3>R$ <b>79,00</b><small>/mês</small></h3><p>Para acompanhar mais sites e mais movimento.</p></div><ul><li><Check size={17}/>Até 2 sites</li><li><Check size={17}/>Até 100 mil eventos por mês</li><li><Check size={17}/>Dashboard e relatório semanal</li><li><Check size={17}/>Google Analytics ou Rastreador Analizi</li><li><Check size={17}/>Exportação de dados e Heatmap</li></ul><Button className="full" onClick={() => setMode('signup')}>Começar teste de 7 dias <ArrowRight size={18}/></Button><small>Sem cartão de crédito.</small></article></div></section><section className="landing-cta"><BrandLogo inverse/><h2>Conheça seu site. Conheça seu público.</h2><p>Comece agora e veja seu negócio com mais clareza.</p><Button onClick={() => setMode('signup')}>Testar 7 dias grátis <ArrowRight size={18}/></Button></section></main><footer className="landing-footer"><BrandLogo /><span>© 2026 Analizi. Feito para negócios que querem crescer.</span><button onClick={() => setMode('login')}>Entrar</button></footer></div> }
+
+  return (
+    <LandingPage
+      onLogin={() => setMode('login')}
+      onStartTrial={() => setMode('signup')}
+    />
+  );
+}
 
 function ConnectionStatus() {
   const { currentSite } = useBusiness();
@@ -4032,6 +4042,7 @@ import { Heatmap } from './components/Heatmap';
 
 export function App() {
   const [mode, setMode] = useState<AuthPage>(() => {
+    if (window.location.pathname === '/entrar') return 'login';
     // Se há cliente supabase configurado, inicia em 'loading' para verificar a sessão salva sem piscar a Landing
     return supabase ? 'loading' : 'landing';
   });
@@ -4051,18 +4062,19 @@ export function App() {
 
   useEffect(() => {
     const client = supabase;
+    const targetPublicPage: AuthPage = window.location.pathname === '/entrar' ? 'login' : 'landing';
     if (!client) {
-      setMode('landing');
+      setMode(targetPublicPage);
       return;
     }
     const routeAuthenticatedUser = async () => {
       try {
         const { data: { session } } = await client.auth.getSession();
-        if (!session) { setMode('landing'); return; }
+        if (!session) { setMode(targetPublicPage); return; }
 
         // Valida o usuário com a sessão atual
         const currentUser = session.user;
-        if (!currentUser) { setMode('landing'); return; }
+        if (!currentUser) { setMode(targetPublicPage); return; }
 
         // Verifica consentimentos obrigatórios
         const { data: consents, error: consentError } = await client
@@ -4085,7 +4097,7 @@ export function App() {
         }
       } catch (err) {
         console.warn('Erro ao verificar sessão do usuário:', err);
-        setMode('landing');
+        setMode(targetPublicPage);
       }
     };
     void routeAuthenticatedUser();
@@ -4093,7 +4105,7 @@ export function App() {
       if (newSession) {
         void routeAuthenticatedUser();
       } else {
-        setMode('landing');
+        setMode(window.location.pathname === '/entrar' ? 'login' : 'landing');
       }
     });
     return () => subscription.unsubscribe();
