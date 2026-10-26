@@ -21,13 +21,13 @@ export const PAGE_TITLES: Record<Page, string> = {
 }
 
 const nav = [
-  { id: 'dashboard', label: 'Início', icon: BarChart3, badge: undefined },
-  { id: 'acquisition', label: 'Aquisição & Campanhas', icon: Compass, badge: undefined },
-  { id: 'audience', label: 'Público', icon: Users, badge: undefined },
-  { id: 'pages', label: 'Páginas', icon: FileText, badge: undefined },
-  { id: 'results', label: 'Resultados', icon: Target, badge: undefined },
-  { id: 'heatmap', label: 'Heatmap e Rolagem', icon: Flame, badge: undefined },
-  { id: 'insights', label: 'Insights', icon: Lightbulb, badge: 'IA' },
+  { id: 'dashboard', label: 'Início', shortLabel: 'Início', icon: BarChart3, badge: undefined },
+  { id: 'acquisition', label: 'Aquisição & Campanhas', shortLabel: 'Aquisição', icon: Compass, badge: undefined },
+  { id: 'audience', label: 'Público', shortLabel: 'Público', icon: Users, badge: undefined },
+  { id: 'pages', label: 'Páginas', shortLabel: 'Páginas', icon: FileText, badge: undefined },
+  { id: 'results', label: 'Resultados', shortLabel: 'Resultados', icon: Target, badge: undefined },
+  { id: 'heatmap', label: 'Heatmap e Rolagem', shortLabel: 'Heatmap', icon: Flame, badge: undefined },
+  { id: 'insights', label: 'Insights', shortLabel: 'Insights', icon: Lightbulb, badge: 'IA' },
 ] as const
 
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
@@ -81,19 +81,32 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
         </div>
       </aside>
       <header className="mobile-header">
-        <button className="brand" aria-label="Ir para o início" onClick={() => navigate('dashboard')}>
-          <BrandLogo />
+        <WorkspaceSelector compact onNavigateSettings={() => navigate('settings')} />
+        <button
+          type="button"
+          className="mobile-header-settings-btn"
+          aria-label="Abrir configurações"
+          title="Configurações"
+          onClick={() => navigate('settings')}
+        >
+          <Settings size={20} />
         </button>
-        <WorkspaceSelector compact onNavigateSettings={() => navigate('team')} />
-        <Menu size={22} />
       </header>
       <main className="main-content">{children}</main>
       <NewSiteModal onSiteCreated={() => navigate('tracker-setup')} />
-      <nav className="mobile-nav">
-        {nav.map(({ id, label, icon: Icon }) => (
-          <button key={id} onClick={() => navigate(id)} className={page === id ? 'active' : ''}>
-            <Icon size={20} />
-            <span>{label}</span>
+      <nav className="mobile-nav" aria-label="Menu de navegação mobile">
+        {nav.map(({ id, shortLabel, label, icon: Icon, badge }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => navigate(id)}
+            className={page === id ? 'mobile-nav-btn active' : 'mobile-nav-btn'}
+          >
+            <div className="mobile-nav-icon-wrapper">
+              <Icon size={19} />
+              {badge && <span className="mobile-badge-ia">{badge}</span>}
+            </div>
+            <span>{shortLabel || label}</span>
           </button>
         ))}
       </nav>
