@@ -1,17 +1,18 @@
-import { BarChart3, FileText, Flame, Lightbulb, LogOut, Menu, Moon, Settings, Sun, Target, Users } from 'lucide-react'
+import { BarChart3, Compass, FileText, Flame, Lightbulb, LogOut, Menu, Moon, Settings, Sun, Target, Users } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { BrandLogo } from './BrandLogo'
 import { WorkspaceSelector, NewSiteModal } from './WorkspaceSelector'
 
-export type Page = 'dashboard' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
+export type Page = 'dashboard' | 'acquisition' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
 
 export const PAGE_TITLES: Record<Page, string> = {
   dashboard: 'Visão Geral | Analizi',
+  acquisition: 'Aquisição & Campanhas | Analizi',
   audience: 'Público | Analizi',
   pages: 'Páginas | Analizi',
   results: 'Resultados | Analizi',
-  heatmap: 'Heatmap & Comportamento | Analizi',
-  insights: 'Insights de IA | Analizi',
+  heatmap: 'Heatmap e Rolagem | Analizi',
+  insights: 'INSIGHTS (IA) | Analizi',
   settings: 'Configurações | Analizi',
   team: 'Meu Site | Analizi',
   'data-sources': 'Fontes de Dados | Analizi',
@@ -20,12 +21,17 @@ export const PAGE_TITLES: Record<Page, string> = {
 }
 
 const nav = [
-  ['dashboard', 'Início', BarChart3], ['audience', 'Público', Users], ['pages', 'Páginas', FileText],
-  ['results', 'Resultados', Target], ['heatmap', 'Heatmap', Flame], ['insights', 'Insights', Lightbulb],
+  ['dashboard', 'Início', BarChart3],
+  ['acquisition', 'Aquisição & Campanhas', Compass],
+  ['audience', 'Público', Users],
+  ['pages', 'Páginas', FileText],
+  ['results', 'Resultados', Target],
+  ['heatmap', 'Heatmap e Rolagem', Flame],
+  ['insights', 'INSIGHTS (IA)', Lightbulb],
 ] as const
 
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
-  const paths: Partial<Record<Page, string>> = { dashboard: '/painel', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics' }
+  const paths: Partial<Record<Page, string>> = { dashboard: '/painel', acquisition: '/aquisicao', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics' }
   const navigate = (next: Page) => {
     const path = paths[next];
     if (path && window.location.pathname !== path) {

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
-import { MetricCard } from './components/Metrics'
+import { MetricCard, DualMetricCard } from './components/Metrics'
 import { Button } from './components/ui/Button'
 import { AuthFlow, CONSENT_VERSION, type AuthFlowMode } from './components/AuthFlow'
 import { supabase } from './lib/supabase'
@@ -40,7 +40,7 @@ function PageChart({ pages }: { pages: AnalyticsData['pages'] }) {
                   <p>Identifica os conteúdos que geram mais tração e revela quais páginas merecem botões de ação e conversão.</p>
                 </div>
                 <div className="metric-tooltip-section tip">
-                  <b>💡 Como melhorar:</b>
+                  <b><Lightbulb size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4, color: '#fbbf24' }} /> Como melhorar:</b>
                   <p>Se as páginas do topo tiverem pouca conversão, adicione chamadas para WhatsApp ou formulários curtos nelas.</p>
                 </div>
               </div>
@@ -97,6 +97,12 @@ function PageChart({ pages }: { pages: AnalyticsData['pages'] }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      <div className="chart-legend-row" style={{ marginTop: 12, borderTop: '1px dashed var(--border, #e5e7eb)', paddingTop: 10 }}>
+        <div className="chart-legend-item">
+          <span className="legend-bullet" style={{ background: 'linear-gradient(90deg, #ff3cac, #ff8a3d)' }} />
+          <span>Visualizações por página (Rosa → Laranja)</span>
+        </div>
+      </div>
     </article>
   );
 }
@@ -129,7 +135,7 @@ function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
                   <p>Permite detectar picos após campanhas, postagens ou anúncios, além de dias com menor tráfego.</p>
                 </div>
                 <div className="metric-tooltip-section tip">
-                  <b>💡 Como melhorar:</b>
+                  <b><Lightbulb size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4, color: '#fbbf24' }} /> Como melhorar:</b>
                   <p>Observe em quais dias da semana seu tráfego é mais alto para agendar envios de e-mail e novas ofertas.</p>
                 </div>
               </div>
@@ -206,6 +212,16 @@ function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
             </Area>
           </AreaChart>
         </ResponsiveContainer>
+      </div>
+      <div className="chart-legend-row" style={{ marginTop: 12, borderTop: '1px dashed var(--border, #e5e7eb)', paddingTop: 10 }}>
+        <div className="chart-legend-item">
+          <span className="legend-line pink" />
+          <span>Visualizações no período (Rosa Analizi)</span>
+        </div>
+        <div className="chart-legend-item">
+          <span className="legend-bullet orange" />
+          <span>Picos de tráfego & finais de semana</span>
+        </div>
       </div>
     </article>
   );
@@ -294,7 +310,7 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
                   <p>Mostra quais canais de divulgação trazem mais retorno real para você concentrar tempo e investimento neles.</p>
                 </div>
                 <div className="metric-tooltip-section tip">
-                  <b>💡 Como melhorar:</b>
+                  <b><Lightbulb size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4, color: '#fbbf24' }} /> Como melhorar:</b>
                   <p>Se o canal 'Direto' for o maior, as pessoas chegam por links diretos no chat, favoritos ou digitando o endereço.</p>
                 </div>
               </div>
@@ -358,6 +374,107 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+      <div className="chart-legend-row" style={{ marginTop: 12, borderTop: '1px dashed var(--border, #e5e7eb)', paddingTop: 10 }}>
+        <div className="chart-legend-item">
+          <span className="legend-bullet" style={{ background: 'linear-gradient(90deg, #ff3cac, #ff8a3d)' }} />
+          <span>Acessos por canal (Rosa → Laranja)</span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function PeakHoursMatrix({ peakHours }: { peakHours?: Array<{ dayOfWeek: number, hourOfDay: number, sessions: number, views: number, contacts: number }> }) {
+  const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  const matrix = useMemo(() => {
+    const map = new Map<string, { sessions: number; views: number; contacts: number }>();
+    let maxViews = 1;
+    (peakHours ?? []).forEach(p => {
+      const key = `${p.dayOfWeek}-${p.hourOfDay}`;
+      const v = Number(p.views || p.sessions || 0);
+      map.set(key, { sessions: Number(p.sessions || 0), views: v, contacts: Number(p.contacts || 0) });
+      if (v > maxViews) maxViews = v;
+    });
+    return { map, maxViews };
+  }, [peakHours]);
+
+  return (
+    <article className="table-card" style={{ marginTop: 24 }}>
+      <div className="section-heading">
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <Clock size={17} style={{ color: '#FF8A3D' }} />
+            <h3 style={{ margin: 0 }}>Horários de maior movimento no site</h3>
+            <div className="metric-info-wrapper" tabIndex={0} role="button" aria-label="Informações sobre a matriz de horários de pico">
+              <Info size={14} className="metric-info-icon" />
+              <div className="metric-tooltip-popover">
+                <div className="metric-tooltip-title">Matriz de Horários de Pico</div>
+                <div className="metric-tooltip-section">
+                  <b>O que representa:</b>
+                  <p>Volume de acessos cruzando o dia da semana com a hora do dia (0h às 23h).</p>
+                </div>
+                <div className="metric-tooltip-section">
+                  <b>Por que importa:</b>
+                  <p>Identifica os momentos exatos em que seu público está online para ativar anúncios e atendimento.</p>
+                </div>
+                <div className="metric-tooltip-section tip">
+                  <b><Lightbulb size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4, color: '#fbbf24' }} /> Dica de Negócio:</b>
+                  <p>Programe postagens e campanhas pagas para os horários com tons mais vivos de laranja e rosa.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p className="chart-header-caption">Mapa térmico de acessos cruzando dias da semana e horários para programar anúncios e atendimento</p>
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: 680 }}>
+          <div className="peak-hours-header">
+            <div />
+            {hours.map(h => (
+              <div key={h} className="peak-hour-label">
+                {h % 2 === 0 ? `${h}h` : ''}
+              </div>
+            ))}
+          </div>
+
+          {days.map((dayName, dIdx) => (
+            <div key={dayName} className="peak-hours-grid">
+              <div className="peak-day-label">{dayName}</div>
+              {hours.map(h => {
+                const item = matrix.map.get(`${dIdx}-${h}`);
+                const views = item?.views || 0;
+                const contacts = item?.contacts || 0;
+                const intensity = matrix.maxViews > 0 ? (views / matrix.maxViews) : 0;
+
+                let bgColor = 'var(--surface-subtle, #F3F4F6)';
+                if (intensity > 0.75) bgColor = '#FF3CAC';
+                else if (intensity > 0.50) bgColor = '#FF6374';
+                else if (intensity > 0.25) bgColor = '#FF8A3D';
+                else if (intensity > 0.05 || views > 0) bgColor = 'rgba(255, 138, 61, 0.35)';
+
+                return (
+                  <div
+                    key={h}
+                    className="peak-cell"
+                    style={{ background: bgColor }}
+                    title={`${dayName} às ${h}h: ${views} visualizações${contacts > 0 ? ` · ${contacts} contatos` : ''}`}
+                  />
+                );
+              })}
+            </div>
+          ))}
+
+          <div className="peak-matrix-legend">
+            <span>0 acessos</span>
+            <div className="peak-gradient-bar" title="Escala térmica de volume: Laranja suave até Rosa vibrante no pico máximo" />
+            <span>Pico máximo de acessos (Laranja → Rosa)</span>
+          </div>
+        </div>
+      </div>
     </article>
   );
 }
@@ -372,7 +489,7 @@ function Dashboard() {
   const filteredDaily = dailyTab === 'conversions' ? daily.filter(d => Number(d.contacts || 0) > 0) : daily;
   const visibleDays = filteredDaily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE);
   const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—';
-  const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI';
+  const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO';
 
   return (
     <>
@@ -442,6 +559,229 @@ function Dashboard() {
             </p>
           )}
           <TablePagination page={dailyPage} total={filteredDaily.length} setPage={setDailyPage} />
+        </article>
+      </div>
+      <PeakHoursMatrix peakHours={analytics?.peakHours} />
+    </>
+  );
+}
+
+function Acquisition() {
+  const analytics = useAnalytics();
+  const [acqTab, setAcqTab] = useState<'source' | 'campaign' | 'content' | 'term'>('source');
+  const [acqPage, setAcqPage] = useState(0);
+
+  const rawSm = analytics?.sourceMediumResults ?? [];
+  const topSource = analytics?.sources?.[0];
+
+  const { organic, paid, bestAd } = useMemo(() => {
+    let orgSessions = 0;
+    let orgContacts = 0;
+    let paidSessions = 0;
+    let paidContacts = 0;
+    let topAd: { name: string; channel: string; contacts: number; convRate: number } | null = null;
+
+    rawSm.forEach(item => {
+      const isPaid = /cpc|ppc|paid|ads|adwords|meta|sponsored/i.test((item.medium || '') + (item.source || '')) || Boolean(item.campaign && item.campaign.trim().length > 0);
+      const sess = Number(item.sessions || 0);
+      const cont = Number(item.whatsappClicks || item.contactClicks || 0);
+
+      if (isPaid) {
+        paidSessions += sess;
+        paidContacts += cont;
+      } else {
+        orgSessions += sess;
+        orgContacts += cont;
+      }
+
+      if (item.campaign && cont > (topAd?.contacts || 0)) {
+        topAd = {
+          name: item.campaign,
+          channel: `${item.source} / ${item.medium}`,
+          contacts: cont,
+          convRate: sess > 0 ? (cont / sess) * 100 : 0
+        };
+      }
+    });
+
+    const total = orgSessions + paidSessions;
+    const orgShare = total > 0 ? `${Math.round((orgSessions / total) * 100)}%` : '—';
+    const paidShare = total > 0 ? `${Math.round((paidSessions / total) * 100)}%` : '—';
+    const orgConvRate = orgSessions > 0 ? `${((orgContacts / orgSessions) * 100).toFixed(1).replace('.', ',')}%` : '—';
+    const paidConvRate = paidSessions > 0 ? `${((paidContacts / paidSessions) * 100).toFixed(1).replace('.', ',')}%` : '—';
+
+    return {
+      organic: { sessions: orgSessions, share: orgShare, contacts: orgContacts, convRate: orgConvRate },
+      paid: { sessions: paidSessions, share: paidShare, contacts: paidContacts, convRate: paidConvRate },
+      bestAd: topAd || (rawSm[0]?.campaign ? {
+        name: rawSm[0].campaign,
+        channel: `${rawSm[0].source} / ${rawSm[0].medium}`,
+        contacts: Number(rawSm[0].whatsappClicks || 0),
+        convRate: Number(rawSm[0].sessions || 0) > 0 ? (Number(rawSm[0].whatsappClicks || 0) / Number(rawSm[0].sessions)) * 100 : 0
+      } : null)
+    };
+  }, [rawSm]);
+
+  const tableItems = useMemo(() => {
+    if (acqTab === 'source') {
+      const map = new Map<string, { key: string; label: string; sub?: string; sessions: number; views: number; users: number; contacts: number }>();
+      rawSm.forEach(item => {
+        const k = `${item.source || '(direto)'} / ${item.medium || '(nenhum)'}`;
+        const cur = map.get(k) || { key: k, label: k, sessions: 0, views: 0, users: 0, contacts: 0 };
+        cur.sessions += Number(item.sessions || 0);
+        cur.views += Number(item.views || item.pageViews || 0);
+        cur.users += Number(item.users || 0);
+        cur.contacts += Number(item.whatsappClicks || item.contactClicks || 0);
+        map.set(k, cur);
+      });
+      return Array.from(map.values()).sort((a, b) => b.sessions - a.sessions || b.contacts - a.contacts);
+    }
+    if (acqTab === 'campaign') {
+      const map = new Map<string, { key: string; label: string; sub?: string; sessions: number; views: number; users: number; contacts: number }>();
+      rawSm.filter(item => Boolean(item.campaign && item.campaign.trim().length > 0)).forEach(item => {
+        const k = item.campaign;
+        const cur = map.get(k) || { key: k, label: k, sub: `${item.source} / ${item.medium}`, sessions: 0, views: 0, users: 0, contacts: 0 };
+        cur.sessions += Number(item.sessions || 0);
+        cur.views += Number(item.views || item.pageViews || 0);
+        cur.users += Number(item.users || 0);
+        cur.contacts += Number(item.whatsappClicks || item.contactClicks || 0);
+        map.set(k, cur);
+      });
+      return Array.from(map.values()).sort((a, b) => b.contacts - a.contacts || b.sessions - a.sessions);
+    }
+    return rawSm.map(item => ({
+      key: `${item.source}-${item.medium}-${item.campaign}`,
+      label: item.campaign || `${item.source} / ${item.medium}`,
+      sub: `${item.source} / ${item.medium}`,
+      sessions: Number(item.sessions || 0),
+      views: Number(item.views || item.pageViews || 0),
+      users: Number(item.users || 0),
+      contacts: Number(item.whatsappClicks || item.contactClicks || 0)
+    })).sort((a, b) => b.contacts - a.contacts || b.sessions - a.sessions);
+  }, [rawSm, acqTab]);
+
+  const visibleItems = tableItems.slice(acqPage * ITEMS_PER_PAGE, (acqPage + 1) * ITEMS_PER_PAGE);
+
+  return (
+    <>
+      <PageHeader
+        title="Aquisição & Campanhas"
+        subtitle="Descubra como os visitantes encontram o seu site e quais anúncios, criativos e canais geram mais contatos."
+      />
+      <AnalyticsFilters analytics={analytics} />
+      <div className="period">
+        <span className="source-badge"><span className="source-badge-dot" />RASTREADOR ANALIZI ATIVO</span>
+      </div>
+
+      <section className="metrics">
+        <DualMetricCard
+          title="Tráfego Orgânico vs. Pago"
+          organicSessions={organic.sessions.toLocaleString('pt-BR')}
+          organicShare={`${organic.share} do tráfego`}
+          organicContacts={organic.contacts}
+          organicConvRate={organic.convRate}
+          paidSessions={paid.sessions.toLocaleString('pt-BR')}
+          paidShare={`${paid.share} do tráfego`}
+          paidContacts={paid.contacts}
+          paidConvRate={paid.convRate}
+        />
+        <MetricCard
+          title="Origem principal"
+          value={topSource?.name ? normalizeOriginName(topSource.name) : '—'}
+          note={topSource ? `${topSource.value} acessos` : 'sem dados'}
+        />
+        <MetricCard
+          title="Melhor anúncio / criativo"
+          value={bestAd?.name || '—'}
+          subtitle={bestAd ? bestAd.channel : 'nenhuma campanha ativa'}
+          compactText={Boolean(bestAd?.name)}
+          note={bestAd ? `${bestAd.contacts} contatos (${bestAd.convRate.toFixed(1).replace('.', ',')}%)` : undefined}
+        />
+      </section>
+
+      <div className="dashboard-split" style={{ marginTop: 24 }}>
+        <OriginChart analytics={analytics} />
+
+        <article className="table-card compact-table">
+          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Layers size={17} style={{ color: '#FF3CAC' }} />
+                <h3 style={{ margin: 0 }}>Desempenho por canal e criativo</h3>
+              </div>
+              <p className="chart-header-caption">Sessões, cliques e conversões por parâmetro de aquisição</p>
+            </div>
+            <div className="heatmap-segmented-control">
+              <button
+                type="button"
+                className={acqTab === 'source' ? 'active' : ''}
+                onClick={() => { setAcqTab('source'); setAcqPage(0); }}
+              >
+                Source / Medium
+              </button>
+              <button
+                type="button"
+                className={acqTab === 'campaign' ? 'active' : ''}
+                onClick={() => { setAcqTab('campaign'); setAcqPage(0); }}
+              >
+                Campanhas
+              </button>
+              <button
+                type="button"
+                className={acqTab === 'content' ? 'active' : ''}
+                onClick={() => { setAcqTab('content'); setAcqPage(0); }}
+              >
+                Criativos
+              </button>
+              <button
+                type="button"
+                className={acqTab === 'term' ? 'active' : ''}
+                onClick={() => { setAcqTab('term'); setAcqPage(0); }}
+              >
+                Termos
+              </button>
+            </div>
+          </div>
+
+          <div className="table-head" style={{ gridTemplateColumns: '1.4fr 80px 80px 90px 80px' }}>
+            <span>Origem / Dimensão</span>
+            <span>Sessões</span>
+            <span>Usuários</span>
+            <span>WhatsApp</span>
+            <span>Taxa Conv.</span>
+          </div>
+
+          {visibleItems.map(item => {
+            const conv = item.sessions > 0 ? ((item.contacts / item.sessions) * 100).toFixed(1).replace('.', ',') : '0,0';
+            return (
+              <div className="page-row" key={item.key} style={{ gridTemplateColumns: '1.4fr 80px 80px 90px 80px' }}>
+                <span>
+                  <b>{item.label}</b>
+                  {item.sub && <small style={{ color: 'var(--muted-foreground)' }}>{item.sub}</small>}
+                </span>
+                <span>{item.sessions.toLocaleString('pt-BR')}</span>
+                <span>{item.users.toLocaleString('pt-BR')}</span>
+                <span>
+                  <b style={{ color: item.contacts > 0 ? '#10b981' : undefined }}>
+                    {item.contacts.toLocaleString('pt-BR')}
+                  </b>
+                </span>
+                <span>
+                  <span className={`badge-pill ${Number(conv.replace(',', '.')) >= 3 ? 'good' : 'brand'}`}>
+                    {conv}%
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+
+          {!visibleItems.length && (
+            <p className="empty-state">
+              Nenhum dado de aquisição registrado para o filtro e aba selecionados.
+            </p>
+          )}
+
+          <TablePagination page={acqPage} total={tableItems.length} setPage={setAcqPage} />
         </article>
       </div>
     </>
@@ -634,6 +974,9 @@ function Audience() {
     <>
       <PageHeader title="Seu público" subtitle="Entenda de onde vêm as pessoas que chegam ao seu site." />
       <AnalyticsFilters analytics={analytics}/>
+      <div className="period">
+        <span className="source-badge"><span className="source-badge-dot" />{analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}</span>
+      </div>
       <section className="metrics">
         <MetricCard title="Sessões" value={String(analytics?.totals.sessions ?? '—')} {...comparison(analytics?.totals.sessions, p?.sessions)} />
         <MetricCard title="Usuários" value={String(analytics?.totals.users ?? '—')} {...comparison(analytics?.totals.users, p?.users)} />
@@ -986,6 +1329,9 @@ function Results() {
     <>
       <PageHeader title="Resultados" subtitle="Acompanhe as oportunidades e contatos gerados pelo seu site." />
       <AnalyticsFilters analytics={analytics} />
+      <div className="period">
+        <span className="source-badge"><span className="source-badge-dot" />{analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}</span>
+      </div>
       <section className="metrics">
         <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
         <MetricCard title="WhatsApp" value={String(t?.whatsappContacts ?? '—')} {...comparison(t?.whatsappContacts, p?.whatsappContacts)} />
@@ -1542,6 +1888,7 @@ interface AnalyticsData {
   filterCampaigns?: Array<{ campaign: string }>,
   filterDevices?: Array<{ device: string }>,
   filterBrowsers?: Array<{ browser: string }>,
+  peakHours?: Array<{ dayOfWeek: number, hourOfDay: number, sessions: number, views: number, contacts: number }>,
   periodDays?: number,
   sourceKind?: string
 }
@@ -1557,7 +1904,7 @@ interface AnalyticsFilter {
   browser?: string
 }
 
-function pageFromPath(): Page { const path = window.location.pathname; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/insights') return 'insights'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
+function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights') return 'insights'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
 function dateString(date: Date) { return date.toISOString().slice(0, 10) }
 function shiftDays(base: string, offset: number) { const d = new Date(`${base}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + offset); return dateString(d) }
 function comparison(current?: number, previous?: number) { const now = Number(current || 0); const before = Number(previous || 0); if (!before) return { variation: now ? 'novo no período' : 'sem dados', good: true }; const percent = Math.round(Math.abs(((now - before) / before) * 100)); return { variation: `${percent}%`, good: now >= before } }
@@ -1966,11 +2313,14 @@ function Pages() {
     <>
       <PageHeader title="Suas páginas" subtitle="Veja quais páginas atraem e mantêm mais pessoas no seu site."/>
       <AnalyticsFilters analytics={analytics}/>
+      <div className="period">
+        <span className="source-badge"><span className="source-badge-dot" />{analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}</span>
+      </div>
       <section className="metrics page-metrics">
         <MetricCard title="Páginas acompanhadas" value={String(pages.length || '—')} note="páginas com atividade no período"/>
         <MetricCard title="Visualizações de páginas" value={String(totalViews || '—')} {...comparison(totalViews, p?.pageViews)}/>
         <MetricCard title="Página mais vista" value={topTitle} subtitle={topPath} note="mais visualizada no período"/>
-        <MetricCard title="Velocidade média" value={formatSpeed(averageLoadMs)} note="carregamento das páginas"/>
+        <MetricCard title="Velocidade média de carregamento" value={formatSpeed(averageLoadMs)} note="carregamento das páginas"/>
         <MetricCard title="Taxa média de saída" value={averageExit ? `${averageExit.toFixed(1).replace('.', ',')}%` : '—'} note="sessões não engajadas"/>
       </section>
       <section className="pages-split">
@@ -2910,13 +3260,16 @@ function PageHeader({
   // Metadados padrão caso não sejam passados explicitamente
   const defaultMeta: Record<string, { eyebrow: string; icon: React.ComponentType<{ size?: number; style?: React.CSSProperties; className?: string }>; iconColor: string }> = {
     'Visão geral': { eyebrow: 'RESUMO DE DESEMPENHO', icon: BarChart3, iconColor: '#ff3cac' },
+    'Aquisição & Campanhas': { eyebrow: 'CANAL E CRIATIVOS', icon: Compass, iconColor: '#3b82f6' },
     'Seu público': { eyebrow: 'ORIGEM E PERFIL', icon: Users, iconColor: '#3b82f6' },
     'Suas páginas': { eyebrow: 'CONTEÚDO E ENGAJAMENTO', icon: FileText, iconColor: '#ff8a3d' },
     'Resultados': { eyebrow: 'CONVERSÃO E LEADS', icon: Target, iconColor: '#10b981' },
     'Insights & Recomendações': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
+    'INSIGHTS (IA)': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
     'Configurações': { eyebrow: 'PREFERÊNCIAS DO SISTEMA', icon: SettingsIcon, iconColor: '#8b5cf6' },
     'Fontes de dados': { eyebrow: 'INTEGRAÇÕES E CONEXÕES', icon: Link2, iconColor: '#3b82f6' },
     'Heatmap & Comportamento': { eyebrow: 'COMPORTAMENTO VISUAL', icon: Flame, iconColor: '#f97316' },
+    'Heatmap e Rolagem': { eyebrow: 'COMPORTAMENTO VISUAL', icon: Flame, iconColor: '#f97316' },
   };
 
   const meta = defaultMeta[title];
@@ -3040,6 +3393,7 @@ export function App() {
 
   const screens = {
     dashboard: <Dashboard/>,
+    acquisition: <Acquisition/>,
     audience: <Audience/>,
     pages: <Pages/>,
     results: <Results/>,

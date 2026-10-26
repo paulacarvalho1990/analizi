@@ -1,5 +1,5 @@
 import React from 'react'
-import { ArrowDownRight, ArrowUpRight, Info } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, Info, Lightbulb } from 'lucide-react'
 
 export interface MetricDefinition {
   caption: string
@@ -123,6 +123,24 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     why: 'Páginas que demoram mais de 3 segundos para carregar perdem até 53% dos visitantes antes mesmo da primeira leitura.',
     tip: 'Comprima imagens pesadas e evite excesso de scripts externos que atrasam a abertura.'
   },
+  'Velocidade média de carregamento': {
+    caption: 'Tempo que as páginas levam para abrir',
+    what: 'Duração média do carregamento completo da página (Core Web Vitals navigation timing).',
+    why: 'Páginas que demoram mais de 3 segundos para carregar perdem até 53% dos visitantes antes mesmo da primeira leitura.',
+    tip: 'Comprima imagens pesadas e evite excesso de scripts externos que atrasam a abertura.'
+  },
+  'Melhor anúncio / criativo': {
+    caption: 'Criativo com maior geração de contatos comerciais',
+    what: 'O anúncio específico (utm_content) com o maior número de leads e contatos gerados.',
+    why: 'Permite identificar qual criativo traz clientes reais, e não apenas curiosos.',
+    tip: 'Aumente a verba diária deste anúncio e crie variações mantendo o mesmo gancho.'
+  },
+  'Tráfego Orgânico vs. Pago': {
+    caption: 'Comparativo entre visitantes espontâneos e anúncios pagos',
+    what: 'Separação entre pessoas que entraram espontaneamente (Google, direto) e tráfego pago (Meta Ads, Google Ads).',
+    why: 'Indica a sustentabilidade do negócio e o retorno de cada canal de aquisição.',
+    tip: 'Combine SEO de longo prazo com anúncios focados em conversão direta.'
+  },
   'Downloads de arquivos': {
     caption: 'Arquivos baixados pelos visitantes',
     what: 'Contagem de cliques em links de download de PDFs, planilhas, documentos e instaladores.',
@@ -172,6 +190,7 @@ export function MetricCard({
   tooltipWhat,
   tooltipWhy,
   tooltipTip,
+  compactText = false,
 }: {
   title: string
   value: React.ReactNode
@@ -183,6 +202,7 @@ export function MetricCard({
   tooltipWhat?: string
   tooltipWhy?: string
   tooltipTip?: string
+  compactText?: boolean
 }) {
   const def = METRIC_DEFINITIONS[title]
   const finalCaption = caption || def?.caption || note
@@ -213,7 +233,10 @@ export function MetricCard({
               )}
               {tip && (
                 <div className="metric-tooltip-section tip">
-                  <b>💡 Como melhorar:</b>
+                  <b>
+                    <Lightbulb size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4, color: '#fbbf24' }} />
+                    Como melhorar:
+                  </b>
                   <p>{tip}</p>
                 </div>
               )}
@@ -222,7 +245,11 @@ export function MetricCard({
         )}
       </div>
 
-      <strong className={subtitle ? 'has-subtitle' : ''} title={typeof value === 'string' ? value : undefined}>
+      <strong
+        className={compactText ? 'compact-text' : (subtitle ? 'has-subtitle' : '')}
+        style={compactText ? { fontSize: '15px', fontWeight: 700, lineHeight: 1.35, wordBreak: 'break-word', whiteSpace: 'normal', letterSpacing: '-0.01em', marginBottom: 6 } : undefined}
+        title={typeof value === 'string' ? value : undefined}
+      >
         {value}
       </strong>
 
@@ -242,6 +269,82 @@ export function MetricCard({
       {note && note !== finalCaption && <small>{note}</small>}
 
       {finalCaption && <div className="metric-caption">{finalCaption}</div>}
+    </article>
+  )
+}
+
+export function DualMetricCard({
+  title = "Tráfego Orgânico vs. Pago",
+  organicSessions = 0,
+  organicShare = "—",
+  organicContacts = 0,
+  organicConvRate = "—",
+  paidSessions = 0,
+  paidShare = "—",
+  paidContacts = 0,
+  paidConvRate = "—",
+  caption = "Comparativo de volume e conversão entre busca espontânea e anúncios pagos"
+}: {
+  title?: string
+  organicSessions?: number | string
+  organicShare?: string
+  organicContacts?: number | string
+  organicConvRate?: string
+  paidSessions?: number | string
+  paidShare?: string
+  paidContacts?: number | string
+  paidConvRate?: string
+  caption?: string
+}) {
+  const def = METRIC_DEFINITIONS[title]
+
+  return (
+    <article className="dual-metric-card" style={{ gridColumn: 'span 2' }}>
+      <div className="metric-title">
+        <span>{title}</span>
+        <div className="metric-info-wrapper" tabIndex={0} aria-label={`Informações sobre ${title}`}>
+          <Info size={14} className="metric-info-icon" />
+          <div className="metric-tooltip-popover" role="tooltip">
+            <div className="metric-tooltip-title">{title}</div>
+            <div className="metric-tooltip-section">
+              <b>O que significa:</b>
+              <p>{def?.what || "Separação entre visitantes vindos de anúncios pagos e visitantes de busca ou acesso espontâneo."}</p>
+            </div>
+            <div className="metric-tooltip-section">
+              <b>Por que importa:</b>
+              <p>{def?.why || "Mostra se seu negócio é dependente de anúncios ou se tem autoridade própria de busca."}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="dual-metric-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', margin: '8px 0 12px' }}>
+        <div className="dual-side organic" style={{ padding: '10px 12px', borderRadius: '9px', background: 'var(--surface-subtle)', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#3B82F6' }}>Orgânico / Espontâneo</span>
+            <span style={{ fontSize: '10px', fontWeight: 750, padding: '2px 6px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.15)', color: '#2563EB' }}>{organicShare}</span>
+          </div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--foreground)', lineHeight: 1.2 }}>{organicSessions}</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--muted-foreground)', marginTop: 4, display: 'flex', gap: '8px' }}>
+            <span>Contatos: <b style={{ color: 'var(--foreground)' }}>{organicContacts}</b></span>
+            <span>Conv: <b style={{ color: '#10B981' }}>{organicConvRate}</b></span>
+          </div>
+        </div>
+
+        <div className="dual-side paid" style={{ padding: '10px 12px', borderRadius: '9px', background: 'var(--surface-subtle)', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#FF3CAC' }}>Tráfego Pago (Ads)</span>
+            <span style={{ fontSize: '10px', fontWeight: 750, padding: '2px 6px', borderRadius: '4px', background: 'rgba(255, 60, 172, 0.15)', color: '#DB2777' }}>{paidShare}</span>
+          </div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--foreground)', lineHeight: 1.2 }}>{paidSessions}</div>
+          <div style={{ fontSize: '11.5px', color: 'var(--muted-foreground)', marginTop: 4, display: 'flex', gap: '8px' }}>
+            <span>Contatos: <b style={{ color: 'var(--foreground)' }}>{paidContacts}</b></span>
+            <span>Conv: <b style={{ color: '#10B981' }}>{paidConvRate}</b></span>
+          </div>
+        </div>
+      </div>
+
+      <div className="metric-caption">{caption}</div>
     </article>
   )
 }
