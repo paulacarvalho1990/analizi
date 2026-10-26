@@ -102,7 +102,7 @@ function PageChart({ pages }: { pages: AnalyticsData['pages'] }) {
       <div className="chart-legend-row" style={{ marginTop: 12, borderTop: '1px dashed var(--border, #e5e7eb)', paddingTop: 10 }}>
         <div className="chart-legend-item">
           <span className="legend-bullet" style={{ background: 'linear-gradient(90deg, #ff3cac, #ff8a3d)' }} />
-          <span>Visualizações por página (Rosa → Laranja)</span>
+          <span>Visualizações por página</span>
         </div>
       </div>
     </article>
@@ -218,7 +218,7 @@ function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
       <div className="chart-legend-row" style={{ marginTop: 12, borderTop: '1px dashed var(--border, #e5e7eb)', paddingTop: 10 }}>
         <div className="chart-legend-item">
           <span className="legend-line pink" />
-          <span>Visualizações no período (Rosa Analizi)</span>
+          <span>Visualizações no período</span>
         </div>
         <div className="chart-legend-item">
           <span className="legend-bullet orange" />
@@ -379,7 +379,7 @@ function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
       <div className="chart-legend-row" style={{ marginTop: 12, borderTop: '1px dashed var(--border, #e5e7eb)', paddingTop: 10 }}>
         <div className="chart-legend-item">
           <span className="legend-bullet" style={{ background: 'linear-gradient(90deg, #ff3cac, #ff8a3d)' }} />
-          <span>Acessos por canal (Rosa → Laranja)</span>
+          <span>Acessos por canal</span>
         </div>
       </div>
     </article>
@@ -2077,77 +2077,79 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
 
   return (
     <div className="analytics-filters">
-      {/* Date Picker Range */}
-      <div className="filter-group-date">
-        <Calendar size={14} style={{ color: 'var(--muted-foreground)' }} />
-        <label>
-          De
-          <input
-            type="date"
-            className="filter-date-input"
-            value={filter.start}
-            max={filter.end}
-            min={shiftDays(filter.end, -729)}
-            onChange={(event) => apply({ ...filter, start: event.target.value })}
-          />
-        </label>
-        <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>–</span>
-        <label>
-          Até
-          <input
-            type="date"
-            className="filter-date-input"
-            value={filter.end}
-            max={maxAvailableDate}
-            min={filter.start}
-            onChange={(event) => apply({ ...filter, end: event.target.value })}
-          />
-        </label>
+      <div className="filters-main-row">
+        {/* Date Picker Range */}
+        <div className="filter-group-date">
+          <Calendar size={14} className="filter-field-icon" />
+          <label className="filter-date-label">
+            <span>De</span>
+            <input
+              type="date"
+              className="filter-date-input"
+              value={filter.start}
+              max={filter.end}
+              min={shiftDays(filter.end, -729)}
+              onChange={(event) => apply({ ...filter, start: event.target.value })}
+            />
+          </label>
+          <span className="filter-date-sep">–</span>
+          <label className="filter-date-label">
+            <span>Até</span>
+            <input
+              type="date"
+              className="filter-date-input"
+              value={filter.end}
+              max={maxAvailableDate}
+              min={filter.start}
+              onChange={(event) => apply({ ...filter, end: event.target.value })}
+            />
+          </label>
+        </div>
+
+        {/* Quick Period Presets */}
+        <div className="filter-quick-pills">
+          <button
+            type="button"
+            className={`filter-pill-btn ${currentDays === 7 ? 'active' : ''}`}
+            onClick={() => preset(7)}
+          >
+            7D
+          </button>
+          <button
+            type="button"
+            className={`filter-pill-btn ${currentDays === 14 ? 'active' : ''}`}
+            onClick={() => preset(14)}
+          >
+            14D
+          </button>
+          <button
+            type="button"
+            className={`filter-pill-btn ${currentDays === 30 ? 'active' : ''}`}
+            onClick={() => preset(30)}
+          >
+            30D
+          </button>
+          <button
+            type="button"
+            className={`filter-pill-btn ${currentDays === 90 ? 'active' : ''}`}
+            onClick={() => preset(90)}
+          >
+            90D
+          </button>
+          <button
+            type="button"
+            className={`filter-pill-btn ${currentDays >= 360 ? 'active' : ''}`}
+            onClick={() => preset(365)}
+          >
+            1A
+          </button>
+        </div>
       </div>
 
-      {/* Quick Period Presets */}
-      <div className="filter-quick-pills">
-        <button
-          type="button"
-          className={`filter-pill-btn ${currentDays === 7 ? 'active' : ''}`}
-          onClick={() => preset(7)}
-        >
-          7D
-        </button>
-        <button
-          type="button"
-          className={`filter-pill-btn ${currentDays === 14 ? 'active' : ''}`}
-          onClick={() => preset(14)}
-        >
-          14D
-        </button>
-        <button
-          type="button"
-          className={`filter-pill-btn ${currentDays === 30 ? 'active' : ''}`}
-          onClick={() => preset(30)}
-        >
-          30D
-        </button>
-        <button
-          type="button"
-          className={`filter-pill-btn ${currentDays === 90 ? 'active' : ''}`}
-          onClick={() => preset(90)}
-        >
-          90D
-        </button>
-        <button
-          type="button"
-          className={`filter-pill-btn ${currentDays >= 360 ? 'active' : ''}`}
-          onClick={() => preset(365)}
-        >
-          1A
-        </button>
-      </div>
-
-      {/* Agrupar por */}
-      <div className="filter-item-field">
-        <label>
-          Agrupar:
+      <div className="filters-dim-row">
+        {/* Agrupar por */}
+        <div className="filter-item-field">
+          <span className="filter-field-label">Agrupar:</span>
           <select value={filter.group} onChange={(event) => apply({ ...filter, group: event.target.value as AnalyticsFilter['group'] })}>
             <option value="day">Dia</option>
             <option value="week">Semana</option>
@@ -2156,14 +2158,12 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
             <option value="semester">Semestre</option>
             <option value="year">Ano</option>
           </select>
-        </label>
-      </div>
+        </div>
 
-      {/* Filtro de Página */}
-      <div className="filter-item-field">
-        <FileText size={14} style={{ color: 'var(--muted-foreground)' }} />
-        <label>
-          Página:
+        {/* Filtro de Página */}
+        <div className="filter-item-field">
+          <FileText size={13} className="filter-field-icon" />
+          <span className="filter-field-label">Página:</span>
           <select value={filter.page} onChange={(event) => apply({ ...filter, page: event.target.value })}>
             <option value="">Todas as páginas</option>
             {(analytics?.filterPages ?? []).map(item => (
@@ -2172,67 +2172,57 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
               </option>
             ))}
           </select>
-        </label>
-      </div>
+        </div>
 
-      {/* Dispositivo */}
-      <div className="filter-item-field">
-        <Monitor size={14} style={{ color: 'var(--muted-foreground)' }} />
-        <label>
-          Aparelho:
+        {/* Dispositivo */}
+        <div className="filter-item-field">
+          <Monitor size={13} className="filter-field-icon" />
+          <span className="filter-field-label">Aparelho:</span>
           <select value={filter.device || ''} onChange={(event) => apply({ ...filter, device: event.target.value })}>
             <option value="">Todos</option>
             {uniqueDevices.map(dev => <option key={dev} value={dev}>{formatDeviceName(dev)}</option>)}
           </select>
-        </label>
-      </div>
+        </div>
 
-      {/* Navegador */}
-      <div className="filter-item-field">
-        <Globe size={14} style={{ color: 'var(--muted-foreground)' }} />
-        <label>
-          Navegador:
+        {/* Navegador */}
+        <div className="filter-item-field">
+          <Globe size={13} className="filter-field-icon" />
+          <span className="filter-field-label">Navegador:</span>
           <select value={filter.browser || ''} onChange={(event) => apply({ ...filter, browser: event.target.value })}>
             <option value="">Todos</option>
             {uniqueBrowsers.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
-        </label>
-      </div>
+        </div>
 
-      {/* Origem */}
-      <div className="filter-item-field">
-        <Compass size={14} style={{ color: 'var(--muted-foreground)' }} />
-        <label>
-          Origem:
+        {/* Origem */}
+        <div className="filter-item-field">
+          <Compass size={13} className="filter-field-icon" />
+          <span className="filter-field-label">Origem:</span>
           <select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}>
             <option value="">Todas</option>
             {uniqueSources.map(sourceName => <option key={sourceName} value={sourceName}>{sourceName}</option>)}
           </select>
-        </label>
-      </div>
+        </div>
 
-      {/* Mídia */}
-      <div className="filter-item-field">
-        <Layers size={14} style={{ color: 'var(--muted-foreground)' }} />
-        <label>
-          Mídia:
+        {/* Mídia */}
+        <div className="filter-item-field">
+          <Layers size={13} className="filter-field-icon" />
+          <span className="filter-field-label">Mídia:</span>
           <select value={filter.medium || ''} onChange={(event) => apply({ ...filter, medium: event.target.value })}>
             <option value="">Todas</option>
             {uniqueMediums.map(m => <option key={m} value={m}>{formatMediumName(m)}</option>)}
           </select>
-        </label>
-      </div>
+        </div>
 
-      {/* Campanha */}
-      <div className="filter-item-field">
-        <Target size={14} style={{ color: 'var(--muted-foreground)' }} />
-        <label>
-          Campanha:
+        {/* Campanha */}
+        <div className="filter-item-field">
+          <Target size={13} className="filter-field-icon" />
+          <span className="filter-field-label">Campanha:</span>
           <select value={filter.campaign || ''} onChange={(event) => apply({ ...filter, campaign: event.target.value })}>
             <option value="">Todas</option>
             {uniqueCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-        </label>
+        </div>
       </div>
     </div>
   );
