@@ -12,7 +12,7 @@ export const PAGE_TITLES: Record<Page, string> = {
   pages: 'Páginas | Analizi',
   results: 'Resultados | Analizi',
   heatmap: 'Heatmap e Rolagem | Analizi',
-  insights: 'INSIGHTS (IA) | Analizi',
+  insights: 'Insights | Analizi',
   settings: 'Configurações | Analizi',
   team: 'Meu Site | Analizi',
   'data-sources': 'Fontes de Dados | Analizi',
@@ -21,13 +21,13 @@ export const PAGE_TITLES: Record<Page, string> = {
 }
 
 const nav = [
-  ['dashboard', 'Início', BarChart3],
-  ['acquisition', 'Aquisição & Campanhas', Compass],
-  ['audience', 'Público', Users],
-  ['pages', 'Páginas', FileText],
-  ['results', 'Resultados', Target],
-  ['heatmap', 'Heatmap e Rolagem', Flame],
-  ['insights', 'INSIGHTS (IA)', Lightbulb],
+  { id: 'dashboard', label: 'Início', icon: BarChart3, badge: undefined },
+  { id: 'acquisition', label: 'Aquisição & Campanhas', icon: Compass, badge: undefined },
+  { id: 'audience', label: 'Público', icon: Users, badge: undefined },
+  { id: 'pages', label: 'Páginas', icon: FileText, badge: undefined },
+  { id: 'results', label: 'Resultados', icon: Target, badge: undefined },
+  { id: 'heatmap', label: 'Heatmap e Rolagem', icon: Flame, badge: undefined },
+  { id: 'insights', label: 'Insights', icon: Lightbulb, badge: 'IA' },
 ] as const
 
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
@@ -57,10 +57,11 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
         </button>
         <WorkspaceSelector onNavigateSettings={() => navigate('team')} />
         <nav>
-          {nav.map(([id, label, Icon]) => (
+          {nav.map(({ id, label, icon: Icon, badge }) => (
             <button key={id} onClick={() => navigate(id)} className={page === id ? 'nav-item active' : 'nav-item'}>
               <Icon size={19} />
-              {label}
+              <span>{label}</span>
+              {badge && <span className="nav-badge ai">{badge}</span>}
             </button>
           ))}
         </nav>
@@ -89,7 +90,7 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
       <main className="main-content">{children}</main>
       <NewSiteModal onSiteCreated={() => navigate('tracker-setup')} />
       <nav className="mobile-nav">
-        {nav.map(([id, label, Icon]) => (
+        {nav.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => navigate(id)} className={page === id ? 'active' : ''}>
             <Icon size={20} />
             <span>{label}</span>

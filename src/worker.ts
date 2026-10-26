@@ -329,7 +329,13 @@ function siteDomain(value: unknown) {
 }
 
 async function provisionTrackerSite(request: Request, env: Env) {
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': 'content-type' } })
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' } })
+  if (request.method === 'GET') {
+    const listResult = await env.ANALIZI_EVENTS.batch([
+      env.ANALIZI_EVENTS.prepare('select tracker_site_id, supabase_site_id, business_id, plan, domain, is_active, created_at from tracker_sites where is_active = 1 order by created_at asc')
+    ]) as Array<{ results?: Array<{ tracker_site_id: string; supabase_site_id: string; business_id: string; plan: string; domain: string; is_active: number; created_at: string }> }>
+    return json({ sites: listResult[0]?.results || [] })
+  }
   if (request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
   let payload: { trackerSiteId?: unknown, domain?: unknown, supabaseSiteId?: unknown, businessId?: unknown, plan?: unknown }
   try { payload = await request.json() } catch { return json({ error: 'Formato inválido.' }, 400) }
