@@ -8,6 +8,7 @@ import { Button } from './components/ui/Button'
 import { AuthFlow, CONSENT_VERSION, type AuthFlowMode } from './components/AuthFlow'
 import { supabase } from './lib/supabase'
 import { BusinessProvider, useBusiness, type BusinessItem, type SiteItem } from './lib/business-context'
+import { BrazilGeoMap } from './components/BrazilMap'
 
 const ITEMS_PER_PAGE = 25
 function TablePagination({ page, total, setPage }: { page: number, total: number, setPage: (page: number) => void }) { const pages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)); if (total <= ITEMS_PER_PAGE) return null; return <div className="table-pagination"><span>Mostrando {page * ITEMS_PER_PAGE + 1}–{Math.min((page + 1) * ITEMS_PER_PAGE, total)} de {total}</span><div><button disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</button><b>{page + 1} de {pages}</b><button disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Próxima</button></div></div> }
@@ -421,7 +422,7 @@ function PeakHoursMatrix({ peakHours }: { peakHours?: Array<{ dayOfWeek: number,
                 </div>
                 <div className="metric-tooltip-section tip">
                   <b><Lightbulb size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4, color: '#fbbf24' }} /> Dica de Negócio:</b>
-                  <p>Programe postagens e campanhas pagas para os horários com tons mais vivos de laranja e rosa.</p>
+                  <p>Programe postagens e campanhas pagas para os horários de maior concentração de visitantes.</p>
                 </div>
               </div>
             </div>
@@ -470,8 +471,8 @@ function PeakHoursMatrix({ peakHours }: { peakHours?: Array<{ dayOfWeek: number,
 
           <div className="peak-matrix-legend">
             <span>0 acessos</span>
-            <div className="peak-gradient-bar" title="Escala térmica de volume: Laranja suave até Rosa vibrante no pico máximo" />
-            <span>Pico máximo de acessos (Laranja → Rosa)</span>
+            <div className="peak-gradient-bar" title="Escala de volume de acessos" />
+            <span>Pico máximo de acessos</span>
           </div>
         </div>
       </div>
@@ -1094,68 +1095,72 @@ function Audience() {
         <TablePagination page={devicePage} total={aggregatedDevices.length} setPage={setDevicePage} />
       </article>
 
-      <article className="table-card compact-table geo-locations-table" style={{ marginTop: 18 }}>
-        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <MapPin size={17} style={{ color: '#ff3cac' }} />
-              <h3 style={{ margin: 0 }}>Localização geográfica (Cidade, Estado e País)</h3>
+      <div className="geo-map-split" style={{ marginTop: 18 }}>
+        <BrazilGeoMap locations={analytics?.locations} />
+
+        <article className="table-card compact-table geo-locations-table" style={{ margin: 0 }}>
+          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <MapPin size={17} style={{ color: '#ff3cac' }} />
+                <h3 style={{ margin: 0 }}>Localização geográfica (Cidade, Estado e País)</h3>
+              </div>
+              <p>De quais cidades, estados e países seus visitantes estão acessando o site</p>
             </div>
-            <p>De quais cidades, estados e países seus visitantes estão acessando o site</p>
+            <div className="heatmap-segmented-control">
+              <button
+                type="button"
+                className={locationTab === 'cities' ? 'active' : ''}
+                onClick={() => { setLocationTab('cities'); setLocationPage(0); }}
+              >
+                Cidades
+              </button>
+              <button
+                type="button"
+                className={locationTab === 'regions' ? 'active' : ''}
+                onClick={() => { setLocationTab('regions'); setLocationPage(0); }}
+              >
+                Estados / Regiões
+              </button>
+              <button
+                type="button"
+                className={locationTab === 'countries' ? 'active' : ''}
+                onClick={() => { setLocationTab('countries'); setLocationPage(0); }}
+              >
+                Países
+              </button>
+            </div>
           </div>
-          <div className="heatmap-segmented-control">
-            <button
-              type="button"
-              className={locationTab === 'cities' ? 'active' : ''}
-              onClick={() => { setLocationTab('cities'); setLocationPage(0); }}
-            >
-              Cidades
-            </button>
-            <button
-              type="button"
-              className={locationTab === 'regions' ? 'active' : ''}
-              onClick={() => { setLocationTab('regions'); setLocationPage(0); }}
-            >
-              Estados / Regiões
-            </button>
-            <button
-              type="button"
-              className={locationTab === 'countries' ? 'active' : ''}
-              onClick={() => { setLocationTab('countries'); setLocationPage(0); }}
-            >
-              Países
-            </button>
+          <div className="geo-locations-head">
+            <span>Cidade</span>
+            <span>Estado / Região</span>
+            <span>País</span>
+            <span>Visualizações</span>
+            <span>Usuários</span>
+            <span>Contatos</span>
           </div>
-        </div>
-        <div className="geo-locations-head">
-          <span>Cidade</span>
-          <span>Estado / Região</span>
-          <span>País</span>
-          <span>Visualizações</span>
-          <span>Usuários</span>
-          <span>Contatos</span>
-        </div>
-        {visibleLocations.map((loc) => (
-          <div className="geo-locations-row" key={loc.key}>
-            <span><b>{loc.city}</b></span>
-            <span>{loc.region}</span>
-            <span>{loc.country}</span>
-            <span><b>{Number(loc.views || 0).toLocaleString('pt-BR')}</b></span>
-            <span>{Number(loc.users || 0).toLocaleString('pt-BR')}</span>
-            <span>
-              <b style={{ color: Number(loc.conversions || 0) > 0 ? '#10b981' : undefined }}>
-                {Number(loc.conversions || 0).toLocaleString('pt-BR')}
-              </b>
-            </span>
-          </div>
-        ))}
-        {!aggregatedLocations.length && (
-          <p className="empty-state">
-            Ainda não há dados geográficos consolidados neste período. Novos acessos já estão sendo registrados com Cidade, Estado e País.
-          </p>
-        )}
-        <TablePagination page={locationPage} total={aggregatedLocations.length} setPage={setLocationPage} />
-      </article>
+          {visibleLocations.map((loc) => (
+            <div className="geo-locations-row" key={loc.key}>
+              <span><b>{loc.city}</b></span>
+              <span>{loc.region}</span>
+              <span>{loc.country}</span>
+              <span><b>{Number(loc.views || 0).toLocaleString('pt-BR')}</b></span>
+              <span>{Number(loc.users || 0).toLocaleString('pt-BR')}</span>
+              <span>
+                <b style={{ color: Number(loc.conversions || 0) > 0 ? '#10b981' : undefined }}>
+                  {Number(loc.conversions || 0).toLocaleString('pt-BR')}
+                </b>
+              </span>
+            </div>
+          ))}
+          {!aggregatedLocations.length && (
+            <p className="empty-state">
+              Ainda não há dados geográficos consolidados neste período. Novos acessos já estão sendo registrados com Cidade, Estado e País.
+            </p>
+          )}
+          <TablePagination page={locationPage} total={aggregatedLocations.length} setPage={setLocationPage} />
+        </article>
+      </div>
     </>
   );
 }

@@ -2984,118 +2984,111 @@ body { background:var(--background); color:var(--foreground); }
 }
 
 /* ==========================================================================
-   Enhanced Date Picker e Filtros Globais
+   Barra de Filtros Globais - Proporções e Alturas Harmoniosas
    ========================================================================== */
 .analytics-filters {
   background: var(--surface, #ffffff);
   border: 1px solid var(--border, #E5E7EB);
-  border-radius: 14px;
-  padding: 14px 18px;
-  margin-bottom: 24px;
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
+/* Date Picker: mais altinho e com destaque conforme solicitado */
 .filter-group-date {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--surface-subtle, #F9FAFB);
-  border: 1px solid var(--border, #E5E7EB);
-  border-radius: 9px;
-  padding: 4px 10px;
-}
-[data-theme="dark"] .filter-group-date {
-  background: #23252B;
-  border-color: #3D414A;
-}
-
-.filter-group-date label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--muted-foreground, #6B7280);
-  margin: 0;
-  text-transform: none;
-}
-
-.filter-date-input {
-  background: transparent;
-  border: 0;
-  color: var(--foreground, #111827);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 2px;
-  outline: none;
-  cursor: pointer;
-}
-[data-theme="dark"] .filter-date-input {
-  color: #E2E8F0;
-}
-
-.filter-item-field {
   display: flex;
   align-items: center;
   gap: 6px;
   background: var(--surface-subtle, #F9FAFB);
   border: 1px solid var(--border, #E5E7EB);
-  border-radius: 9px;
-  padding: 4px 10px;
+  border-radius: 8px;
+  padding: 0 10px;
+  height: 36px;
 }
-[data-theme="dark"] .filter-item-field {
-  background: #23252B;
-  border-color: #3D414A;
-}
-
-.filter-item-field label {
+.filter-group-date label {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-size: 11px;
   font-weight: 700;
   color: var(--muted-foreground, #6B7280);
   margin: 0;
   text-transform: none;
 }
-
-.filter-item-field select {
+.filter-date-input {
   background: transparent;
   border: 0;
   color: var(--foreground, #111827);
   font-size: 12px;
-  font-weight: 600;
-  padding: 4px 2px;
+  font-weight: 700;
+  padding: 0 2px;
+  height: 32px;
   outline: none;
   cursor: pointer;
-  max-width: 170px;
-  text-overflow: ellipsis;
-}
-[data-theme="dark"] .filter-item-field select {
-  color: #E2E8F0;
 }
 
-.filter-quick-pills {
+/* Filtros de texto/select: mais baixos e compactos conforme solicitado */
+.filter-item-field {
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-left: auto;
+  background: var(--surface-subtle, #F9FAFB);
+  border: 1px solid var(--border, #E5E7EB);
+  border-radius: 7px;
+  padding: 0 8px;
+  height: 28px; /* Mais baixo */
+}
+.filter-item-field label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted-foreground, #6B7280);
+  margin: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+.filter-item-field select {
+  background: transparent;
+  border: 0;
+  color: var(--foreground, #111827);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 2px;
+  height: 24px;
+  outline: none;
+  cursor: pointer;
+  max-width: 145px;
+  text-overflow: ellipsis;
 }
 
+/* Pills de período rápido */
+.filter-quick-pills {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
 .filter-pill-btn {
   background: var(--surface-subtle, #F3F4F6);
   border: 1px solid var(--border, #E5E7EB);
   border-radius: 6px;
   color: var(--muted-foreground, #4B5563);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  padding: 5px 9px;
+  height: 28px;
+  padding: 0 8px;
   cursor: pointer;
   transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .filter-pill-btn:hover {
   background: rgba(255, 60, 172, 0.1);
@@ -3107,10 +3100,421 @@ body { background:var(--background); color:var(--foreground); }
   color: #ff3cac;
   border-color: #ff3cac;
 }
-[data-theme="dark"] .filter-pill-btn {
+
+/* ==========================================================================
+   Mapa do Brasil Interativo e Split Geográfico
+   ========================================================================== */
+.geo-map-split {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.3fr);
+  gap: 18px;
+  align-items: stretch;
+}
+@media (max-width: 1080px) {
+  .geo-map-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.brazil-map-card {
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #E5E7EB);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+}
+.brazil-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.map-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.map-title-wrap h4 {
+  font-size: 15px;
+  font-weight: 750;
+  color: var(--foreground, #111827);
+  margin: 0;
+}
+.map-subtitle {
+  font-size: 11px;
+  color: var(--muted-foreground, #6B7280);
+}
+
+.brazil-map-toggle {
+  display: flex;
+  align-items: center;
+  background: var(--surface-subtle, #F3F4F6);
+  border: 1px solid var(--border, #E5E7EB);
+  border-radius: 8px;
+  padding: 2px;
+}
+.brazil-map-toggle button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted-foreground, #6B7280);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.brazil-map-toggle button.active {
+  background: var(--surface, #ffffff);
+  color: #ff3cac;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.brazil-map-body {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  align-items: center;
+  position: relative;
+  flex: 1;
+}
+@media (max-width: 680px) {
+  .brazil-map-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.brazil-svg-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.brazil-svg {
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+}
+.state-path {
+  transition: fill 0.2s, stroke 0.2s, transform 0.1s;
+}
+.state-group:hover .state-path {
+  stroke: #111827;
+  stroke-width: 2px;
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,0.15));
+}
+.state-label {
+  font-size: 11px;
+  font-weight: 800;
+  fill: #ffffff;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+.brazil-map-tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: #1E2025;
+  color: #F8FAFC;
+  border: 1px solid #3D414A;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  z-index: 9999;
+  transform: translate(-50%, -120%);
+}
+.tooltip-state {
+  display: block;
+  font-weight: 800;
+  color: #ff3cac;
+  margin-bottom: 4px;
+}
+.tooltip-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.brazil-map-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted-foreground);
+}
+.brazil-legend-bar {
+  width: 110px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #FFD1E8, #FF8A3D, #FF3CAC);
+}
+
+.brazil-map-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sidebar-ranking-title {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.state-ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.state-ranking-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.state-rank-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+.state-rank-badge {
+  font-weight: 800;
+  color: #ff3cac;
+  width: 16px;
+}
+.state-rank-name {
+  font-weight: 700;
+  color: var(--foreground);
+  flex: 1;
+}
+.state-rank-val {
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+.state-rank-bar {
+  height: 4px;
+  background: var(--surface-subtle, #F3F4F6);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.state-rank-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff8a3d, #ff3cac);
+  border-radius: 999px;
+}
+
+/* ==========================================================================
+   Mobile First & Adaptações Mobile (Sem Burguer Menu, Bottom Nav Completo)
+   ========================================================================== */
+@media (max-width: 680px) {
+  .mobile-header {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    padding: 0 16px;
+    background: var(--surface, #ffffff);
+    border-bottom: 1px solid var(--border, #E5E7EB);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .mobile-header .workspace-selector-container {
+    margin: 0;
+    max-width: calc(100% - 48px);
+  }
+  .mobile-header-settings-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-subtle, #F3F4F6);
+    border: 1px solid var(--border, #E5E7EB);
+    color: var(--foreground, #111827);
+    cursor: pointer;
+  }
+
+  .mobile-nav {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-around;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: var(--surface, #ffffff);
+    border-top: 1px solid var(--border, #E5E7EB);
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.06);
+    z-index: 9999;
+    padding: 4px 2px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .mobile-nav-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    min-width: 48px;
+    padding: 4px 1px;
+    background: transparent;
+    border: 0;
+    color: var(--muted-foreground, #6B7280);
+    cursor: pointer;
+    font-size: 9.5px;
+    font-weight: 700;
+    gap: 3px;
+    transition: color 0.15s;
+  }
+  .mobile-nav-btn.active {
+    color: #ff3cac;
+  }
+  .mobile-nav-icon-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mobile-badge-ia {
+    position: absolute;
+    top: -4px;
+    right: -8px;
+    font-size: 8px;
+    font-weight: 800;
+    background: #ff3cac;
+    color: #ffffff;
+    border-radius: 999px;
+    padding: 1px 4px;
+    line-height: 1;
+  }
+
+  .main-content {
+    padding: 16px 14px 76px !important;
+  }
+
+  /* Filtros no mobile */
+  .analytics-filters {
+    padding: 10px;
+    gap: 8px;
+  }
+  .filter-group-date {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .filter-quick-pills {
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .filter-item-field {
+    flex: 1 1 calc(50% - 6px);
+  }
+
+  /* Insights no mobile: fácil de ler e manusear */
+  .insight-card-system {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+  .insight-action-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Tema Escuro Integral ([data-theme="dark"])
+   ========================================================================== */
+[data-theme="dark"] body,
+[data-theme="dark"] .app-shell {
+  background: var(--background, #1E2025);
+  color: var(--foreground, #F1F5F9);
+}
+
+[data-theme="dark"] .analytics-filters {
   background: #292C33;
   border-color: #3D414A;
+}
+[data-theme="dark"] .filter-group-date,
+[data-theme="dark"] .filter-item-field {
+  background: #23252B;
+  border-color: #3D414A;
+}
+[data-theme="dark"] .filter-group-date label,
+[data-theme="dark"] .filter-item-field label {
   color: #94A3B8;
+}
+[data-theme="dark"] .filter-date-input,
+[data-theme="dark"] .filter-item-field select {
+  color: #F1F5F9;
+}
+[data-theme="dark"] .filter-pill-btn {
+  background: #23252B;
+  border-color: #3D414A;
+  color: #94A3B8;
+}
+
+[data-theme="dark"] .brazil-map-card {
+  background: #292C33;
+  border-color: #3D414A;
+}
+[data-theme="dark"] .map-title-wrap h4 {
+  color: #F1F5F9;
+}
+[data-theme="dark"] .map-subtitle {
+  color: #94A3B8;
+}
+[data-theme="dark"] .brazil-map-toggle {
+  background: #23252B;
+  border-color: #3D414A;
+}
+[data-theme="dark"] .brazil-map-toggle button {
+  color: #94A3B8;
+}
+[data-theme="dark"] .brazil-map-toggle button.active {
+  background: #292C33;
+  color: #ff3cac;
+}
+[data-theme="dark"] .state-path {
+  stroke: #292C33;
+}
+[data-theme="dark"] .state-ranking-item .state-rank-bar {
+  background: #23252B;
+}
+
+[data-theme="dark"] .mobile-header {
+  background: #292C33;
+  border-bottom-color: #3D414A;
+}
+[data-theme="dark"] .mobile-header-settings-btn {
+  background: #23252B;
+  border-color: #3D414A;
+  color: #F1F5F9;
+}
+[data-theme="dark"] .mobile-nav {
+  background: #292C33;
+  border-top-color: #3D414A;
+}
+[data-theme="dark"] .mobile-nav-btn {
+  color: #94A3B8;
+}
+[data-theme="dark"] .mobile-nav-btn.active {
+  color: #ff3cac;
 }
 
 /* ==========================================================================
