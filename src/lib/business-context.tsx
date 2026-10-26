@@ -124,21 +124,21 @@ export interface BusinessContextValue {
 
 const DEMO_BUSINESSES: BusinessItem[] = [
   {
-    id: 'biz-clinica-horizonte',
-    name: 'Clínica Horizonte',
-    slug: 'clinica-horizonte',
-    website_url: 'www.clinicahorizonte.com.br',
-    segment: 'Saúde',
+    id: 'biz-analizi',
+    name: 'Analizi Demo',
+    slug: 'analizi-demo',
+    website_url: 'analizi.carvalhopaula1990.workers.dev',
+    segment: 'Tecnologia',
     plan: 'admin',
     subscription_status: 'active',
     subscription_expires_at: '2099-12-31T23:59:59Z'
   },
   {
-    id: 'biz-horizonte-odonto',
-    name: 'Horizonte Odonto',
-    slug: 'horizonte-odonto',
-    website_url: 'www.horizonteodonto.com.br',
-    segment: 'Saúde',
+    id: 'biz-magia-tarot',
+    name: 'Magia Tarot',
+    slug: 'magia-tarot',
+    website_url: 'magia.mih-tarot.workers.dev',
+    segment: 'Serviços',
     plan: 'admin',
     subscription_status: 'active',
     subscription_expires_at: '2099-12-31T23:59:59Z'
@@ -147,19 +147,19 @@ const DEMO_BUSINESSES: BusinessItem[] = [
 
 const DEMO_SITES: SiteItem[] = [
   {
-    id: 'site-clinica-horizonte',
-    business_id: 'biz-clinica-horizonte',
-    name: 'Clínica Horizonte',
-    domain: 'www.clinicahorizonte.com.br',
-    tracker_site_id: 'ANLZ00001-A',
+    id: 'site-analizi',
+    business_id: 'biz-analizi',
+    name: 'Analizi Demo',
+    domain: 'analizi.carvalhopaula1990.workers.dev',
+    tracker_site_id: 'ANLZ4A484-A',
     is_active: true
   },
   {
-    id: 'site-horizonte-odonto',
-    business_id: 'biz-horizonte-odonto',
-    name: 'Horizonte Odonto',
-    domain: 'www.horizonteodonto.com.br',
-    tracker_site_id: 'ANLZ00002-A',
+    id: 'site-magia-tarot',
+    business_id: 'biz-magia-tarot',
+    name: 'Magia Tarot',
+    domain: 'magia.mih-tarot.workers.dev',
+    tracker_site_id: 'ANLZ104D5-A',
     is_active: true
   }
 ]
@@ -281,16 +281,75 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Fallback para modo demo / sem supabase
-      setBusinesses(DEMO_BUSINESSES)
-      setSites(DEMO_SITES)
+      let customBusinesses: BusinessItem[] = []
+      let customSites: SiteItem[] = []
+      try {
+        const savedBiz = localStorage.getItem('analizi-custom-businesses')
+        if (savedBiz) customBusinesses = JSON.parse(savedBiz)
+        const savedS = localStorage.getItem('analizi-custom-sites')
+        if (savedS) customSites = JSON.parse(savedS)
+      } catch {}
+
+      // Busca sites reais da API Cloudflare D1
+      let d1Sites: SiteItem[] = []
+      try {
+        const d1Res = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites')
+        if (d1Res.ok) {
+          const d1Data = await d1Res.json() as { sites?: Array<{ tracker_site_id: string; domain: string; is_active: number; plan: string }> }
+          if (d1Data?.sites) {
+            d1Sites = d1Data.sites.map(s => {
+              const cleanHost = s.domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+              const siteTitle = cleanHost.split('.')[0]
+              const formattedName = siteTitle.charAt(0).toUpperCase() + siteTitle.slice(1)
+              return {
+                id: `site-${s.tracker_site_id}`,
+                business_id: `biz-${s.tracker_site_id}`,
+                name: formattedName,
+                domain: s.domain,
+                tracker_site_id: s.tracker_site_id,
+                is_active: Boolean(s.is_active)
+              }
+            })
+          }
+        }
+      } catch {}
+
+      const allBusinessesMap = new Map<string, BusinessItem>()
+      DEMO_BUSINESSES.forEach(b => allBusinessesMap.set(b.id, b))
+      customBusinesses.forEach(b => allBusinessesMap.set(b.id, b))
+      d1Sites.forEach(s => {
+        if (!allBusinessesMap.has(s.business_id)) {
+          allBusinessesMap.set(s.business_id, {
+            id: s.business_id,
+            name: s.name,
+            slug: slugify(s.name),
+            website_url: s.domain,
+            segment: 'Serviços',
+            plan: 'admin',
+            subscription_status: 'active',
+            subscription_expires_at: '2099-12-31T23:59:59Z'
+          })
+        }
+      })
+
+      const allSitesMap = new Map<string, SiteItem>()
+      DEMO_SITES.forEach(s => allSitesMap.set(s.id, s))
+      customSites.forEach(s => allSitesMap.set(s.id, s))
+      d1Sites.forEach(s => allSitesMap.set(s.id, s))
+
+      const mergedBusinesses = Array.from(allBusinessesMap.values())
+      const mergedSites = Array.from(allSitesMap.values())
+
+      setBusinesses(mergedBusinesses)
+      setSites(mergedSites)
 
       const savedBizId = localStorage.getItem('analizi-selected-business-id')
-      const activeBiz = DEMO_BUSINESSES.find(b => b.id === savedBizId) || DEMO_BUSINESSES[0]
+      const activeBiz = mergedBusinesses.find(b => b.id === savedBizId) || mergedBusinesses[0]
       setCurrentBusiness(activeBiz)
 
-      const bizSites = DEMO_SITES.filter(s => s.business_id === activeBiz.id)
+      const bizSites = mergedSites.filter(s => s.business_id === activeBiz.id)
       const savedSiteId = localStorage.getItem('analizi-selected-site-id')
-      const activeSite = bizSites.find(s => s.id === savedSiteId) || bizSites[0] || DEMO_SITES[0]
+      const activeSite = bizSites.find(s => s.id === savedSiteId) || bizSites[0] || mergedSites[0]
       setCurrentSite(activeSite)
     } catch (err) {
       console.error('Falha ao carregar negócios e sites:', err)
@@ -428,7 +487,14 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem('analizi-selected-business-id', fallbackBiz.id)
       localStorage.setItem('analizi-selected-site-id', fallbackSite.id)
 
-      void fetch('/v1/tracker-sites', {
+      try {
+        const prevB = JSON.parse(localStorage.getItem('analizi-custom-businesses') || '[]')
+        localStorage.setItem('analizi-custom-businesses', JSON.stringify([...prevB, fallbackBiz]))
+        const prevS = JSON.parse(localStorage.getItem('analizi-custom-sites') || '[]')
+        localStorage.setItem('analizi-custom-sites', JSON.stringify([...prevS, fallbackSite]))
+      } catch {}
+
+      void fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

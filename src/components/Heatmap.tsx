@@ -4,7 +4,8 @@ import {
   Image as ImageIcon, Video, Type, CheckSquare, Layout, Navigation,
   CreditCard, Flag, TextCursorInput, Link as LinkIcon,
   BarChart3, SlidersHorizontal, Table as TableIcon, MapPin, HelpCircle,
-  MessageSquareQuote, Volume2, GalleryHorizontal, ZoomIn, ZoomOut, Maximize2
+  MessageSquareQuote, Volume2, GalleryHorizontal, ZoomIn, ZoomOut, Maximize2,
+  Calendar, FileText
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
@@ -498,6 +499,9 @@ export function Heatmap() {
   const [selectedPage, setSelectedPage] = useState<string>('/')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [activeLayer, setActiveLayer] = useState<'clicks' | 'scroll'>('clicks')
+  const [periodDays, setPeriodDays] = useState<number>(30)
+  const [customStart, setCustomStart] = useState<string>('')
+  const [customEnd, setCustomEnd] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<HeatmapPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -508,7 +512,7 @@ export function Heatmap() {
 
   const targetSiteId = currentSite?.tracker_site_id || (currentSite?.id?.startsWith('ANLZ') ? currentSite.id : '')
 
-  const fetchHeatmap = async (page = selectedPage, dev = device) => {
+  const fetchHeatmap = async (page = selectedPage, dev = device, days = periodDays) => {
     if (!targetSiteId) {
       setData(null)
       return
@@ -516,7 +520,16 @@ export function Heatmap() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/heatmap/${targetSiteId}?page=${encodeURIComponent(page)}&device=${dev}&period=30`)
+      const query = new URLSearchParams({
+        page,
+        device: dev,
+        period: String(days)
+      })
+      if (days === 0 && customStart && customEnd) {
+        query.set('start', customStart)
+        query.set('end', customEnd)
+      }
+      const res = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/heatmap/${targetSiteId}?${query}`)
       if (!res.ok) throw new Error('Falha ao carregar dados do heatmap.')
       const json: HeatmapPayload = await res.json()
       setData(json)
@@ -532,9 +545,9 @@ export function Heatmap() {
 
   useEffect(() => {
     if (targetSiteId) {
-      fetchHeatmap(selectedPage, device)
+      fetchHeatmap(selectedPage, device, periodDays)
     }
-  }, [targetSiteId, selectedPage, device])
+  }, [targetSiteId, selectedPage, device, periodDays, customStart, customEnd])
 
   const layout = data?.layout
   const rawBlocks = layout?.blocks || []
@@ -603,7 +616,47 @@ export function Heatmap() {
 
       {/* Barra de Controles e Filtros */}
       <div className="heatmap-toolbar">
+        {/* Date Picker de Período */}
         <div className="heatmap-control-group">
+          <Calendar size={15} style={{ color: 'var(--muted-foreground)' }} />
+          <label htmlFor="heatmap-period">Período:</label>
+          <select
+            id="heatmap-period"
+            value={periodDays}
+            onChange={(e) => setPeriodDays(Number(e.target.value))}
+            className="heatmap-select"
+          >
+            <option value={7}>Últimos 7 dias</option>
+            <option value={14}>Últimos 14 dias</option>
+            <option value={30}>Últimos 30 dias</option>
+            <option value={90}>Últimos 90 dias</option>
+            <option value={0}>Personalizado (De/Até)</option>
+          </select>
+        </div>
+
+        {periodDays === 0 && (
+          <div className="heatmap-control-group" style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="heatmap-select"
+              style={{ fontSize: '11px', padding: '4px 6px' }}
+            />
+            <span style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>até</span>
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="heatmap-select"
+              style={{ fontSize: '11px', padding: '4px 6px' }}
+            />
+          </div>
+        )}
+
+        {/* Filtro de Página */}
+        <div className="heatmap-control-group">
+          <FileText size={15} style={{ color: 'var(--muted-foreground)' }} />
           <label htmlFor="page-select">Página:</label>
           <select
             id="page-select"
