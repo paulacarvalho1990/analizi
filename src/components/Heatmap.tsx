@@ -593,7 +593,7 @@ export function Heatmap() {
         <div>
           <span className="eyebrow">COMPORTAMENTO VISUAL</span>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Flame style={{ color: '#f97316' }} size={28} /> Heatmap & Comportamento
+            <Flame style={{ color: '#f97316' }} size={28} /> Heatmap e Rolagem
           </h1>
           <p className="subtitle">
             Veja exatamente onde os visitantes clicam e até que altura da página eles rolam.
