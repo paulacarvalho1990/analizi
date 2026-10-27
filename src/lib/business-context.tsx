@@ -528,26 +528,24 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
 
     // Cria um novo registro de business e site para manter o isolamento completo de equipe e permissões por site
     const { data: createdBiz, error: bizErr } = await supabase
-      .from('businesses')
-      .insert({
-        id: businessId,
-        owner_id: user.id,
-        name: siteName,
-        slug,
-        website_url: normalized.url,
-        segment: resolvedSegment,
-        subsegment: resolvedSubsegment,
-        segment_detail: resolvedDetail,
-        plan: effectivePlan.id,
-        subscription_status: subscriptionStatus,
-        subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 30 * 86400000).toISOString()
+      .rpc('create_business_for_current_user', {
+        p_business_id: businessId,
+        p_name: siteName,
+        p_slug: slug,
+        p_website_url: normalized.url,
+        p_segment: resolvedSegment,
+        p_subsegment: resolvedSubsegment,
+        p_segment_detail: resolvedDetail,
+        p_plan: effectivePlan.id,
+        p_subscription_status: subscriptionStatus,
+        p_subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 30 * 86400000).toISOString()
       })
-      .select('id, owner_id, name, slug, website_url, segment, subsegment, segment_detail, plan, subscription_status, subscription_expires_at')
       .single()
 
     if (bizErr || !createdBiz) {
       throw new Error(bizErr?.message || 'Não foi possível criar o novo site.')
     }
+    const createdBusiness = createdBiz as BusinessItem
 
     const { data: createdSite, error: siteErr } = await supabase
       .from('sites')
@@ -579,7 +577,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
           trackerSiteId: createdSite.tracker_site_id,
           domain: createdSite.domain,
           supabaseSiteId: createdSite.id,
-          businessId: createdBiz.id,
+          businessId: createdBusiness.id,
           plan: effectivePlan.id
         })
       })
@@ -588,9 +586,9 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
     }
 
     const normalizedBiz: BusinessItem = {
-      ...createdBiz,
-      plan: normalizePlanTier(createdBiz.plan),
-      subscription_status: (createdBiz.subscription_status as SubscriptionStatus) || 'active'
+      ...createdBusiness,
+      plan: normalizePlanTier(createdBusiness.plan),
+      subscription_status: (createdBusiness.subscription_status as SubscriptionStatus) || 'active'
     }
     const typedSite = createdSite as SiteItem
 
@@ -600,7 +598,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
     setCurrentBusiness(normalizedBiz)
     setCurrentSite(typedSite)
 
-    localStorage.setItem('analizi-selected-business-id', createdBiz.id)
+    localStorage.setItem('analizi-selected-business-id', createdBusiness.id)
     localStorage.setItem('analizi-selected-site-id', createdSite.id)
     await refreshBusinesses()
 
