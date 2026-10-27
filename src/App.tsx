@@ -1233,51 +1233,23 @@ function Results() {
     ? [...filteredGeneralClicks].sort((a, b) => b.clicks - a.clicks)
     : filteredGeneralClicks;
 
-  const pageConversions = useMemo(() => {
-    const map = new Map<string, {
-      path: string;
-      views: number;
-      whatsapp: number;
-      signups: number;
-      total: number;
-      conversionRate: number;
-    }>();
-
-    (analytics?.pages ?? []).forEach(item => {
-      map.set(item.path, {
-        path: item.path,
-        views: Number(item.views || 0),
-        whatsapp: 0,
-        signups: 0,
-        total: 0,
-        conversionRate: 0,
-      });
-    });
-
-    (analytics?.contactDetails ?? []).forEach(c => {
-      const existing = map.get(c.path) || {
-        path: c.path,
-        views: 0,
-        whatsapp: 0,
-        signups: 0,
-        total: 0,
-        conversionRate: 0,
-      };
-      const count = Number(c.contacts || 0);
-      if (c.type === 'whatsapp_contact') existing.whatsapp += count;
-      else existing.signups += count;
-      existing.total += count;
-      map.set(c.path, existing);
-    });
-
-    return Array.from(map.values())
-      .map(item => ({
-        ...item,
-        conversionRate: item.views > 0 ? (item.total / item.views) * 100 : (item.total > 0 ? 100 : 0)
-      }))
-      .filter(item => item.total > 0 || item.views > 0)
-      .sort((a, b) => b.total - a.total || b.conversionRate - a.conversionRate || b.views - a.views);
-  }, [analytics?.pages, analytics?.contactDetails]);
+  const pageConversions = useMemo(() => (
+    (analytics?.pageConversionResults ?? [])
+      .map(item => {
+        const sessions = Number(item.sessions || 0);
+        const contactSessions = Number(item.contactSessions || 0);
+        return {
+          path: item.path,
+          sessions,
+          whatsapp: Number(item.whatsappClicks || 0),
+          signups: Number(item.signUps || 0),
+          total: contactSessions,
+          conversionRate: sessions > 0 ? (contactSessions / sessions) * 100 : 0,
+        };
+      })
+      .filter(item => item.total > 0 || item.sessions > 0)
+      .sort((a, b) => b.total - a.total || b.conversionRate - a.conversionRate || b.sessions - a.sessions)
+  ), [analytics?.pageConversionResults]);
 
   const channelConversions = useMemo(() => {
     const map = new Map<string, {
@@ -1296,8 +1268,8 @@ function Results() {
       const key = `${source}|${medium}`;
       const sess = Number(item.sessions || 0);
       const wa = Number(item.whatsappClicks || 0);
-      const cont = Number(item.contactClicks || item.whatsappClicks || 0);
-      const others = Math.max(0, cont - wa);
+      const cont = Number(item.conversions || 0);
+      const others = Number(item.signUps || 0);
 
       const existing = map.get(key) || {
         source,
@@ -1458,11 +1430,11 @@ function Results() {
             <>
               <div className="conversion-detail-head">
                 <span>Página</span>
-                <span>Acessos</span>
+                <span>Sessões</span>
                 <span>WhatsApp</span>
                 <span>Cadastros</span>
-                <span>Total</span>
-                <span>Taxa conv.</span>
+                <span>Com contato</span>
+                <span>Taxa de contato</span>
               </div>
               {visibleConversions.map((rawItem, index) => {
                 const item = rawItem as typeof pageConversions[number];
@@ -1472,7 +1444,7 @@ function Results() {
                     <span title={item.path} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <code className="path-code">{item.path}</code>
                     </span>
-                    <span>{Number(item.views || 0).toLocaleString('pt-BR')}</span>
+                    <span>{Number(item.sessions || 0).toLocaleString('pt-BR')}</span>
                     <span>
                       <b style={{ color: item.whatsapp > 0 ? '#10b981' : undefined }}>
                         {item.whatsapp > 0 ? Number(item.whatsapp).toLocaleString('pt-BR') : '—'}
@@ -1495,7 +1467,7 @@ function Results() {
                 );
               })}
               {!pageConversions.length && (
-                <p className="empty-state">Nenhuma página com acessos ou conversões no período selecionado.</p>
+                <p className="empty-state">Nenhuma página com sessões ou contatos no período selecionado.</p>
               )}
             </>
           ) : (
@@ -1505,8 +1477,8 @@ function Results() {
                 <span>Sessões</span>
                 <span>WhatsApp</span>
                 <span>Outros</span>
-                <span>Total</span>
-                <span>Taxa conv.</span>
+                <span>Com contato</span>
+                <span>Taxa de contato</span>
               </div>
               {visibleConversions.map((rawItem, index) => {
                 const item = rawItem as typeof channelConversions[number];
@@ -1914,9 +1886,9 @@ interface SourceMediumResultRow {
   generalClicks: number,
   contactClicks: number,
   whatsappClicks: number,
+  conversions?: number,
   signUps?: number,
   logins?: number,
-  conversions?: number
 }
 interface AnalyticsData {
   totals: AnalyticsTotals,
@@ -1928,6 +1900,7 @@ interface AnalyticsData {
   locations?: LocationRow[],
   devices?: DeviceRow[],
   sourceMediumResults?: SourceMediumResultRow[],
+  pageConversionResults?: Array<{ path: string, sessions: number, whatsappClicks: number, signUps: number, contactSessions: number }>,
   contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>,
   clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>,
   filterPages?: Array<{ path: string }>,

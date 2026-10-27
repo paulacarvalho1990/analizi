@@ -737,7 +737,9 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
         sum(users) as users,
         sum(general_clicks) as generalClicks,
         sum(contact_clicks) as contactClicks,
-        sum(whatsapp_clicks) as whatsappClicks
+        sum(whatsapp_clicks) as whatsappClicks,
+        sum(sign_ups) as signUps,
+        sum(conversions) as conversions
       from daily_source_medium_results
       where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
       group by source, medium, campaign
@@ -756,6 +758,19 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
       group by dayOfWeek, hourOfDay
       order by dayOfWeek asc, hourOfDay asc
     `).bind(safeId, start, end),
+    // 19: conversões por página, sempre calculadas como sessões com contato ÷ sessões
+    env.ANALIZI_EVENTS.prepare(`
+      select
+        page_path as path,
+        sum(sessions) as sessions,
+        sum(whatsapp_clicks) as whatsappClicks,
+        sum(sign_ups) as signUps,
+        sum(conversions) as contactSessions
+      from daily_source_medium_results
+      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
+      group by page_path
+      order by contactSessions desc, sessions desc limit 250
+    `).bind(safeId, start, end, ...smWhere.params),
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
   const responseBody = {
@@ -778,6 +793,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     devices: results[16]?.results ?? [],
     sourceMediumResults: results[17]?.results ?? [],
     peakHours: results[18]?.results ?? [],
+    pageConversionResults: results[19]?.results ?? [],
     periodDays: period, start, end, group,
     sourceKind: 'consolidated'
   }
