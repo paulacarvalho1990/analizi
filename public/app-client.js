@@ -656,10 +656,28 @@
 
   // --- Heatmap Econômico: 3. Cliques Estruturais (Sem Loose Clicks) com Coordenadas ---
   document.addEventListener('click', (event) => {
-    const target = event.target instanceof Element ? event.target.closest('a, button, [role="button"], input[type="button"], input[type="submit"], img, video') : null
+    const clickedElement = event.target instanceof Element ? event.target : null
+    if (!clickedElement) return
+
+    // Prioriza a mídia efetivamente clicada, mesmo quando ela estiver dentro de um link.
+    // Assim o heatmap diferencia imagens, vídeos e links sem perder o destino do link pai.
+    const mediaTarget = clickedElement.closest('img, video')
+    const interactiveTarget = clickedElement.closest('a, button, [role="button"], input[type="button"], input[type="submit"]')
+    const target = mediaTarget || interactiveTarget
     if (!target) return
-    const href = target instanceof HTMLAnchorElement ? target.href : ''
-    const label = truncate(target.getAttribute('aria-label') || target.textContent || target.getAttribute('value') || target.getAttribute('alt') || '', 160)
+    const linkTarget = clickedElement.closest('a')
+    const href = linkTarget instanceof HTMLAnchorElement ? linkTarget.href : ''
+    const label = truncate(
+      target.getAttribute('aria-label') ||
+      target.getAttribute('alt') ||
+      target.getAttribute('title') ||
+      target.textContent ||
+      target.getAttribute('value') ||
+      linkTarget?.getAttribute('aria-label') ||
+      linkTarget?.textContent ||
+      '',
+      160
+    )
     const isWhatsapp = /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com)/i.test(href)
     const isPhone = /^tel:/i.test(href)
     const isEmail = /^mailto:/i.test(href)
@@ -672,7 +690,7 @@
     // GA4 Enhanced: Detecção de Download de Arquivo e Clique de Saída
     let isFileDownload = false
     let isOutbound = false
-    if (href && target instanceof HTMLAnchorElement) {
+    if (href && linkTarget instanceof HTMLAnchorElement) {
       try {
         const urlObj = new URL(href, location.href)
         const extMatch = urlObj.pathname.match(/\.(pdf|xlsx?|docx?|pptx?|csv|zip|rar|tar|gz|mp3|mp4|dmg|exe|apk)$/i)
@@ -693,6 +711,7 @@
     const docW = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 1)
     const clickXPct = Math.min(100, Math.max(0, Math.round((clickX / docW) * 100)))
     const targetTag = target.tagName.toUpperCase()
+    const clickTargetType = targetTag === 'IMG' ? 'image' : targetTag === 'VIDEO' ? 'video' : linkTarget ? 'link' : 'button'
 
     send(eventName, {
       button_label: label || (isFileDownload ? 'Download de arquivo' : isOutbound ? 'Link externo' : isMedia ? `Mídia (${targetTag.toLowerCase()})` : 'Elemento sem texto'),
@@ -702,7 +721,8 @@
       is_contact_lead: isContactLead ? 1 : 0,
       click_x_pct: clickXPct,
       click_y_px: Math.round(clickY),
-      target_tag: targetTag
+      target_tag: targetTag,
+      click_target_type: clickTargetType
     })
   }, { capture: true })
 

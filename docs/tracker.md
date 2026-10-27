@@ -13,7 +13,8 @@ O código deve ser instalado antes de `</head>` em todas as páginas. O identifi
 - `session_start`: primeira interação após 30 minutos sem atividade.
 - `first_visit`: primeira visita daquele navegador.
 - `page_view`: carregamento ou abertura de uma página.
-- `button_click`: clique em botão, botão com `role="button"` ou botão de formulário.
+- `button_click`: clique em botão, botão com `role="button"`, botão de formulário ou link interno.
+- `media_click`: clique em imagem ou vídeo, inclusive quando estiverem dentro de um link. O evento preserva o destino do link e as coordenadas para o heatmap.
 - `whatsapp_contact`: clique em botão/link do WhatsApp.
 
 Para marcar botões existentes de login ou cadastro, adicione um atributo ao botão:
