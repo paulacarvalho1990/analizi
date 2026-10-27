@@ -24,6 +24,12 @@ const ALLOWED_EVENTS = new Set([
   'button_click',
   'media_click',
   'sign_up',
+  'form_submit',
+  'checkout_start',
+  'payment_start',
+  'subscription_start',
+  'purchase',
+  'subscription',
   'login',
   'whatsapp_contact',
   'outbound_click',
@@ -468,7 +474,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             coalesce(sum(r.sessions), 0) as sessions,
             coalesce(sum(r.users), 0) as users,
             coalesce(sum(r.new_users), 0) as newUsers,
-            coalesce(sum(r.whatsapp_clicks + r.sign_ups), 0) as contacts,
+            coalesce(sum(r.whatsapp_clicks + r.sign_ups + r.form_submits), 0) as contacts,
             coalesce(sum(r.conversions), 0) as contactSessions,
             coalesce(sum(r.whatsapp_clicks), 0) as whatsappContacts,
             coalesce(sum(r.sign_ups), 0) as signUps,
@@ -488,7 +494,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             coalesce(sum(m.sessions), 0) as sessions,
             coalesce(sum(m.users), 0) as users,
             coalesce(sum(m.new_users), 0) as newUsers,
-            coalesce(sum(m.whatsapp_contacts + m.sign_ups), 0) as contacts,
+            coalesce(sum(m.whatsapp_contacts + m.sign_ups + m.form_submits), 0) as contacts,
             coalesce(sum(m.conversions), 0) as contactSessions,
             coalesce(sum(m.whatsapp_contacts), 0) as whatsappContacts,
             coalesce(sum(m.sign_ups), 0) as signUps,
@@ -552,7 +558,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             sum(sessions) as sessions,
             sum(users) as users,
             sum(page_views) as pageViews,
-            sum(whatsapp_clicks + sign_ups) as contacts
+            sum(whatsapp_clicks + sign_ups + form_submits) as contacts
           from daily_source_medium_results
           where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
           group by ${groupConsolidated}
@@ -564,7 +570,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             sum(sessions) as sessions,
             sum(users) as users,
             sum(page_views) as pageViews,
-            sum(whatsapp_contacts + sign_ups) as contacts
+            sum(whatsapp_contacts + sign_ups + form_submits) as contacts
           from daily_metrics
           where tracker_site_id = ? and metric_date >= ? and metric_date <= ?
           group by ${groupConsolidated}
@@ -631,7 +637,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             coalesce(sum(r.sessions), 0) as sessions,
             coalesce(sum(r.users), 0) as users,
             coalesce(sum(r.new_users), 0) as newUsers,
-            coalesce(sum(r.whatsapp_clicks + r.sign_ups), 0) as contacts,
+            coalesce(sum(r.whatsapp_clicks + r.sign_ups + r.form_submits), 0) as contacts,
             coalesce(sum(r.conversions), 0) as contactSessions,
             coalesce(sum(r.whatsapp_clicks), 0) as whatsappContacts,
             coalesce(sum(r.sign_ups), 0) as signUps,
@@ -651,7 +657,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
             coalesce(sum(m.sessions), 0) as sessions,
             coalesce(sum(m.users), 0) as users,
             coalesce(sum(m.new_users), 0) as newUsers,
-            coalesce(sum(m.whatsapp_contacts + m.sign_ups), 0) as contacts,
+            coalesce(sum(m.whatsapp_contacts + m.sign_ups + m.form_submits), 0) as contacts,
             coalesce(sum(m.conversions), 0) as contactSessions,
             coalesce(sum(m.whatsapp_contacts), 0) as whatsappContacts,
             coalesce(sum(m.sign_ups), 0) as signUps,
@@ -771,6 +777,14 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
       group by page_path
       order by contactSessions desc, sessions desc limit 250
     `).bind(safeId, start, end, ...smWhere.params),
+    // 20: conversões e intenções detalhadas para a tela de Resultados
+    env.ANALIZI_EVENTS.prepare(`
+      select metric_date as date, conversion_type as type, conversion_name as name, conversion_stage as stage, page_path as path, sum(conversions) as conversions, sum(sessions) as sessions
+      from daily_conversion_events
+      where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
+      group by metric_date, conversion_type, conversion_name, conversion_stage, page_path
+      order by date desc, conversions desc limit 250
+    `).bind(safeId, start, end, ...smWhere.params),
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
   const responseBody = {
@@ -794,6 +808,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
     sourceMediumResults: results[17]?.results ?? [],
     peakHours: results[18]?.results ?? [],
     pageConversionResults: results[19]?.results ?? [],
+    conversionEvents: results[20]?.results ?? [],
     periodDays: period, start, end, group,
     sourceKind: 'consolidated'
   }
@@ -1414,7 +1429,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
     // - exit_rate (Bounce Rate GA4) = % de sessões NÃO engajadas (< 10s, < 2 page_views e 0 conversões)
     await env.ANALIZI_EVENTS.batch([
       env.ANALIZI_EVENTS.prepare(`
-        insert into daily_metrics (tracker_site_id, metric_date, sessions, users, new_users, page_views, conversions, whatsapp_contacts, sign_ups, logins, average_engagement_seconds, exit_rate)
+        insert into daily_metrics (tracker_site_id, metric_date, sessions, users, new_users, page_views, conversions, whatsapp_contacts, sign_ups, form_submits, logins, average_engagement_seconds, exit_rate)
         select
           e.tracker_site_id,
           date(e.occurred_at) as metric_date,
@@ -1425,6 +1440,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           count(distinct case when e.event_name in ('whatsapp_contact','sign_up') or e.is_conversion = 1 then e.session_id end) as conversions,
           sum(e.event_name = 'whatsapp_contact') as whatsapp_contacts,
           sum(e.event_name = 'sign_up') as sign_ups,
+          sum(e.event_name = 'form_submit') as form_submits,
           sum(e.event_name = 'login') as logins,
           coalesce(round((sum(coalesce(e.engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct e.visitor_id), 0)), 0) as average_engagement_seconds,
           round(100.0 * (
@@ -1452,6 +1468,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           conversions = excluded.conversions,
           whatsapp_contacts = excluded.whatsapp_contacts,
           sign_ups = excluded.sign_ups,
+          form_submits = excluded.form_submits,
           logins = excluded.logins,
           average_engagement_seconds = excluded.average_engagement_seconds,
           exit_rate = excluded.exit_rate;
@@ -1601,7 +1618,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           coalesce(page_path, '/') as page_path,
           count(*) as contacts
         from events
-        where event_name in ('whatsapp_contact', 'sign_up', 'login', 'form_start', 'form_abandon') and date(occurred_at) <= date('now', '-1 day')
+        where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'login', 'form_start', 'form_abandon') and date(occurred_at) <= date('now', '-1 day')
         group by tracker_site_id, date(occurred_at), event_name, coalesce(page_path, '/')
         on conflict (tracker_site_id, metric_date, contact_type, page_path) do update set
           contacts = excluded.contacts;
@@ -1655,7 +1672,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
       env.ANALIZI_EVENTS.prepare(`
         insert into daily_source_medium_results (
           tracker_site_id, metric_date, source, medium, campaign, device_type, browser, page_path,
-          sessions, page_views, users, new_users, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, logins, conversions
+          sessions, page_views, users, new_users, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, form_submits, logins, conversions
         )
         select
           tracker_site_id,
@@ -1690,6 +1707,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
             then 1 else 0
           end) as whatsapp_clicks,
           sum(event_name = 'sign_up') as sign_ups,
+          sum(event_name = 'form_submit') as form_submits,
           sum(event_name = 'login') as logins,
           count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
@@ -1712,8 +1730,20 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           contact_clicks = excluded.contact_clicks,
           whatsapp_clicks = excluded.whatsapp_clicks,
           sign_ups = excluded.sign_ups,
+          form_submits = excluded.form_submits,
           logins = excluded.logins,
           conversions = excluded.conversions;
+      `),
+      // 10. Consolida conversões confirmadas e intenções comerciais por tipo.
+      env.ANALIZI_EVENTS.prepare(`
+        insert into daily_conversion_events (tracker_site_id, metric_date, source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage, conversions, sessions)
+        select tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, ${SQL_NORMALIZED_MEDIUM}, ${SQL_NORMALIZED_CAMPAIGN}, ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}, coalesce(page_path, '/'),
+          case when event_name = 'whatsapp_contact' then 'whatsapp' when event_name = 'sign_up' then 'cadastro' when event_name = 'form_submit' then coalesce(nullif(json_extract(metadata_json, '$.conversion_type'), ''), 'contato') when event_name = 'file_download' then 'download' when event_name = 'checkout_start' then 'checkout' when event_name = 'payment_start' then 'pagamento' when event_name in ('subscription_start', 'subscription') then 'assinatura' when event_name = 'purchase' then 'compra' else 'outro' end,
+          coalesce(nullif(json_extract(metadata_json, '$.form_name'), ''), nullif(json_extract(metadata_json, '$.button_label'), ''), nullif(json_extract(metadata_json, '$.form_id'), ''), ''),
+          case when event_name in ('checkout_start', 'payment_start', 'subscription_start', 'file_download') then 'intencao' else 'confirmada' end, count(*), count(distinct session_id)
+        from events where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'file_download', 'checkout_start', 'payment_start', 'subscription_start', 'purchase', 'subscription') and date(occurred_at) <= date('now', '-1 day')
+        group by 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+        on conflict do update set conversions = excluded.conversions, sessions = excluded.sessions;
       `)
     ])
 

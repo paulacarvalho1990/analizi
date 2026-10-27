@@ -1182,10 +1182,28 @@ function isOutboundClick(item: { intent?: string }): boolean {
   return item.intent === 'link_externo';
 }
 
+function conversionTypeLabel(type: string): string {
+  const labels: Record<string, string> = {
+    whatsapp: 'WhatsApp',
+    cadastro: 'Cadastro',
+    contato: 'Formulário de contato',
+    agendamento: 'Agendamento',
+    orcamento: 'Orçamento',
+    newsletter: 'Newsletter',
+    download: 'Download',
+    checkout: 'Finalizar compra',
+    pagamento: 'Pagamento',
+    assinatura: 'Assinatura',
+    compra: 'Compra',
+  };
+  return labels[type] || 'Outra conversão';
+}
+
 function Results() {
   const analytics = useAnalytics();
   const [conversionTab, setConversionTab] = useState<'pages' | 'channels'>('pages');
   const [conversionPage, setConversionPage] = useState(0);
+  const [conversionEventPage, setConversionEventPage] = useState(0);
   const [leadClickPage, setLeadClickPage] = useState(0);
   const [leadClickTab, setLeadClickTab] = useState<'all' | 'whatsapp' | 'forms'>('all');
   const [generalClickPage, setGeneralClickPage] = useState(0);
@@ -1199,6 +1217,10 @@ function Results() {
   const leadClicks = allClicks.filter(item => isLeadClick(item));
   const generalClicks = allClicks.filter(item => !isLeadClick(item));
   const rawSmResults = analytics?.sourceMediumResults ?? [];
+  const conversionEvents = analytics?.conversionEvents ?? [];
+  const formSubmits = conversionEvents.filter(item => ['contato', 'agendamento', 'orcamento', 'newsletter'].includes(item.type) && item.stage === 'confirmada').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
+  const purchaseIntents = conversionEvents.filter(item => ['checkout', 'pagamento', 'assinatura'].includes(item.type) && item.stage === 'intencao').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
+  const visibleConversionEvents = conversionEvents.slice(conversionEventPage * ITEMS_PER_PAGE, (conversionEventPage + 1) * ITEMS_PER_PAGE);
 
   const totalDownloads = allClicks.filter(item => isDownloadClick(item)).reduce((sum, item) => sum + Number(item.clicks || 0), 0);
   const totalOutbound = allClicks.filter(item => isOutboundClick(item)).reduce((sum, item) => sum + Number(item.clicks || 0), 0);
@@ -1314,6 +1336,8 @@ function Results() {
         <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
         <MetricCard title="WhatsApp" value={String(t?.whatsappContacts ?? '—')} {...comparison(t?.whatsappContacts, p?.whatsappContacts)} />
         <MetricCard title="Cadastros" value={String(t?.signUps ?? '—')} {...comparison(t?.signUps, p?.signUps)} />
+        <MetricCard title="Formulários enviados" value={String(formSubmits || '—')} note="envios confirmados" />
+        <MetricCard title="Intenções de compra" value={String(purchaseIntents || '—')} note="checkout, pagamento ou assinatura" />
         <MetricCard title="Downloads de arquivos" value={String(totalDownloads || '—')} note="arquivos baixados no site" />
         <MetricCard title="Cliques de saída" value={String(totalOutbound || '—')} note="links externos clicados" />
         {formStarts > 0 ? (
@@ -1574,6 +1598,35 @@ function Results() {
           <TablePagination page={leadClickPage} total={filteredLeadClicks.length} setPage={setLeadClickPage} />
         </article>
       </div>
+
+      <article className="table-card compact-table" style={{ marginTop: '24px' }}>
+        <div className="section-heading">
+          <div>
+            <h3>Conversões e intenções</h3>
+            <p>Envios confirmados de formulário e ações comerciais iniciadas</p>
+          </div>
+        </div>
+        <div className="conversion-detail-head">
+          <span>Data</span>
+          <span>Tipo</span>
+          <span>Nome</span>
+          <span>Página</span>
+          <span>Status</span>
+          <span>Total</span>
+        </div>
+        {visibleConversionEvents.map((item, index) => (
+          <div className="conversion-detail-row" key={`${item.date}-${item.type}-${item.name}-${item.path}-${index}`}>
+            <span>{item.date.slice(5).split('-').reverse().join('/')}</span>
+            <span><b>{conversionTypeLabel(item.type)}</b></span>
+            <span>{item.name || '—'}</span>
+            <span><code className="path-code">{item.path}</code></span>
+            <span>{item.stage === 'confirmada' ? 'Confirmada' : 'Iniciada'}</span>
+            <span><b>{Number(item.conversions || 0).toLocaleString('pt-BR')}</b></span>
+          </div>
+        ))}
+        {!conversionEvents.length && <p className="empty-state">Ainda não há conversões ou intenções registradas neste período.</p>}
+        <TablePagination page={conversionEventPage} total={conversionEvents.length} setPage={setConversionEventPage} />
+      </article>
 
       <article className="table-card general-clicks-table" style={{ marginTop: '24px' }}>
         <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
@@ -1868,7 +1921,7 @@ function Insights() {
 }
 
 type AuthPage = 'loading' | 'landing' | 'login' | 'signup' | 'consent' | 'onboarding-business' | 'onboarding-source' | 'app'
-interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, logins?: number, attentionSeconds?: number, contactSessions?: number }
+interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, formSubmits?: number, logins?: number, attentionSeconds?: number, contactSessions?: number }
 interface LocationRow { country: string, region: string, city: string, views: number, users: number, sessions: number, conversions: number }
 interface DeviceRow { device: string, browser: string, sessions: number, users: number, newUsers: number, views: number, conversions: number }
 interface SourceMediumResultRow {
@@ -1901,6 +1954,7 @@ interface AnalyticsData {
   devices?: DeviceRow[],
   sourceMediumResults?: SourceMediumResultRow[],
   pageConversionResults?: Array<{ path: string, sessions: number, whatsappClicks: number, signUps: number, contactSessions: number }>,
+  conversionEvents?: Array<{ date: string, type: string, name: string, stage: 'confirmada' | 'intencao', path: string, conversions: number, sessions: number }>,
   contactDetails?: Array<{ date: string, type: string, path: string, contacts: number }>,
   clickDetails?: Array<{ date: string, path: string, label: string, buttonId?: string, destination?: string, intent?: string, isContactLead?: number, clicks: number, sessions: number }>,
   filterPages?: Array<{ path: string }>,
