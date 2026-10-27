@@ -2023,7 +2023,7 @@ function useAnalytics() {
         return;
       }
       const source = supabase ? await supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id) : null;
-      const ga4Connected = source?.data?.some(item => item.kind === 'ga4' && item.status === 'connected') || false;
+      const ga4Connected = currentSite.analytics_source === 'ga4' && (source?.data?.some(item => item.kind === 'ga4' && item.status === 'connected') || false);
       const query = new URLSearchParams({ start: filter.start, end: filter.end, group: filter.group });
       if (filter.page) query.set('page', filter.page);
       if (filter.source) query.set('source', filter.source);
@@ -3798,6 +3798,24 @@ function SourceHeader({
 }
 
 function DataSources({ setPage }: { setPage: (page: Page) => void }) {
+  const { currentSite, refreshBusinesses } = useBusiness();
+  const [ga4Connected, setGa4Connected] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    if (!supabase || !currentSite) return;
+    void supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id).then(({ data }) => {
+      setGa4Connected(Boolean(data?.some(item => item.kind === 'ga4' && item.status === 'connected')));
+    });
+  }, [currentSite?.id]);
+  const chooseSource = async (source: 'tracker' | 'ga4') => {
+    if (!supabase || !currentSite || (source === 'ga4' && !ga4Connected)) return;
+    setUpdating(true); setMessage('');
+    const { error } = await supabase.from('sites').update({ analytics_source: source }).eq('id', currentSite.id);
+    if (error) setMessage(error.message);
+    else { await refreshBusinesses(); setMessage(`Os painéis agora usam ${source === 'ga4' ? 'Google Analytics 4' : 'Rastreador Analizi'}.`); }
+    setUpdating(false);
+  };
   return (
     <>
       <SourceHeader
@@ -3808,6 +3826,18 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
         subtitle="Escolha de onde o Analizi vai receber os eventos e métricas do seu site."
         setPage={setPage}
       />
+      <section className="source-note" style={{ marginBottom: 20 }}>
+        <ShieldCheck size={21}/>
+        <div>
+          <b>Fonte usada nos painéis</b>
+          <p>Escolha qual fonte deve alimentar os números do site selecionado. O rastreador pode continuar instalado para heatmap e cliques, mesmo com GA4 selecionado.</p>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
+            <Button variant={currentSite?.analytics_source !== 'ga4' ? 'primary' : 'secondary'} disabled={updating} onClick={() => void chooseSource('tracker')}>Usar Rastreador Analizi</Button>
+            <Button variant={currentSite?.analytics_source === 'ga4' ? 'primary' : 'secondary'} disabled={updating || !ga4Connected} onClick={() => void chooseSource('ga4')}>Usar Google Analytics 4{!ga4Connected ? ' (conecte primeiro)' : ''}</Button>
+          </div>
+          {message && <p style={{ marginTop: 10, color: message.includes('agora usam') ? '#087f5b' : '#b42318' }}>{message}</p>}
+        </div>
+      </section>
       <section className="source-options">
         <article className="source-config-card">
           <div className="source-card-heading">
@@ -3839,7 +3869,7 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
             <li><Check size={16}/>Importa histórico disponível de sessões e acessos</li>
             <li><Check size={16}/>Leitura segura, sem alterar sua conta Google</li>
           </ul>
-          <Button variant="secondary" onClick={() => setPage('ga4-setup')}>Configurar Google Analytics <ArrowRight size={17}/></Button>
+          <Button variant="secondary" onClick={() => setPage('ga4-setup')}>{ga4Connected ? 'Gerenciar Google Analytics' : 'Configurar Google Analytics'} <ArrowRight size={17}/></Button>
         </article>
       </section>
       <article className="source-note">
