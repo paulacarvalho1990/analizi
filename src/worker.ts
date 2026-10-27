@@ -15,6 +15,11 @@ interface Env {
   ANALIZI_EVENTS: D1Database
   ASSETS: AssetFetcher
   DEEPINFRA_API_KEY?: string
+  SUPABASE_URL?: string
+  SUPABASE_ANON_KEY?: string
+  GOOGLE_OAUTH_CLIENT_ID?: string
+  GOOGLE_OAUTH_CLIENT_SECRET?: string
+  GA4_TOKEN_ENCRYPTION_KEY?: string
 }
 
 const ALLOWED_EVENTS = new Set([
@@ -1777,6 +1782,168 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
   }
 }
 
+type Ga4Property = { id: string, name: string, accountName: string }
+type AuthenticatedUser = { id: string, token: string }
+
+function ga4Configured(env: Env) {
+  return Boolean(env.SUPABASE_URL && env.SUPABASE_ANON_KEY && env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GA4_TOKEN_ENCRYPTION_KEY)
+}
+
+async function authenticatedUser(request: Request, env: Env): Promise<AuthenticatedUser | null> {
+  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
+  if (!token || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+  const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${token}` } })
+  if (!response.ok) return null
+  const user = await response.json() as { id?: string }
+  return user.id ? { id: user.id, token } : null
+}
+
+async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env): Promise<{ id: string, tracker_site_id: string } | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?id=eq.${encodeURIComponent(siteId)}&select=id,tracker_site_id`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${user.token}` } })
+  if (!response.ok) return null
+  const rows = await response.json() as Array<{ id: string, tracker_site_id: string }>
+  return rows[0] || null
+}
+
+function b64encode(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)) }
+function b64decode(value: string) { return Uint8Array.from(atob(value), char => char.charCodeAt(0)) }
+
+async function tokenKey(env: Env) {
+  if (!env.GA4_TOKEN_ENCRYPTION_KEY) throw new Error('Criptografia GA4 não configurada.')
+  const raw = b64decode(env.GA4_TOKEN_ENCRYPTION_KEY)
+  if (raw.byteLength !== 32) throw new Error('A chave de criptografia GA4 deve ter 32 bytes em Base64.')
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt'])
+}
+
+async function encryptToken(token: string, env: Env) {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await tokenKey(env), new TextEncoder().encode(token))
+  return { ciphertext: b64encode(new Uint8Array(encrypted)), iv: b64encode(iv) }
+}
+
+async function decryptToken(ciphertext: string, iv: string, env: Env) {
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64decode(iv) }, await tokenKey(env), b64decode(ciphertext))
+  return new TextDecoder().decode(plain)
+}
+
+async function googleJson(url: string, accessToken: string) {
+  const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } })
+  if (!response.ok) throw new Error(`Google Analytics respondeu ${response.status}.`)
+  return response.json() as Promise<Record<string, unknown>>
+}
+
+async function listGa4Properties(accessToken: string): Promise<Ga4Property[]> {
+  const properties: Ga4Property[] = []
+  let pageToken = ''
+  do {
+    const url = new URL('https://analyticsadmin.googleapis.com/v1beta/accountSummaries')
+    url.searchParams.set('pageSize', '200')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+    const data = await googleJson(url.toString(), accessToken) as { accountSummaries?: Array<{ displayName?: string, propertySummaries?: Array<{ property?: string, displayName?: string }> }>, nextPageToken?: string }
+    for (const account of data.accountSummaries || []) for (const property of account.propertySummaries || []) {
+      const id = property.property?.replace('properties/', '') || ''
+      if (id) properties.push({ id, name: property.displayName || `Propriedade ${id}`, accountName: account.displayName || 'Google Analytics' })
+    }
+    pageToken = data.nextPageToken || ''
+  } while (pageToken)
+  return properties
+}
+
+async function ga4Properties(request: Request, env: Env) {
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const body = await request.json().catch(() => ({})) as { accessToken?: string }
+  if (!body.accessToken) return json({ error: 'A autorização do Google expirou. Autorize novamente.' }, 400)
+  try { return json({ properties: await listGa4Properties(body.accessToken) }) }
+  catch (error) { return json({ error: error instanceof Error ? error.message : 'Não foi possível listar propriedades.' }, 502) }
+}
+
+async function ga4Connect(request: Request, env: Env) {
+  if (!ga4Configured(env)) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const body = await request.json().catch(() => ({})) as { siteId?: string, propertyId?: string, refreshToken?: string, googleUserId?: string }
+  const propertyId = compactText(body.propertyId, 32)
+  const site = await ownedSite(compactText(body.siteId, 64), user, env)
+  if (!site || !/^\d+$/.test(propertyId)) return json({ error: 'Site ou propriedade inválidos.' }, 400)
+  if (!body.refreshToken) return json({ error: 'O Google não forneceu um token de renovação. Autorize novamente.' }, 400)
+  try {
+    const encrypted = await encryptToken(body.refreshToken, env)
+    await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare(`
+      insert into ga4_connections (supabase_site_id, tracker_site_id, property_id, google_user_id, refresh_token_ciphertext, refresh_token_iv)
+      values (?, ?, ?, ?, ?, ?)
+      on conflict(supabase_site_id) do update set property_id = excluded.property_id, google_user_id = excluded.google_user_id,
+        refresh_token_ciphertext = excluded.refresh_token_ciphertext, refresh_token_iv = excluded.refresh_token_iv,
+        connected_at = current_timestamp, last_error = null
+    `).bind(site.id, site.tracker_site_id, propertyId, compactText(body.googleUserId, 128) || null, encrypted.ciphertext, encrypted.iv)])
+    return json({ connected: true, propertyId })
+  } catch (error) { return json({ error: error instanceof Error ? error.message : 'Não foi possível salvar a conexão.' }, 500) }
+}
+
+async function ga4Disconnect(request: Request, env: Env) {
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const body = await request.json().catch(() => ({})) as { siteId?: string }
+  const site = await ownedSite(compactText(body.siteId, 64), user, env)
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('delete from ga4_connections where supabase_site_id = ?').bind(site.id)])
+  return json({ disconnected: true })
+}
+
+async function ga4AccessToken(connection: { refresh_token_ciphertext: string, refresh_token_iv: string }, env: Env) {
+  const refreshToken = await decryptToken(connection.refresh_token_ciphertext, connection.refresh_token_iv, env)
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: env.GOOGLE_OAUTH_CLIENT_ID!, client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET!, refresh_token: refreshToken, grant_type: 'refresh_token' })
+  })
+  if (!response.ok) throw new Error('A autorização do Google expirou. Reconecte o GA4.')
+  const body = await response.json() as { access_token?: string }
+  if (!body.access_token) throw new Error('O Google não devolveu um token de acesso.')
+  return body.access_token
+}
+
+async function ga4Report(propertyId: string, accessToken: string, start: string, end: string, dimensions: string[], metrics: string[]) {
+  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
+    method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ dateRanges: [{ startDate: start, endDate: end }], dimensions: dimensions.map(name => ({ name })), metrics: metrics.map(name => ({ name })), limit: 10000 })
+  })
+  if (!response.ok) throw new Error(`Não foi possível consultar os dados GA4 (${response.status}).`)
+  const payload = await response.json() as { rows?: Array<{ dimensionValues?: Array<{ value?: string }>, metricValues?: Array<{ value?: string }> }> }
+  return (payload.rows || []).map(row => ({ dimensions: (row.dimensionValues || []).map(value => value.value || ''), metrics: (row.metricValues || []).map(value => Number(value.value || 0)) }))
+}
+
+async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) {
+  if (!ga4Configured(env)) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const site = await ownedSite(compactText(query.get('siteId'), 64), user, env)
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  const result = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select property_id, refresh_token_ciphertext, refresh_token_iv from ga4_connections where supabase_site_id = ?').bind(site.id)]) as Array<{ results?: Array<{ property_id: string, refresh_token_ciphertext: string, refresh_token_iv: string }> }>
+  const connection = result[0]?.results?.[0]
+  if (!connection) return json({ error: 'Nenhuma propriedade GA4 está conectada a este site.' }, 404)
+  const today = isoDate(new Date())
+  const end = validDate(query.get('end')) && query.get('end')! < today ? query.get('end')! : shiftDate(today, -1)
+  const start = validDate(query.get('start')) && query.get('start')! <= end ? query.get('start')! : shiftDate(end, -6)
+  try {
+    const accessToken = await ga4AccessToken(connection, env)
+    const metricNames = ['screenPageViews', 'activeUsers', 'newUsers', 'sessions', 'keyEvents', 'averageSessionDuration']
+    const [daily, sources, pages, devices, locations] = await Promise.all([
+      ga4Report(connection.property_id, accessToken, start, end, ['date'], metricNames),
+      ga4Report(connection.property_id, accessToken, start, end, ['sessionSource', 'sessionMedium', 'sessionCampaignName'], metricNames.slice(0, 5)),
+      ga4Report(connection.property_id, accessToken, start, end, ['unifiedScreenClass'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration']),
+      ga4Report(connection.property_id, accessToken, start, end, ['deviceCategory', 'browser'], metricNames.slice(0, 5)),
+      ga4Report(connection.property_id, accessToken, start, end, ['country', 'region', 'city'], metricNames.slice(0, 5))
+    ])
+    const dailyRows = daily.map(row => ({ date: `${row.dimensions[0].slice(0, 4)}-${row.dimensions[0].slice(4, 6)}-${row.dimensions[0].slice(6, 8)}`, pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], contacts: row.metrics[4], attentionSeconds: row.metrics[5] }))
+    const totals = dailyRows.reduce((sum, row) => ({ pageViews: sum.pageViews + row.pageViews, users: sum.users + row.users, newUsers: sum.newUsers + row.newUsers, sessions: sum.sessions + row.sessions, contacts: sum.contacts + row.contacts, contactSessions: sum.contactSessions + row.contacts, attentionSeconds: sum.attentionSeconds + row.attentionSeconds * row.sessions }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
+    totals.attentionSeconds = totals.sessions ? Math.round(totals.attentionSeconds / totals.sessions) : 0
+    const sourceRows = sources.map(row => ({ source: row.dimensions[0] || 'Direto', medium: row.dimensions[1] || 'direto', campaign: row.dimensions[2] || '', page: '', device: '', browser: '', pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], conversions: row.metrics[4], generalClicks: 0, contactClicks: row.metrics[4], whatsappClicks: 0, signUps: 0, logins: 0 }))
+    const sourceTotals = Array.from(sourceRows.reduce((map, row) => map.set(row.source, (map.get(row.source) || 0) + row.sessions), new Map<string, number>())).map(([name, value]) => ({ name, value }))
+    return json({ totals, daily: dailyRows, sources: sourceTotals, pages: pages.map(row => ({ path: row.dimensions[0] || '/', views: row.metrics[0], title: row.dimensions[0] || '/', attentionSeconds: Math.round(row.metrics[3]), exitRate: 0 })), sourceMediumResults: sourceRows, devices: devices.map(row => ({ device: row.dimensions[0] || 'desktop', browser: row.dimensions[1] || 'Outro', views: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], conversions: row.metrics[4] })), locations: locations.map(row => ({ country: row.dimensions[0], region: row.dimensions[1], city: row.dimensions[2], views: row.metrics[0], users: row.metrics[1], sessions: row.metrics[3], conversions: row.metrics[4] })), filterPages: pages.map(row => ({ path: row.dimensions[0] || '/' })), filterSources: sourceRows.map(row => ({ source: row.source })), filterMediums: sourceRows.map(row => ({ medium: row.medium })), filterCampaigns: sourceRows.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.dimensions[0] || 'desktop' })), filterBrowsers: devices.map(row => ({ browser: row.dimensions[1] || 'Outro' })), periodDays: dailyRows.length, sourceKind: 'ga4' })
+  } catch (error) { return json({ error: error instanceof Error ? error.message : 'Não foi possível consultar o GA4.' }, 502) }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
@@ -1792,6 +1959,10 @@ export default {
       return new Response(assetRes.body, { status: assetRes.status, headers })
     }
     if (url.pathname === '/v1/tracker-sites') return provisionTrackerSite(request, env)
+    if (url.pathname === '/v1/ga4/properties' && request.method === 'POST') return ga4Properties(request, env)
+    if (url.pathname === '/v1/ga4/connect' && request.method === 'POST') return ga4Connect(request, env)
+    if (url.pathname === '/v1/ga4/disconnect' && request.method === 'POST') return ga4Disconnect(request, env)
+    if (url.pathname === '/v1/ga4/analytics' && request.method === 'GET') return ga4Analytics(request, env, url.searchParams)
     const statusMatch = url.pathname.match(/^\/v1\/tracker-sites\/(ANLZ[A-Z0-9]{5}-A)\/status$/i)
     if (statusMatch) return trackerStatus(statusMatch[1], env)
     const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)

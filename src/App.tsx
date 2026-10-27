@@ -2022,7 +2022,8 @@ function useAnalytics() {
         setData(null);
         return;
       }
-      const source = supabase ? await supabase.from('data_sources').select('kind').eq('site_id', currentSite.id).limit(1) : null;
+      const source = supabase ? await supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id) : null;
+      const ga4Connected = source?.data?.some(item => item.kind === 'ga4' && item.status === 'connected') || false;
       const query = new URLSearchParams({ start: filter.start, end: filter.end, group: filter.group });
       if (filter.page) query.set('page', filter.page);
       if (filter.source) query.set('source', filter.source);
@@ -2031,10 +2032,16 @@ function useAnalytics() {
       if (filter.device) query.set('device', filter.device);
       if (filter.browser) query.set('browser', filter.browser);
       try {
-        const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/analytics/${currentSite.tracker_site_id}?${query}`);
+        if (ga4Connected) query.set('siteId', currentSite.id);
+        const { data: { session } } = supabase ? await supabase.auth.getSession() : { data: { session: null } };
+        const response = await fetch(ga4Connected
+          ? `https://analizi.carvalhopaula1990.workers.dev/v1/ga4/analytics?${query}`
+          : `https://analizi.carvalhopaula1990.workers.dev/v1/analytics/${currentSite.tracker_site_id}?${query}`, {
+          headers: ga4Connected && session?.access_token ? { authorization: `Bearer ${session.access_token}` } : undefined
+        });
         if (response.ok) {
           const payload = await response.json() as AnalyticsData;
-          setData({ ...payload, sourceKind: source?.data?.[0]?.kind });
+          setData({ ...payload, sourceKind: ga4Connected ? 'ga4' : source?.data?.[0]?.kind });
           if (supabase && currentSite.id && payload?.totals && (Number(payload.totals.pageViews || 0) > 0 || Number(payload.totals.users || 0) > 0)) {
             void supabase.from('data_sources').update({
               status: 'connected',
@@ -3844,6 +3851,81 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
   );
 }
 function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
+  const { currentSite } = useBusiness();
+  const [properties, setProperties] = useState<Array<{ id: string, name: string, accountName: string }>>([]);
+  const [selectedProperty, setSelectedProperty] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const providerToken = () => sessionStorage.getItem('analizi-ga4-provider-token') || '';
+  const providerRefreshToken = () => sessionStorage.getItem('analizi-ga4-provider-refresh-token') || '';
+
+  const authorizationHeaders = async () => {
+    const { data: { session } } = await supabase!.auth.getSession();
+    if (!session?.access_token) throw new Error('Sua sessão expirou. Entre novamente.');
+    return { 'content-type': 'application/json', authorization: `Bearer ${session.access_token}` };
+  };
+
+  const loadProperties = async () => {
+    const accessToken = providerToken();
+    if (!accessToken || !supabase) return;
+    setLoading(true); setMessage('');
+    try {
+      const response = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/ga4/properties', {
+        method: 'POST', headers: await authorizationHeaders(), body: JSON.stringify({ accessToken })
+      });
+      const payload = await response.json() as { properties?: Array<{ id: string, name: string, accountName: string }>, error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível listar suas propriedades.');
+      setProperties(payload.properties || []);
+      if (payload.properties?.length === 1) setSelectedProperty(payload.properties[0].id);
+      if (!payload.properties?.length) setMessage('Nenhuma propriedade GA4 disponível nesta conta Google.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível listar suas propriedades.'); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { void loadProperties(); }, []);
+
+  const authorize = async () => {
+    if (!supabase) return;
+    setLoading(true); setMessage('');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/configuracoes/google-analytics`,
+        scopes: 'https://www.googleapis.com/auth/analytics.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent' }
+      }
+    });
+    if (error) { setMessage('Não foi possível abrir a autorização do Google.'); setLoading(false); }
+  };
+
+  const connect = async () => {
+    if (!currentSite || !selectedProperty || !supabase) return;
+    const refreshToken = providerRefreshToken();
+    if (!refreshToken) { setMessage('Autorize novamente para conceder acesso contínuo ao GA4.'); return; }
+    setLoading(true); setMessage('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/ga4/connect', {
+        method: 'POST', headers: await authorizationHeaders(), body: JSON.stringify({
+          siteId: currentSite.id, propertyId: selectedProperty, refreshToken, googleUserId: session?.user.id
+        })
+      });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || 'Não foi possível concluir a conexão.');
+      const property = properties.find(item => item.id === selectedProperty);
+      const { error } = await supabase.from('data_sources').upsert({
+        site_id: currentSite.id, kind: 'ga4', status: 'connected', ga4_property_id: selectedProperty,
+        ga4_property_name: property?.name || null, ga4_connected_google_email: session?.user.email || null,
+        connected_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), last_error: null
+      }, { onConflict: 'site_id,kind' });
+      if (error) throw new Error(error.message);
+      sessionStorage.removeItem('analizi-ga4-provider-token');
+      sessionStorage.removeItem('analizi-ga4-provider-refresh-token');
+      setMessage('Google Analytics conectado com sucesso. A sincronização inicial será iniciada em seguida.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível concluir a conexão.'); }
+    finally { setLoading(false); }
+  };
+
   return (
     <>
       <SourceHeader
@@ -3856,7 +3938,7 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
       />
       <section className="setup-layout">
         <article className="setup-card">
-          <div className="step-label">PASSO 1 DE 3</div>
+          <div className="step-label">{properties.length ? 'PASSO 2 DE 3' : 'PASSO 1 DE 3'}</div>
           <span className="source-icon ga large">G</span>
           <h2>Conecte sua conta Google</h2>
           <p>Você será levado ao Google para autorizar o Analizi a <b>somente visualizar</b> os dados do Analytics.</p>
@@ -3864,8 +3946,21 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
             <ShieldCheck size={19}/>
             <span>Não teremos acesso para editar sua conta, criar campanhas ou fazer alterações.</span>
           </div>
-          <Button className="full" onClick={() => {}}>Conectar conta Google <ExternalLink size={16}/></Button>
-          <p className="setup-help">Esta é uma demonstração: a autorização real será ativada na Fase 2.</p>
+          {!properties.length ? (
+            <Button className="full" onClick={() => void authorize()} disabled={loading}>Conectar conta Google <ExternalLink size={16}/></Button>
+          ) : (
+            <>
+              <label style={{ display: 'grid', gap: 7, marginTop: 18, textAlign: 'left', fontSize: 13, fontWeight: 700 }}>
+                Escolha a propriedade
+                <select value={selectedProperty} onChange={event => setSelectedProperty(event.target.value)} style={{ padding: 11, borderRadius: 8, border: '1px solid #d5dfdb' }}>
+                  <option value="">Selecione uma propriedade</option>
+                  {properties.map(property => <option key={property.id} value={property.id}>{property.name} — {property.accountName}</option>)}
+                </select>
+              </label>
+              <Button className="full" onClick={() => void connect()} disabled={loading || !selectedProperty} style={{ marginTop: 16 }}>Conectar propriedade</Button>
+            </>
+          )}
+          {message && <p className="setup-help" style={{ color: message.includes('sucesso') ? '#087f5b' : undefined }}>{message}</p>}
         </article>
         <aside className="setup-sidebar">
           <span className="eyebrow">O QUE VEM DEPOIS</span>
@@ -4120,6 +4215,10 @@ export function App() {
     void routeAuthenticatedUser();
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, newSession) => {
       if (newSession) {
+        // Os tokens do provedor só existem neste retorno após o redirect OAuth.
+        // Mantemos-os apenas até a conexão GA4 ser finalizada nesta aba.
+        if (newSession.provider_token) sessionStorage.setItem('analizi-ga4-provider-token', newSession.provider_token);
+        if (newSession.provider_refresh_token) sessionStorage.setItem('analizi-ga4-provider-refresh-token', newSession.provider_refresh_token);
         void routeAuthenticatedUser();
       } else {
         setMode(window.location.pathname === '/entrar' ? 'login' : 'landing');
