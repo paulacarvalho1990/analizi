@@ -2308,7 +2308,9 @@ function ConnectionStatus() {
           return;
         }
 
-        let hasEvents = item.status === 'connected' || Boolean(item.last_synced_at);
+        // A fonte estar conectada apenas confirma a configuração. Dados só existem
+        // depois de uma sincronização ou de um evento recebido pelo tracker.
+        let hasEvents = Boolean(item.last_synced_at);
         let lastEventAt: string | null = item.last_synced_at || null;
 
         if (currentSite.tracker_site_id) {
