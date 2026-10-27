@@ -55,7 +55,7 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
         <button className="brand" aria-label="Ir para o início" onClick={() => navigate('dashboard')}>
           <BrandLogo inverse />
         </button>
-        <WorkspaceSelector onNavigateSettings={() => navigate('team')} />
+        <WorkspaceSelector onNavigateSettings={() => navigate('data-sources')} />
         <nav>
           {nav.map(({ id, label, icon: Icon, badge }) => (
             <button key={id} onClick={() => navigate(id)} className={page === id ? 'nav-item active' : 'nav-item'}>
@@ -93,7 +93,7 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
         </button>
       </header>
       <main className="main-content">{children}</main>
-      <NewSiteModal onSiteCreated={() => navigate('tracker-setup')} />
+      <NewSiteModal onSiteCreated={() => navigate('data-sources')} />
       <nav className="mobile-nav" aria-label="Menu de navegação mobile">
         {nav.map(({ id, shortLabel, label, icon: Icon, badge }) => (
           <button

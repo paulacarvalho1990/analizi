@@ -234,7 +234,7 @@ export function NewSiteModal({ onSiteCreated }: { onSiteCreated?: () => void }) 
               </Button>
               <Button type="submit" disabled={loading}>
                 <Plus size={17} />
-                {loading ? 'Criando site...' : 'Criar site e ver código'}
+                {loading ? 'Criando site...' : 'Criar site e configurar dados'}
               </Button>
             </div>
           </form>
