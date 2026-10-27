@@ -1602,7 +1602,10 @@ function Results() {
       <article className="table-card compact-table conversion-events-table" style={{ marginTop: '24px' }}>
         <div className="section-heading">
           <div>
-            <h3>Conversões e intenções</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Target size={17} style={{ color: '#10b981' }} />
+              <h3 style={{ margin: 0 }}>Conversões e intenções</h3>
+            </div>
             <p>Envios confirmados de formulário e ações comerciais iniciadas</p>
           </div>
         </div>
