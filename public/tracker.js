@@ -290,7 +290,7 @@
         eventName,
         engagementTimeMs: elapsed,
         loadTimeMs: loadTime,
-        isConversion: eventName === 'sign_up' || eventName === 'whatsapp_contact',
+        isConversion: eventName === 'sign_up' || eventName === 'whatsapp_contact' || eventName === 'form_submit' || eventName === 'purchase' || eventName === 'subscription',
         metadata,
         ...context(options.pagePath, options.pageTitle),
       }]
@@ -683,6 +683,9 @@
     const isEmail = /^mailto:/i.test(href)
     const isSignup = /\b(cadastre-se|inscreva-se|criar\s*(minha\s*)?conta|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?)\b/i.test(label)
     const isLogin = /\b(entrar|acessar\s*(minha\s*)?conta|fazer\s*login|login)\b/i.test(label)
+    const isCheckout = /\b(finalizar\s*(a\s*)?(compra|pedido)|concluir\s*(a\s*)?(compra|pedido)|ir\s*(para\s*)?(o\s*)?(checkout|pagamento)|comprar\s*agora|checkout)\b/i.test(label)
+    const isPayment = /\b(pagar|pagamento|pague\s*agora|gerar\s*(pix|boleto)|ir\s*para\s*pagamento)\b/i.test(label)
+    const isSubscription = /\b(assinar|assine|iniciar\s*assinatura|ativar\s*(o\s*)?plano|escolher\s*(o\s*)?plano|fazer\s*upgrade)\b/i.test(label)
     const hasLeadIntent = /\b(fale\s*(com|conosco)|entre\s*em\s*contato|contato|whats(?:app)?|agend[ea]|marc[ae]\s*(uma\s*)?(consulta|reuni[aã]o)|solicite|pedir|pe[cç]a\s*(um\s*)?or[cç]amento|or[cç]amento|quero\s*(saber|agendar|falar|receber)|ligue|telefone|enviar\s*(mensagem|formul[aá]rio)|tirar\s*d[uú]vidas|falar\s*com\s*(um\s*)?(especialista|consultor)|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?|cadastre-se|inscreva-se)\b/i.test(label)
     const isContactLead = isWhatsapp || isPhone || isEmail || hasLeadIntent
     const isMedia = target.tagName === 'IMG' || target.tagName === 'VIDEO'
@@ -702,8 +705,8 @@
       } catch {}
     }
 
-    const eventName = isWhatsapp ? 'whatsapp_contact' : isSignup ? 'sign_up' : isLogin ? 'login' : isFileDownload ? 'file_download' : isOutbound ? 'outbound_click' : isMedia ? 'media_click' : 'button_click'
-    const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : isSignup ? 'cadastro' : isLogin ? 'login' : isFileDownload ? 'download' : isOutbound ? 'link_externo' : hasLeadIntent ? 'contato' : 'geral'
+    const eventName = isWhatsapp ? 'whatsapp_contact' : isCheckout ? 'checkout_start' : isPayment ? 'payment_start' : isSubscription ? 'subscription_start' : isSignup ? 'sign_up' : isLogin ? 'login' : isFileDownload ? 'file_download' : isOutbound ? 'outbound_click' : isMedia ? 'media_click' : 'button_click'
+    const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : isCheckout ? 'checkout' : isPayment ? 'pagamento' : isSubscription ? 'assinatura' : isSignup ? 'cadastro' : isLogin ? 'login' : isFileDownload ? 'download' : isOutbound ? 'link_externo' : hasLeadIntent ? 'contato' : 'geral'
 
     // Coordenadas para o Heatmap
     const clickX = event.clientX
@@ -719,6 +722,8 @@
       destination: cleanUrl(href),
       contact_intent: intent,
       is_contact_lead: isContactLead ? 1 : 0,
+      conversion_type: isCheckout ? 'checkout' : isPayment ? 'pagamento' : isSubscription ? 'assinatura' : isFileDownload ? 'download' : '',
+      conversion_stage: isCheckout || isPayment || isSubscription || isFileDownload ? 'intencao' : '',
       click_x_pct: clickXPct,
       click_y_px: Math.round(clickY),
       target_tag: targetTag,
@@ -748,8 +753,24 @@
     }
   }, { capture: true })
 
+  const formConversionType = (form) => {
+    const text = `${form?.id || ''} ${form?.getAttribute('name') || ''} ${form?.getAttribute('aria-label') || ''} ${form?.textContent || ''}`.toLowerCase()
+    if (/agend|consulta|reserva|hor[aá]rio/.test(text)) return 'agendamento'
+    if (/or[cç]amento|proposta|cota[cç][aã]o/.test(text)) return 'orcamento'
+    if (/newsletter|novidades|receber\s*e-?mail/.test(text)) return 'newsletter'
+    if (/cadastro|inscri[cç][aã]o|matr[ií]cula/.test(text)) return 'cadastro'
+    return 'contato'
+  }
+
   document.addEventListener('submit', (e) => {
+    const form = e.target instanceof HTMLFormElement ? e.target : e.target?.closest?.('form')
     formSubmitted = true
+    send('form_submit', {
+      form_id: truncate(form?.id || '', 120),
+      form_name: truncate(form?.getAttribute?.('name') || form?.getAttribute?.('aria-label') || '', 160),
+      conversion_type: formConversionType(form),
+      conversion_stage: 'confirmada'
+    })
   }, { capture: true })
 
   const checkFormAbandon = () => {
