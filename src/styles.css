@@ -4162,6 +4162,48 @@ body { background:var(--background); color:var(--foreground); }
   border-color: #ff3cac !important;
 }
 
+/* Tabela de conversões: campos textuais recebem espaço próprio e não comprimem números. */
+.conversion-events-table { overflow-x: auto; }
+.conversion-event-head,
+.conversion-event-row {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 76px minmax(130px, .9fr) minmax(220px, 2fr) minmax(85px, .8fr) 96px 56px;
+  min-width: 760px;
+  padding: 11px 0;
+}
+.conversion-event-head {
+  border-bottom: 1px solid #edf2f0;
+  color: #7a9089;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.conversion-event-row {
+  border-bottom: 1px solid #edf2f0;
+  color: #365b52;
+  font-size: 12px;
+}
+.conversion-event-head span:last-child,
+.conversion-event-row span:last-child { text-align: right; }
+.conversion-event-row span:nth-child(3) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversion-event-row .path-code {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+[data-theme="dark"] .conversion-event-head { border-color: var(--border); color: var(--muted-foreground); }
+[data-theme="dark"] .conversion-event-row { border-color: var(--border); color: var(--foreground); }
+[data-theme="dark"] .conversion-event-row .path-code { background: rgba(255,255,255,.08); color: #cbd5e1; }
+
 
 
 

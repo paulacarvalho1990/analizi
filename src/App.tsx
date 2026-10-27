@@ -1599,14 +1599,14 @@ function Results() {
         </article>
       </div>
 
-      <article className="table-card compact-table" style={{ marginTop: '24px' }}>
+      <article className="table-card compact-table conversion-events-table" style={{ marginTop: '24px' }}>
         <div className="section-heading">
           <div>
             <h3>Conversões e intenções</h3>
             <p>Envios confirmados de formulário e ações comerciais iniciadas</p>
           </div>
         </div>
-        <div className="conversion-detail-head">
+        <div className="conversion-event-head">
           <span>Data</span>
           <span>Tipo</span>
           <span>Nome</span>
@@ -1615,7 +1615,7 @@ function Results() {
           <span>Total</span>
         </div>
         {visibleConversionEvents.map((item, index) => (
-          <div className="conversion-detail-row" key={`${item.date}-${item.type}-${item.name}-${item.path}-${index}`}>
+          <div className="conversion-event-row" key={`${item.date}-${item.type}-${item.name}-${item.path}-${index}`}>
             <span>{item.date.slice(5).split('-').reverse().join('/')}</span>
             <span><b>{conversionTypeLabel(item.type)}</b></span>
             <span>{item.name || '—'}</span>
