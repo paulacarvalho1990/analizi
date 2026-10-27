@@ -110,7 +110,7 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
       const segmentDetail = isOther ? otherSubsegment.trim() : null
       const { error: profileError } = await supabase!.from('profiles').update({ full_name: userName.trim(), email: user.email ?? null, phone: phone.trim() || null }).eq('id', user.id)
       if (profileError) throw new Error(profileError.message)
-      const { error: businessError } = await supabase!.from('businesses').insert({ id: businessId, name: businessName.trim(), slug: `${slugify(businessName)}-${Math.random().toString(36).slice(2, 7)}`, website_url: normalized.url, segment, subsegment, segment_detail: segmentDetail })
+      const { error: businessError } = await supabase!.from('businesses').insert({ id: businessId, owner_id: user.id, name: businessName.trim(), slug: `${slugify(businessName)}-${Math.random().toString(36).slice(2, 7)}`, website_url: normalized.url, segment, subsegment, segment_detail: segmentDetail })
       if (businessError) throw new Error(businessError.message)
       const { error: memberError } = await supabase!.from('business_members').update({ creator_role: creatorRole }).eq('business_id', businessId).eq('user_id', user.id)
       if (memberError) throw new Error(memberError.message)

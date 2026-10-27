@@ -531,6 +531,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
       .from('businesses')
       .insert({
         id: businessId,
+        owner_id: user.id,
         name: siteName,
         slug,
         website_url: normalized.url,
