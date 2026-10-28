@@ -1397,7 +1397,9 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
         pages: pages as Array<{ path: string; views: number | string; attentionSeconds?: number; exitRate?: number }>
       }
 
-      const scope = determineTemporalScope(7, totals, previousTotals)
+      // O produto entrega um único fechamento por semana: não promovemos o
+      // escopo para mensal/anual por causa de uma oscilação pontual.
+      const scope: 'semanal' = 'semanal'
       let insights: AIInsight[] | null = null
       if (env.DEEPINFRA_API_KEY) {
         insights = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, {}, metrics, scope)
