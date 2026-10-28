@@ -9,7 +9,7 @@
     "not_found_handling": "single-page-application"
   },
   "triggers": {
-    "crons": ["0 3 * * *"]
+    "crons": ["0 3 * * *", "15 3 * * 1"]
   },
   "d1_databases": [
     {
@@ -23,7 +23,7 @@
     "staging": {
       "name": "analizi",
       "triggers": {
-        "crons": ["0 3 * * *"]
+        "crons": ["0 3 * * *", "15 3 * * 1"]
       },
       "d1_databases": [
         {
@@ -36,7 +36,7 @@
     },
     "preview": {
       "triggers": {
-        "crons": ["0 3 * * *"]
+        "crons": ["0 3 * * *", "15 3 * * 1"]
       },
       "d1_databases": [
         {

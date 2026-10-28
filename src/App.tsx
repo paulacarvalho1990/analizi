@@ -1717,13 +1717,13 @@ interface GeneratedInsight {
 function Insights() {
   const analytics = useAnalytics();
   const { currentBusiness, currentSite } = useBusiness();
-  const date = new Intl.DateTimeFormat('pt-BR').format(new Date());
-
   const [insights, setInsights] = useState<GeneratedInsight[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
   const [modelLabel, setModelLabel] = useState<string>('IZI INTELLIGENCE');
   const [scopeLabel, setScopeLabel] = useState<string>('semanal');
   const [cachedNotice, setCachedNotice] = useState<boolean>(false);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [awaitingWeeklyReport, setAwaitingWeeklyReport] = useState(false);
 
   const [readKeys, setReadKeys] = useState<string[]>(() => {
     try {
@@ -1774,12 +1774,18 @@ function Insights() {
           model?: string;
           scope?: string;
           cached?: boolean;
+          generatedAt?: string;
         };
         if (data.insights && data.insights.length > 0) {
           setInsights(data.insights);
           if (data.model) setModelLabel(data.model);
           if (data.scope) setScopeLabel(data.scope);
           setCachedNotice(Boolean(data.cached));
+          setGeneratedAt(data.generatedAt || null);
+          setAwaitingWeeklyReport(false);
+        } else if (res.status === 202) {
+          setInsights([]);
+          setAwaitingWeeklyReport(true);
         }
       }
     } catch (err) {
@@ -1795,40 +1801,10 @@ function Insights() {
     }
   }, [currentSite?.id, analytics]);
 
-  const defaultInsights: GeneratedInsight[] = [
-    {
-      key: 'opp-precos',
-      type: 'commercial',
-      title: 'Página de Preços tem alto tráfego com pouca ação de WhatsApp',
-      status: 'neutral',
-      badge: 'Oportunidade Comercial',
-      finding: `A página ${analytics?.pages?.[1]?.path || '/precos'} concentrou acessos relevantes com tempo médio de atenção acima da média, mas a taxa de cliques comerciais ainda pode dobrar.`,
-      action: 'Adicione um botão flutuante ou chamada clara para tirar dúvidas no WhatsApp no meio e no final da página.',
-      projection: 'Aumento estimado de 20% a 35% no volume de leads qualificados semanais.'
-    },
-    {
-      key: 'warn-speed',
-      type: 'performance',
-      title: 'Velocidade de carregamento em mobile reduziu retenção de visitantes',
-      status: 'warning',
-      badge: 'Alerta de Performance',
-      finding: 'O tempo médio de abertura em smartphones está acima de 1.4s, elevando a taxa de saída imediata nos primeiros 5 segundos.',
-      action: 'Otimize o tamanho das imagens principais para WebP e reduza scripts pesados na primeira dobra.',
-      projection: 'Queda de até 15% na taxa de rejeição e melhora na pontuação Core Web Vitals.'
-    },
-    {
-      key: 'succ-ads',
-      type: 'conversion',
-      title: 'Criativo de Anúncio Pago tem conversão 2.5x superior à média',
-      status: 'positive',
-      badge: 'Otimização de Campanhas',
-      finding: 'O tráfego de campanhas pagas com termos específicos gerou maior taxa de conversão em leads comerciais.',
-      action: 'Realocar 30% do orçamento de campanhas estáticas para os criativos e públicos com maior engajamento comprovado.',
-      projection: 'Redução do Custo por Aquisição (CPA) em até 22% mantendo o volume de contatos.'
-    }
-  ];
-
-  const activeInsights = insights.length > 0 ? insights : defaultInsights;
+  const activeInsights = insights;
+  const reportDate = generatedAt
+    ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long' }).format(new Date(generatedAt))
+    : null;
 
   return (
     <>
@@ -1859,6 +1835,15 @@ function Insights() {
         </section>
       ) : (
         <section className="insights-modern-grid">
+          {awaitingWeeklyReport && !activeInsights.length && (
+            <article className="empty-tip" style={{ gridColumn: '1 / -1' }}>
+              <Sparkles size={22} />
+              <div>
+                <b>Seu próximo diagnóstico será preparado na segunda-feira.</b>
+                <p>Os insights são fechados semanalmente para comparar períodos completos, sem alterar a análise cada vez que a tela é aberta.</p>
+              </div>
+            </article>
+          )}
           {activeInsights.map((item) => {
             const read = readKeys.includes(item.key || item.title);
             const isPos = item.status === 'positive';
@@ -1883,7 +1868,7 @@ function Insights() {
                 <div className="insight-content-system">
                   <div className="insight-meta-row">
                     <span className={`insight-badge-pill ${badgeType}`}>{item.badge}</span>
-                    <span className="insight-date-stamp">Avaliado em {date}</span>
+                    <span className="insight-date-stamp">{reportDate ? `Atualizado em ${reportDate}` : 'Atualização semanal: segunda-feira'}</span>
                   </div>
 
                   <h3>{item.title}</h3>

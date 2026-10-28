@@ -996,8 +996,6 @@ function buildRuleBasedFallback(
   },
   scope: 'semanal' | 'mensal' | 'anual'
 ): AIInsight[] {
-  const bSeg = business?.segment || 'Serviços'
-  const bSub = business?.subsegment || ''
   const period = metrics?.periodDays || 7
 
   const t = metrics?.totals || {}
@@ -1006,13 +1004,19 @@ function buildRuleBasedFallback(
   const prevViews = Number(p.pageViews || 0)
   const users = Number(t.users || 0)
   const contacts = Number(t.contacts || 0)
-  const whatsapp = Number(t.whatsappContacts || 0)
   const attention = Number(t.attentionSeconds || 0)
 
   const topSource = metrics?.sources?.[0]?.name || 'direto'
   const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
   const topPage = metrics?.pages?.[0]?.path || '/'
   const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
+  const riskiestPage = [...(metrics?.pages || [])]
+    .filter((page) => Number(page.views || 0) > 0 && page.exitRate != null)
+    .sort((a, b) => Number(b.exitRate || 0) - Number(a.exitRate || 0))[0]
+  const conversionRate = users > 0 ? (contacts / users) * 100 : 0
+  const previousUsers = Number(p.users || 0)
+  const previousContacts = Number(p.contacts || 0)
+  const previousConversionRate = previousUsers > 0 ? (previousContacts / previousUsers) * 100 : 0
 
   const list: AIInsight[] = []
   const growth = prevViews > 0 ? Math.round(((views - prevViews) / prevViews) * 100) : null
@@ -1022,84 +1026,110 @@ function buildRuleBasedFallback(
     list.push({
       key: 'traffic_growth',
       type: 'traffic_growth',
-      title: 'Público em trajetória de alta',
+      title: 'Tráfego cresce com sinal concreto',
       status: 'positive',
       badge: `Tendência ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
       finding: `Foram registradas ${views} visualizações ${scopeLabel}, crescendo ${growth}% sobre o ciclo anterior.`,
-      action: 'Mantenha a frequência das ações que geraram esse fluxo e confirme se os links de contato estão fáceis de achar.',
-      projection: `Mantendo a consistência, a projeção é alcançar mais de ${Math.round(views * 1.2)} acessos no próximo ciclo.`
+      action: `Identifique a campanha ou publicação que trouxe ${topSource} (${topSourceVal} acessos) e replique o formato uma vez nesta semana, levando para ${topPage}.`,
+      projection: `Se o ritmo se mantiver, o próximo ciclo tende a ficar entre ${Math.round(views * 1.05)} e ${Math.round(views * 1.15)} visualizações; acompanhe se os contatos crescem junto.`
     })
   } else if (growth !== null && growth < 0) {
     list.push({
       key: 'traffic_drop',
       type: 'traffic_drop',
-      title: 'Atenção ao recuo de visitas',
+      title: 'Queda de tráfego pede reação',
       status: 'warning',
       badge: `Alerta ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
       finding: `Houve uma redução de ${Math.abs(growth)}% nas visualizações ${scopeLabel} (total de ${views} visitas).`,
-      action: 'Envie um comunicado, novidade ou oferta via WhatsApp ou redes sociais para trazer clientes antigos de volta ao site.',
-      projection: 'Ações de reativação nessa semana evitam queda nos contatos para o próximo mês.'
+      action: `Publique uma ação de reativação no canal ${topSource} com link direto para ${topPage}; use um link identificado para confirmar se a ação recuperou as visitas.`,
+      projection: `Recuperar metade da queda adicionaria cerca de ${Math.round(Math.abs(views - prevViews) / 2)} visualizações no próximo ciclo.`
     })
   } else {
     list.push({
       key: 'traffic_growth',
       type: 'traffic_growth',
-      title: 'Dados consolidados com sucesso',
+      title: 'Base de comparação ainda curta',
       status: 'positive',
       badge: `Consolidado ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
       finding: `Seu site contabilizou ${views} visualizações de ${users} pessoas únicas no período analisado.`,
-      action: 'Continue divulgando seu domínio em todos os pontos de contato para acelerar a formação de histórico estatístico.',
-      projection: 'Com mais dados acumulados, as projeções ficarão ainda mais personalizadas para seu nicho.'
+      action: 'Divulgue um único link de campanha e mantenha a mesma página de destino nesta semana; isso cria uma referência confiável para a próxima comparação.',
+      projection: 'Com dois ciclos completos, será possível separar uma oscilação normal de uma tendência real de aquisição.'
     })
   }
 
-  if (contacts > 0 || whatsapp > 0) {
+  if (users === 0) {
     list.push({
       key: 'lead_conversion',
       type: 'lead_conversion',
-      title: 'Geração ativa de oportunidades',
-      status: 'positive',
-      badge: 'Contatos & Vendas',
-      finding: `O site gerou ${contacts} oportunidades no ciclo, das quais ${whatsapp} buscaram contato direto pelo WhatsApp.`,
-      action: 'Mantenha o tempo de resposta rápido e anote a principal dúvida dos clientes para responder já no site.',
-      projection: 'Responder em menos de 10 minutos chega a triplicar a conversão de interessados em clientes pagantes.'
+      title: 'Conversão ainda não pode ser medida',
+      status: 'neutral',
+      badge: 'Dados insuficientes',
+      finding: 'Ainda não há usuários suficientes no período para avaliar se o site transforma visitas em contatos.',
+      action: 'Confira se o rastreador e os botões de WhatsApp/formulário foram testados em uma navegação real.',
+      projection: 'Após uma semana de tráfego registrado, o diagnóstico mostrará a taxa de contato e a página que mais contribui para ela.'
     })
-  } else if (views > 20) {
+  } else if (conversionRate === 0) {
     list.push({
       key: 'lead_conversion',
       type: 'lead_conversion',
-      title: 'Visitantes navegam sem chamar',
+      title: 'Tráfego não vira conversa',
       status: 'warning',
       badge: 'Foco em Conversão',
-      finding: `O site somou ${views} visualizações, mas não registrou cliques de contato ou início de conversa.`,
-      action: 'Insira uma chamada clara com botão de WhatsApp convidando para tirar dúvidas ou solicitar orçamento.',
-      projection: `No segmento de ${bSub || bSeg}, sites com botão flutuante convertem de 3% a 7% dos visitantes.`
+      finding: `${users} pessoas visitaram o site e nenhuma iniciou contato. O gargalo está entre a navegação e a proposta de próximo passo, não necessariamente na aquisição.`,
+      action: `Na página ${topPage}, coloque um único CTA visível na primeira tela com benefício claro (por exemplo, “Pedir orçamento” ou “Falar com especialista”) e valide o clique no rastreador.`,
+      projection: `A primeira meta é sair de 0 para ${Math.max(1, Math.ceil(users * 0.01))} contato${Math.max(1, Math.ceil(users * 0.01)) > 1 ? 's' : ''} no próximo ciclo; só então compare versões do CTA.`
+    })
+  } else {
+    const rateChange = previousConversionRate > 0 ? Math.round(((conversionRate - previousConversionRate) / previousConversionRate) * 100) : null
+    list.push({
+      key: 'lead_conversion',
+      type: 'lead_conversion',
+      title: 'Conversão precisa de escala',
+      status: conversionRate >= previousConversionRate ? 'positive' : 'warning',
+      badge: 'Prioridade comercial',
+      finding: `${contacts} contato${contacts !== 1 ? 's' : ''} para ${users} usuários representam ${conversionRate.toFixed(1).replace('.', ',')}% de conversão${rateChange !== null ? ` (${rateChange >= 0 ? '+' : ''}${rateChange}% vs. ciclo anterior)` : ''}.`,
+      action: `Revise a página ${topPage}: deixe a oferta, uma prova de confiança e o CTA no mesmo trecho visível antes de pedir qualquer informação ao visitante.`,
+      projection: `Elevar a taxa em 1 ponto percentual no volume atual adicionaria aproximadamente ${Math.max(1, Math.round(users / 100))} contato${Math.max(1, Math.round(users / 100)) > 1 ? 's' : ''} por ciclo.`
     })
   }
 
-  if (topSource && topSourceVal > 0) {
-    const share = views > 0 ? Math.round((topSourceVal / views) * 100) : 0
+  {
+    const hasSourceData = topSourceVal > 0 && views > 0
+    const share = hasSourceData ? Math.round((topSourceVal / views) * 100) : 0
     list.push({
       key: 'top_channel',
       type: 'top_channel',
-      title: `Principal fonte: ${topSource}`,
+      title: hasSourceData ? `Dependência de ${topSource}` : 'Origem do tráfego sem leitura',
       status: 'neutral',
-      badge: 'Canal de Destaque',
-      finding: `O canal "${topSource}" originou ${share}% de todas as visitas do ciclo analisado.`,
-      action: 'Dobre a atenção nas publicações desse canal e teste links com identificação para medir quais postagens trazem mais retorno.',
-      projection: 'Estruturar um canal complementar reduz a dependência de uma única rede social.'
+      badge: hasSourceData ? 'Canal de destaque' : 'Dados insuficientes',
+      finding: hasSourceData
+        ? `O canal "${topSource}" trouxe ${topSourceVal} acessos (${share}% do tráfego). ${share >= 60 ? 'Essa concentração é um risco: uma queda no canal afeta diretamente a demanda.' : 'A distribuição ainda permite testar um segundo canal sem depender de um único ponto de entrada.'}`
+        : 'O volume atual não permite identificar de onde as visitas vieram com confiança.',
+      action: hasSourceData
+        ? (share >= 60 ? `Mantenha ${topSource} como canal principal, mas publique uma versão do mesmo conteúdo em um canal complementar com link para ${topPage}.` : `Compare os dois principais canais usando links identificados e aumente a frequência apenas no que leva visitantes até ${topPage}.`)
+        : `Divulgue ${topPage} usando um link identificado em um único canal nesta semana para registrar a origem das próximas visitas.`,
+      projection: hasSourceData
+        ? (share >= 60 ? 'Se um segundo canal chegar a 20% do tráfego, a operação fica menos vulnerável a oscilações do canal principal.' : 'A próxima leitura mostrará qual canal sustenta mais tráfego qualificado, não apenas visitas.')
+        : 'Na próxima segunda, o relatório poderá atribuir o tráfego ao canal testado e orientar onde concentrar o esforço.'
     })
   }
 
+  const exitRate = Number(riskiestPage?.exitRate || 0)
   list.push({
     key: 'opportunity',
     type: 'opportunity',
-    title: `Oportunidade para ${bSub || bSeg}`,
-    status: 'neutral',
-    badge: 'Diagnóstico Estratégico',
-    finding: `A página mais visitada foi "${topPage}" (${topPageViews} acessos, média de ${attention}s de retenção).`,
-    action: `Garanta que o que você faz e a forma de entrar em contato apareçam na primeira tela da página "${topPage}".`,
-    projection: 'Ajustes no início da página diminuem saídas precoces e aumentam o número de orçamentos.'
+    title: riskiestPage ? `Saída alta em ${riskiestPage.path}` : `Prioridade na página ${topPage}`,
+    status: riskiestPage && exitRate >= 50 ? 'warning' : 'neutral',
+    badge: 'Experiência da página',
+    finding: riskiestPage
+      ? `A página "${riskiestPage.path}" perde ${exitRate.toFixed(1).replace('.', ',')}% das visitas (${Number(riskiestPage.views || 0)} visualizações). ${Number(riskiestPage.attentionSeconds || 0) < attention ? 'Ela também segura menos atenção que a média do site.' : 'O conteúdo prende atenção, mas não conduz o visitante ao próximo passo.'}`
+      : `A página "${topPage}" concentrou ${topPageViews} visualizações e média de ${attention}s de atenção; ainda não há taxa de saída suficiente para diagnosticar o ponto de abandono.`,
+    action: riskiestPage
+      ? `Revise os primeiros blocos de "${riskiestPage.path}": deixe claro o benefício, retire distrações e adicione um CTA relacionado ao serviço antes de metade da página.`
+      : `Use "${topPage}" como página prioritária: mostre o principal benefício, para quem é e um CTA de contato antes de o visitante rolar a tela.`,
+    projection: riskiestPage
+      ? 'Na próxima segunda, compare a taxa de saída desta página; uma queda de 10 pontos mostrará que a mudança reduziu abandono de forma concreta.'
+      : 'Quando houver mais sessões por página, o relatório apontará o trecho com maior risco de abandono para priorizar a próxima correção.'
   })
 
   return list
@@ -1157,10 +1187,17 @@ DADOS DO CLIENTE E NEGÓCIO:
 
 TAREFA OBRIGATÓRIA:
 Gere exatamente 4 insights pré-definidos padronizados em JSON, adaptados ao escopo ${scope}:
-1. "traffic_growth" ou "traffic_drop": análise de crescimento ou queda com diagnóstico estatístico e amigável.
-2. "lead_conversion": foco em conversões, contatos ou WhatsApp.
-3. "top_channel": análise de onde vem o público e estratégia de atração.
-4. "opportunity": recomendação direcionada ao tipo de negócio "${bSub || bSeg}" e à página mais visitada.
+1. "traffic_growth" ou "traffic_drop": explique a causa mais provável usando a variação e o principal canal; não trate correlação como certeza.
+2. "lead_conversion": calcule a taxa contatos/usuários, identifique o gargalo entre aquisição e CTA e indique uma mudança específica na página prioritária.
+3. "top_channel": informe a concentração percentual do principal canal e se ela representa risco; proponha um teste mensurável de aquisição.
+4. "opportunity": diagnostique retenção/saída da página mais relevante e dê uma correção concreta para o conteúdo ou CTA acima da dobra.
+
+REGRAS DE QUALIDADE:
+- Não use conselhos genéricos como "melhore o site", "continue divulgando" ou "mantenha a frequência" sem dizer onde, o que testar e qual métrica acompanhar.
+- Não invente benchmarks, dados de mercado, taxas ou causalidades que não estejam nos dados fornecidos.
+- Cada finding deve citar pelo menos um número real do contexto; se a base for insuficiente, diga isso explicitamente.
+- Cada action deve ser uma única ação executável em até 48 horas, com página/canal/elemento específico.
+- Cada projection deve ser condicional e mensurável: diga qual métrica deve mudar na próxima leitura e em que direção.
 
 Responda ESTRITAMENTE um objeto JSON no formato:
 {
@@ -1294,65 +1331,25 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
     }
   }
 
-  // 2. Determina escopo temporal (semanal, mensal ou anual) a partir do histórico e tendências
-  const scope = determineTemporalScope(
-    metrics?.periodDays || 7,
-    metrics?.totals || {},
-    metrics?.previousTotals || {}
-  )
-
-  // 3. Executa a análise com DeepInfra ou fallback
-  let generated: AIInsight[] | null = null
-  if (env.DEEPINFRA_API_KEY) {
-    generated = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, business || {}, metrics || {}, scope)
-  }
-
-  const finalInsights = generated || buildRuleBasedFallback(business || {}, metrics || {}, scope)
-  const nowIso = new Date().toISOString()
-
-  // 4. Salva no D1 na tabela site_insights congelando para a semana atual
-  if (safeSiteId) {
-    try {
-      const insightId = `ins_${safeSiteId}_${currentWeek}`
-      await env.ANALIZI_EVENTS.batch([
-        env.ANALIZI_EVENTS.prepare(`
-          insert into site_insights (id, tracker_site_id, week_cycle, temporal_scope, insights_json, model, metadata_json, created_at)
-          values (?, ?, ?, ?, ?, 'IZI INTELLIGENCE', ?, ?)
-          on conflict(tracker_site_id, week_cycle) do update set
-            temporal_scope = excluded.temporal_scope,
-            insights_json = excluded.insights_json,
-            model = excluded.model,
-            metadata_json = excluded.metadata_json,
-            created_at = excluded.created_at
-        `).bind(
-          insightId,
-          safeSiteId,
-          currentWeek,
-          scope,
-          JSON.stringify(finalInsights),
-          JSON.stringify({ businessSegment: business?.segment, subsegment: business?.subsegment }),
-          nowIso
-        )
-      ])
-    } catch (saveErr) {
-      console.error('Falha ao persistir insights no D1:', saveErr)
-    }
-  }
-
+  // Insights são produzidos apenas pelo cron semanal. A leitura da tela nunca
+  // gera ou substitui uma análise, evitando relatórios diferentes no mesmo ciclo.
   return json({
-    insights: finalInsights,
+    insights: [],
     model: 'IZI INTELLIGENCE',
-    scope,
+    scope: 'semanal',
     weekCycle: currentWeek,
     cached: false,
-    generatedAt: nowIso
-  })
+    nextUpdate: 'segunda-feira'
+  }, 202)
 }
 
 async function runScheduledWeeklyInsights(env: Env): Promise<void> {
   const currentWeek = getWeekCycle()
   const today = isoDate(new Date())
-  const start7 = shiftDate(today, -6)
+  // O relatório de segunda usa a última semana fechada (segunda a domingo),
+  // preservando dados consolidados e evitando analisar um dia ainda em curso.
+  const end7 = shiftDate(today, -1)
+  const start7 = shiftDate(end7, -6)
   const prevStart7 = shiftDate(start7, -7)
 
   // Busca todos os sites ativos no D1
@@ -1374,17 +1371,17 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
 
       const stats = (await env.ANALIZI_EVENTS.batch([
         env.ANALIZI_EVENTS.prepare(
-          `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts, sum(event_name='whatsapp_contact') whatsappContacts, coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct visitor_id), 0)), 0) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ?`
-        ).bind(sId, start7, today),
+          `select coalesce(sum(users), 0) users, coalesce(sum(page_views), 0) pageViews, coalesce(sum(whatsapp_contacts + sign_ups + form_submits), 0) contacts, coalesce(sum(whatsapp_contacts), 0) whatsappContacts, coalesce(round(sum(average_engagement_seconds * coalesce(nullif(users, 0), sessions)) / nullif(sum(coalesce(nullif(users, 0), sessions)), 0)), 0) attentionSeconds from daily_metrics where tracker_site_id=? and metric_date >= ? and metric_date <= ?`
+        ).bind(sId, start7, end7),
         env.ANALIZI_EVENTS.prepare(
-          `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?`
+          `select coalesce(sum(users), 0) users, coalesce(sum(page_views), 0) pageViews, coalesce(sum(whatsapp_contacts + sign_ups + form_submits), 0) contacts from daily_metrics where tracker_site_id=? and metric_date >= ? and metric_date < ?`
         ).bind(sId, prevStart7, start7),
         env.ANALIZI_EVENTS.prepare(
-          `select coalesce(source,'direto') name, count(*) value from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(source,'direto') order by value desc limit 1`
-        ).bind(sId, start7, today),
+          `select coalesce(nullif(source, ''), 'direto') name, sum(page_views) value from daily_sources where tracker_site_id=? and metric_date >= ? and metric_date <= ? group by coalesce(nullif(source, ''), 'direto') order by value desc limit 1`
+        ).bind(sId, start7, end7),
         env.ANALIZI_EVENTS.prepare(
-          `select coalesce(page_path,'/') path, sum(event_name='page_view') views, coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct visitor_id), 0)), 0) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(page_path,'/') order by views desc limit 1`
-        ).bind(sId, start7, today)
+          `select coalesce(page_path,'/') path, sum(page_views) views, round(sum(average_engagement_seconds * coalesce(nullif(users, 0), page_views)) / nullif(sum(coalesce(nullif(users, 0), page_views)), 0)) attentionSeconds, round(sum(exit_rate * page_views) / nullif(sum(page_views), 0), 1) exitRate from daily_pages where tracker_site_id=? and metric_date >= ? and metric_date <= ? group by coalesce(page_path,'/') order by views desc limit 10`
+        ).bind(sId, start7, end7)
       ])) as Array<{ results?: Array<Record<string, unknown>> }>
 
       const totals = stats[0]?.results?.[0] || {}
@@ -1397,7 +1394,7 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
         totals,
         previousTotals,
         sources: sources as Array<{ name: string; value: number | string }>,
-        pages: pages as Array<{ path: string; views: number | string; attentionSeconds?: number }>
+        pages: pages as Array<{ path: string; views: number | string; attentionSeconds?: number; exitRate?: number }>
       }
 
       const scope = determineTemporalScope(7, totals, previousTotals)
@@ -1972,10 +1969,9 @@ export default {
     if (url.pathname === '/v1/ai-insights') return generateAIInsights(request, env)
     return env.ASSETS.fetch(request)
   },
-  async scheduled(_event: unknown, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
-    ctx.waitUntil(Promise.all([
-      runDailyConsolidationAndCleanup(env),
-      runScheduledWeeklyInsights(env)
-    ]))
+  async scheduled(event: { cron?: string }, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
+    const jobs: Promise<void>[] = [runDailyConsolidationAndCleanup(env)]
+    if (event.cron === '15 3 * * 1') jobs.push(runScheduledWeeklyInsights(env))
+    ctx.waitUntil(Promise.all(jobs))
   },
 }
