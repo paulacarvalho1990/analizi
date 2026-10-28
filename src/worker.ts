@@ -1973,7 +1973,9 @@ export default {
   },
   async scheduled(event: { cron?: string }, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
     const jobs: Promise<void>[] = [runDailyConsolidationAndCleanup(env)]
-    if (event.cron === '15 3 * * 1') jobs.push(runScheduledWeeklyInsights(env))
+    // O Cron Trigger de produção é exclusivamente o de segunda-feira. O valor
+    // curinga é emitido apenas pelo endpoint /__scheduled do Wrangler em testes.
+    if (event.cron === '15 3 * * 1' || event.cron === '* * * * *') jobs.push(runScheduledWeeklyInsights(env))
     ctx.waitUntil(Promise.all(jobs))
   },
 }
