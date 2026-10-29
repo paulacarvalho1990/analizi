@@ -2294,9 +2294,13 @@ function ConnectionStatus() {
         // Sites criados antes da tabela de fontes existir podem não ter ainda
         // um registro em data_sources, embora já tenham um rastreador válido.
         // Nesse caso, o status do tracker é a fonte de verdade.
-        const trackerConfigured = Boolean(currentSite.tracker_site_id) && currentSite.analytics_source !== 'ga4';
+        const trackerConfigured = Boolean(currentSite.tracker_site_id);
         if (!item && !trackerConfigured) {
-          if (isMounted) setState('none');
+          // O site já foi selecionado, mas sua fonte ainda pode estar sendo
+          // provisionada ou o registro pode estar incompleto. Não apresente
+          // isso como “sem conexão”, que orienta o usuário para uma ação
+          // incorreta e bloqueia a leitura do estado real do onboarding.
+          if (isMounted) setState('pending');
           return;
         }
 
