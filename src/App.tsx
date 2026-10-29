@@ -3912,8 +3912,24 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
   const [selectedProperty, setSelectedProperty] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [sessionRestored, setSessionRestored] = useState(false);
+  const [workspaceSite, setWorkspaceSite] = useState<SiteItem | null>(null);
   const providerToken = () => sessionStorage.getItem('analizi-ga4-provider-token') || '';
   const providerRefreshToken = () => sessionStorage.getItem('analizi-ga4-provider-refresh-token') || '';
+
+  useEffect(() => {
+    const restoreWorkspaceSession = async () => {
+      const siteSnapshot = sessionStorage.getItem('analizi-ga4-workspace-site');
+      if (siteSnapshot) {
+        try { setWorkspaceSite(JSON.parse(siteSnapshot) as SiteItem); } catch { sessionStorage.removeItem('analizi-ga4-workspace-site'); }
+      }
+      const accessToken = sessionStorage.getItem('analizi-ga4-workspace-access-token');
+      const refreshToken = sessionStorage.getItem('analizi-ga4-workspace-refresh-token');
+      if (supabase && accessToken && refreshToken) await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+      setSessionRestored(true);
+    };
+    void restoreWorkspaceSession();
+  }, []);
 
   const authorizationHeaders = async () => {
     const { data: { session } } = await supabase!.auth.getSession();
@@ -3938,11 +3954,16 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { void loadProperties(); }, []);
+  useEffect(() => { if (sessionRestored) void loadProperties(); }, [sessionRestored]);
 
   const authorize = async () => {
     if (!supabase) return;
     setLoading(true); setMessage('');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session || !currentSite) { setMessage('Sua sessão ou site atual expirou. Recarregue o painel.'); setLoading(false); return; }
+    sessionStorage.setItem('analizi-ga4-workspace-access-token', session.access_token);
+    sessionStorage.setItem('analizi-ga4-workspace-refresh-token', session.refresh_token);
+    sessionStorage.setItem('analizi-ga4-workspace-site', JSON.stringify(currentSite));
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -3955,7 +3976,8 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
   };
 
   const connect = async () => {
-    if (!currentSite || !selectedProperty || !supabase) return;
+    const selectedSite = workspaceSite || currentSite;
+    if (!selectedSite || !selectedProperty || !supabase) return;
     const refreshToken = providerRefreshToken();
     if (!refreshToken) { setMessage('Autorize novamente para conceder acesso contínuo ao GA4.'); return; }
     setLoading(true); setMessage('');
@@ -3963,20 +3985,23 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/ga4/connect', {
         method: 'POST', headers: await authorizationHeaders(), body: JSON.stringify({
-          siteId: currentSite.id, trackerSiteId: currentSite.tracker_site_id, businessId: currentSite.business_id, propertyId: selectedProperty, refreshToken, googleUserId: session?.user.id
+          siteId: selectedSite.id, trackerSiteId: selectedSite.tracker_site_id, businessId: selectedSite.business_id, propertyId: selectedProperty, refreshToken, googleUserId: session?.user.id
         })
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || 'Não foi possível concluir a conexão.');
       const property = properties.find(item => item.id === selectedProperty);
       const { error } = await supabase.from('data_sources').upsert({
-        site_id: currentSite.id, kind: 'ga4', status: 'connected', ga4_property_id: selectedProperty,
+        site_id: selectedSite.id, kind: 'ga4', status: 'connected', ga4_property_id: selectedProperty,
         ga4_property_name: property?.name || null, ga4_connected_google_email: session?.user.email || null,
         connected_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), last_error: null
       }, { onConflict: 'site_id,kind' });
       if (error) throw new Error(error.message);
       sessionStorage.removeItem('analizi-ga4-provider-token');
       sessionStorage.removeItem('analizi-ga4-provider-refresh-token');
+      sessionStorage.removeItem('analizi-ga4-workspace-access-token');
+      sessionStorage.removeItem('analizi-ga4-workspace-refresh-token');
+      sessionStorage.removeItem('analizi-ga4-workspace-site');
       setMessage('Google Analytics conectado com sucesso. A sincronização inicial será iniciada em seguida.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível concluir a conexão.'); }
     finally { setLoading(false); }
@@ -3989,7 +4014,7 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
     catch { return ''; }
   };
   const propertyHost = normalizedHost(selectedPropertyInfo?.websiteUrl);
-  const currentHost = normalizedHost(currentSite?.domain);
+  const currentHost = normalizedHost((workspaceSite || currentSite)?.domain);
   const propertyMismatch = Boolean(propertyHost && currentHost && propertyHost !== currentHost);
 
   return (
