@@ -1823,22 +1823,21 @@ function Insights() {
 
   return (
     <>
-      <div className="insights-header-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <PageHeader
-            title="Insights"
-            subtitle={`Diagnósticos inteligentes consolidados para o seu site (${scopeLabel}).`}
-          />
-          <span className="badge-ia" style={{ marginTop: -18 }}>
-            <Sparkles size={13} /> IA
-          </span>
-        </div>
-        <div className="insights-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="source-badge">
-            <span className="source-badge-dot"></span>
-            RASTREADOR ANALIZI ATIVO
-          </span>
-        </div>
+      <PageHeader
+        title="Insights"
+        subtitle={`Diagnósticos inteligentes consolidados para o seu site (${scopeLabel}).`}
+        eyebrow="INTELIGÊNCIA ARTIFICIAL"
+        icon={Sparkles}
+        iconColor="#ff3cac"
+      />
+      <div className="insights-context-row">
+        <span className="badge-ia">
+          <Sparkles size={13} /> IA
+        </span>
+        <span className="source-badge">
+          <span className="source-badge-dot"></span>
+          RASTREADOR ANALIZI ATIVO
+        </span>
       </div>
 
       <AnalyticsFilters analytics={analytics} />

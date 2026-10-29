@@ -139,6 +139,13 @@ body { background:var(--background); color:var(--foreground); }
   align-items: center;
   gap: 10px;
 }
+.insights-context-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -8px 0 18px;
+}
 
 /* Badge IZI INTELLIGENCE: degrade do kit de branding */
 .insights-model-badge {
