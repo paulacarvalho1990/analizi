@@ -3996,8 +3996,8 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
         <article className="setup-card">
           <div className="step-label">{properties.length ? 'PASSO 2 DE 3' : 'PASSO 1 DE 3'}</div>
           <span className="source-icon ga large">G</span>
-          <h2>Conecte sua conta Google</h2>
-          <p>Você será levado ao Google para autorizar o Analizi a <b>somente visualizar</b> os dados do Analytics.</p>
+          <h2>{properties.length ? 'Escolha sua propriedade GA4' : 'Conecte sua conta Google'}</h2>
+          <p>{properties.length ? 'Selecione qual propriedade deve fornecer os dados para este site.' : <>Você será levado ao Google para autorizar o Analizi a <b>somente visualizar</b> os dados do Analytics.</>}</p>
           <div className="permission-box">
             <ShieldCheck size={19}/>
             <span>Não teremos acesso para editar sua conta, criar campanhas ou fazer alterações.</span>
@@ -4021,8 +4021,8 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
         <aside className="setup-sidebar">
           <span className="eyebrow">O QUE VEM DEPOIS</span>
           <ol>
-            <li className="current"><i>1</i><span><b>Conectar sua conta</b><small>Autorize a leitura dos dados</small></span></li>
-            <li><i>2</i><span><b>Escolher a propriedade</b><small>Encontre o seu site na lista</small></span></li>
+            <li className={!properties.length ? 'current' : ''}><i>1</i><span><b>Conectar sua conta</b><small>Autorize a leitura dos dados</small></span></li>
+            <li className={properties.length ? 'current' : ''}><i>2</i><span><b>Escolher a propriedade</b><small>Encontre o seu site na lista</small></span></li>
             <li><i>3</i><span><b>Validar conexão</b><small>Confirmaremos que está tudo certo</small></span></li>
           </ol>
         </aside>
