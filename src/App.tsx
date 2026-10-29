@@ -4245,21 +4245,21 @@ export function App() {
         const currentUser = session.user;
         if (!currentUser) { setMode(targetPublicPage); return; }
 
-        // Verifica consentimentos obrigatórios
-        const { data: consents, error: consentError } = await client
-          .from('user_consents')
-          .select('consent_key')
-          .eq('version', CONSENT_VERSION)
-          .in('consent_key', ['service_terms', 'site_data_processing']);
-
-        if (!consentError && (consents?.length ?? 0) < 2) { setMode('consent'); return; }
-
         // Verifica se possui negócio cadastrado
         const { data: businesses, error: bizError } = await client.from('businesses').select('id').limit(1);
         if (!bizError && businesses && businesses.length > 0) {
+          // Usuários já cadastrados não devem voltar ao consentimento a cada login.
           setMode('app');
         } else if (!bizError) {
-          setMode('onboarding-business');
+          // O aceite faz parte apenas do cadastro de um novo usuário.
+          const { data: consents, error: consentError } = await client
+            .from('user_consents')
+            .select('consent_key')
+            .eq('version', CONSENT_VERSION)
+            .in('consent_key', ['service_terms', 'site_data_processing']);
+
+          if (!consentError && (consents?.length ?? 0) < 2) setMode('consent');
+          else setMode('onboarding-business');
         } else {
           // Em caso de erro transitório de rede na consulta, mantém na app se já estava autenticado
           setMode('app');
