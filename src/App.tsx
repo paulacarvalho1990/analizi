@@ -1720,6 +1720,7 @@ interface GeneratedInsight {
 function formatInsightText(value: string) {
   return value
     .replace(/([“"'])\/([”"'])/g, '$1PÁGINA INICIAL$2')
+    .replace(/(^|[\s("'“”])\/(?=$|[\s,.;:!?'"“”])/g, '$1PÁGINA INICIAL')
     .replace(/página\s+\/(?=[\s,.;:!?]|$)/gi, 'PÁGINA INICIAL')
 }
 
