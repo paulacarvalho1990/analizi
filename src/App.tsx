@@ -3963,7 +3963,7 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/ga4/connect', {
         method: 'POST', headers: await authorizationHeaders(), body: JSON.stringify({
-          siteId: currentSite.id, trackerSiteId: currentSite.tracker_site_id, propertyId: selectedProperty, refreshToken, googleUserId: session?.user.id
+          siteId: currentSite.id, trackerSiteId: currentSite.tracker_site_id, businessId: currentSite.business_id, propertyId: selectedProperty, refreshToken, googleUserId: session?.user.id
         })
       });
       const payload = await response.json() as { error?: string };

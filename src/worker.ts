@@ -1866,7 +1866,7 @@ async function authenticatedUser(request: Request, env: Env): Promise<Authentica
   }
 }
 
-async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trackerSiteId = ''): Promise<{ id: string, tracker_site_id: string } | null> {
+async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trackerSiteId = '', businessId = ''): Promise<{ id: string, tracker_site_id: string } | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
   const apiKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY
   const requestHeaders = { apikey: apiKey, authorization: `Bearer ${apiKey}` }
@@ -1890,6 +1890,16 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
       if (verified.ok) {
         const verifiedRows = await verified.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
         if (verifiedRows[0] && await isMember(verifiedRows[0].business_id)) return { id: verifiedRows[0].id, tracker_site_id: verifiedRows[0].tracker_site_id }
+      }
+    }
+  }
+  if (businessId) {
+    const businessResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/businesses?id=eq.${encodeURIComponent(businessId)}&owner_id=eq.${encodeURIComponent(user.id)}&select=id&limit=1`, { headers: requestHeaders })
+    if (businessResponse.ok && (await businessResponse.json() as Array<{ id: string }>)[0]) {
+      const siteResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?business_id=eq.${encodeURIComponent(businessId)}&is_active=eq.true&select=id,tracker_site_id,business_id&order=created_at.asc&limit=1`, { headers: requestHeaders })
+      if (siteResponse.ok) {
+        const businessSites = await siteResponse.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
+        if (businessSites[0]) return { id: businessSites[0].id, tracker_site_id: businessSites[0].tracker_site_id }
       }
     }
   }
@@ -1953,11 +1963,11 @@ async function ga4Connect(request: Request, env: Env) {
   if (!ga4Configured(env)) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
   const user = await authenticatedUser(request, env)
   if (!user) return json({ error: 'Sessão inválida.' }, 401)
-  const body = await request.json().catch(() => ({})) as { siteId?: string, trackerSiteId?: string, propertyId?: string, refreshToken?: string, googleUserId?: string }
+  const body = await request.json().catch(() => ({})) as { siteId?: string, trackerSiteId?: string, businessId?: string, propertyId?: string, refreshToken?: string, googleUserId?: string }
   const propertyId = compactText(body.propertyId, 64).replace(/^properties\//i, '')
   const siteId = compactText(body.siteId, 64)
   if (!siteId) return json({ error: 'O site atual não foi informado. Recarregue a página e tente novamente.' }, 400)
-  const site = await ownedSite(siteId, user, env, compactText(body.trackerSiteId, 32))
+  const site = await ownedSite(siteId, user, env, compactText(body.trackerSiteId, 32), compactText(body.businessId, 64))
   if (!site) return json({ error: 'Não encontramos este site na sua conta. Recarregue o painel para atualizar o site selecionado.' }, 404)
   if (!/^\d+$/.test(propertyId)) return json({ error: 'O identificador da propriedade GA4 é inválido. Selecione uma propriedade da lista.' }, 400)
   if (!body.refreshToken) return json({ error: 'O Google não forneceu um token de renovação. Autorize novamente.' }, 400)
