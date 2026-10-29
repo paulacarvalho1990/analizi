@@ -17,6 +17,7 @@ interface Env {
   DEEPINFRA_API_KEY?: string
   SUPABASE_URL?: string
   SUPABASE_ANON_KEY?: string
+  SUPABASE_SERVICE_ROLE_KEY?: string
   GOOGLE_OAUTH_CLIENT_ID?: string
   GOOGLE_OAUTH_CLIENT_SECRET?: string
   GA4_TOKEN_ENCRYPTION_KEY?: string
@@ -1867,19 +1868,28 @@ async function authenticatedUser(request: Request, env: Env): Promise<Authentica
 
 async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trackerSiteId = ''): Promise<{ id: string, tracker_site_id: string } | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+  const apiKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY
+  const requestHeaders = { apikey: apiKey, authorization: `Bearer ${apiKey}` }
   const encodedSite = encodeURIComponent(siteId)
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})&select=id,tracker_site_id`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${user.token}` } })
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
   if (!response.ok) return null
-  const rows = await response.json() as Array<{ id: string, tracker_site_id: string }>
-  if (rows[0]) return rows[0]
+  const rows = await response.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
+  const isMember = async (businessId: string) => {
+    if (!env.SUPABASE_SERVICE_ROLE_KEY) return true
+    const memberResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/business_members?business_id=eq.${encodeURIComponent(businessId)}&user_id=eq.${encodeURIComponent(user.id)}&select=user_id&limit=1`, { headers: requestHeaders })
+    if (!memberResponse.ok) return false
+    const members = await memberResponse.json() as Array<{ user_id: string }>
+    return Boolean(members[0])
+  }
+  if (rows[0] && await isMember(rows[0].business_id)) return { id: rows[0].id, tracker_site_id: rows[0].tracker_site_id }
   if (trackerSiteId) {
     const fallback = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select supabase_site_id, tracker_site_id from tracker_sites where tracker_site_id = ? and is_active = 1').bind(trackerSiteId)]) as Array<{ results?: Array<{ supabase_site_id: string, tracker_site_id: string }> }>
     const provisioned = fallback[0]?.results?.[0]
     if (provisioned?.supabase_site_id) {
-      const verified = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?id=eq.${encodeURIComponent(provisioned.supabase_site_id)}&select=id,tracker_site_id`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${user.token}` } })
+      const verified = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?id=eq.${encodeURIComponent(provisioned.supabase_site_id)}&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
       if (verified.ok) {
-        const verifiedRows = await verified.json() as Array<{ id: string, tracker_site_id: string }>
-        if (verifiedRows[0]) return verifiedRows[0]
+        const verifiedRows = await verified.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
+        if (verifiedRows[0] && await isMember(verifiedRows[0].business_id)) return { id: verifiedRows[0].id, tracker_site_id: verifiedRows[0].tracker_site_id }
       }
     }
   }
