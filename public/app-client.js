@@ -257,7 +257,9 @@
       if (window.performance) {
         const navEntries = performance.getEntriesByType('navigation')
         if (navEntries && navEntries[0] && navEntries[0].duration > 0) {
-          return Math.round(navEntries[0].duration)
+          const navigation = navEntries[0]
+          const measuredEnd = navigation.loadEventEnd || navigation.domContentLoadedEventEnd || navigation.responseEnd || navigation.duration
+          if (measuredEnd > 0) return Math.round(measuredEnd - navigation.startTime)
         }
         if (performance.timing && performance.timing.loadEventEnd > 0) {
           return Math.max(0, performance.timing.loadEventEnd - performance.timing.navigationStart)
@@ -301,7 +303,19 @@
 
   if (isNewSession) send('session_start')
   if (isFirstVisit) send('first_visit')
-  send('page_view')
+  let initialPageViewSent = false
+  const sendInitialPageView = () => {
+    if (initialPageViewSent) return
+    initialPageViewSent = true
+    send('page_view', {}, { loadTime: getPageLoadTimeMs() })
+  }
+  if (document.readyState === 'complete') {
+    sendInitialPageView()
+  } else {
+    window.addEventListener('load', sendInitialPageView, { once: true })
+    // Evita perder a visualização em páginas que interrompem o evento load.
+    setTimeout(sendInitialPageView, 4000)
+  }
 
   // --- Heatmap Econômico: 1. Extração Estrutural de Layout (1 vez por sessão por página, no page_view e navegação SPA) ---
   const getLayoutSentKey = (path = location.pathname) => `analizi:${siteId}:layout:${sessionId}:${path}`

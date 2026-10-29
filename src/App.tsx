@@ -1213,7 +1213,10 @@ function Results() {
 
   const t = analytics?.totals;
   const p = analytics?.previousTotals;
-  const allClicks = analytics?.clickDetails ?? [];
+  const allClicks = (analytics?.clickDetails ?? []).filter(item => {
+    const label = String(item.label || '').trim().toLocaleLowerCase('pt-BR')
+    return !/^(?:fechar|feche|close|dismiss|×|x)$/.test(label)
+  });
   const leadClicks = allClicks.filter(item => isLeadClick(item));
   const generalClicks = allClicks.filter(item => !isLeadClick(item));
   const rawSmResults = analytics?.sourceMediumResults ?? [];
