@@ -1,0 +1,13 @@
+---
+description: Versionar toda atualização publicada do Analizi no rodapé e no Git
+alwaysApply: true
+---
+
+# Versionamento de releases
+
+- Toda atualização funcional, visual, de backend, migration ou deploy deve incrementar `APP_VERSION` em `src/lib/version.ts`.
+- A versão exibida no rodapé deve usar o formato `vMAJOR.MINOR.PATCH` e ser igual à tag Git da release.
+- Antes de publicar, validar o build e criar uma tag anotada com a mesma versão, por exemplo: `git tag -a v0.0.11 -m "release: v0.0.11"`.
+- Não reutilizar tags existentes nem publicar uma versão sem atualizar o rodapé.
+- Após criar a tag, enviar branch e tag ao GitHub quando houver autorização e credenciais disponíveis: `git push origin <branch> && git push origin <tag>`.
+- Se o push estiver bloqueado, informar explicitamente que a tag foi criada localmente e ainda precisa ser enviada ao GitHub.
