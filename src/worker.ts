@@ -1881,7 +1881,12 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
     const members = await memberResponse.json() as Array<{ user_id: string }>
     return Boolean(members[0])
   }
-  if (rows[0] && await isMember(rows[0].business_id)) return { id: rows[0].id, tracker_site_id: rows[0].tracker_site_id }
+  const canAccessBusiness = async (businessId: string) => {
+    if (await isMember(businessId)) return true
+    const ownerResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/businesses?id=eq.${encodeURIComponent(businessId)}&owner_id=eq.${encodeURIComponent(user.id)}&select=id&limit=1`, { headers: requestHeaders })
+    return ownerResponse.ok && Boolean((await ownerResponse.json() as Array<{ id: string }>)[0])
+  }
+  if (rows[0] && await canAccessBusiness(rows[0].business_id)) return { id: rows[0].id, tracker_site_id: rows[0].tracker_site_id }
   if (trackerSiteId) {
     const fallback = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select supabase_site_id, tracker_site_id from tracker_sites where tracker_site_id = ? and is_active = 1').bind(trackerSiteId)]) as Array<{ results?: Array<{ supabase_site_id: string, tracker_site_id: string }> }>
     const provisioned = fallback[0]?.results?.[0]
@@ -1889,13 +1894,12 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
       const verified = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?id=eq.${encodeURIComponent(provisioned.supabase_site_id)}&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
       if (verified.ok) {
         const verifiedRows = await verified.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
-        if (verifiedRows[0] && await isMember(verifiedRows[0].business_id)) return { id: verifiedRows[0].id, tracker_site_id: verifiedRows[0].tracker_site_id }
+        if (verifiedRows[0] && await canAccessBusiness(verifiedRows[0].business_id)) return { id: verifiedRows[0].id, tracker_site_id: verifiedRows[0].tracker_site_id }
       }
     }
   }
   if (businessId) {
-    const businessResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/businesses?id=eq.${encodeURIComponent(businessId)}&owner_id=eq.${encodeURIComponent(user.id)}&select=id&limit=1`, { headers: requestHeaders })
-    if (businessResponse.ok && (await businessResponse.json() as Array<{ id: string }>)[0]) {
+    if (await canAccessBusiness(businessId)) {
       const siteResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?business_id=eq.${encodeURIComponent(businessId)}&is_active=eq.true&select=id,tracker_site_id,business_id&order=created_at.asc&limit=1`, { headers: requestHeaders })
       if (siteResponse.ok) {
         const businessSites = await siteResponse.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
