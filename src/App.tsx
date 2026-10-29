@@ -1722,6 +1722,11 @@ function formatInsightText(value: string) {
     .replace(/([“"'])\/([”"'])/g, '$1PÁGINA INICIAL$2')
     .replace(/(^|[\s("'“”])\/(?=$|[\s,.;:!?'"“”])/g, '$1PÁGINA INICIAL')
     .replace(/página\s+\/(?=[\s,.;:!?]|$)/gi, 'PÁGINA INICIAL')
+    .replace(/\bCTA\b(?!\s*\()/g, 'CTA (chamada para ação, como botões de contato ou links de formulário)')
+    .replace(/\btráfego orgânico\b(?!\s*\()/gi, 'tráfego orgânico (visitas que chegam sem anúncio pago)')
+    .replace(/\bremarketing\b(?!\s*\()/gi, 'remarketing (anúncio para quem já visitou seu site)')
+    .replace(/\bfunil\b(?!\s*\()/gi, 'funil (caminho da visita até o contato)')
+    .replace(/\btaxa de saída\b(?!\s*\()/gi, 'taxa de saída (percentual de visitas que deixam a página sem continuar)')
 }
 
 function Insights() {

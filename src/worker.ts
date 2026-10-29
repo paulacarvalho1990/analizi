@@ -1129,8 +1129,8 @@ function buildRuleBasedFallback(
       status: 'warning',
       badge: 'Foco em contatos',
       finding: `${users} pessoas visitaram o site e nenhuma iniciou contato. O gargalo está entre a navegação e a proposta de próximo passo, não necessariamente na aquisição.`,
-      action: `Na página ${topPage}, coloque um único CTA visível na primeira tela com benefício claro (por exemplo, “Pedir orçamento” ou “Falar com especialista”) e valide o clique no rastreador.`,
-      projection: `A primeira meta é sair de 0 para ${Math.max(1, Math.ceil(users * 0.01))} contato${Math.max(1, Math.ceil(users * 0.01)) > 1 ? 's' : ''} no próximo ciclo; só então compare versões do CTA.`
+      action: `Na página ${topPage}, coloque uma chamada para ação (botão de contato ou link de formulário) visível na primeira tela com benefício claro, como “Pedir orçamento” ou “Falar com especialista”, e valide o clique no rastreador.`,
+      projection: `A primeira meta é sair de 0 para ${Math.max(1, Math.ceil(users * 0.01))} contato${Math.max(1, Math.ceil(users * 0.01)) > 1 ? 's' : ''} no próximo ciclo; só então compare versões da chamada para ação.`
     })
   } else {
     const rateChange = previousConversionRate > 0 ? Math.round(((conversionRate - previousConversionRate) / previousConversionRate) * 100) : null
@@ -1141,7 +1141,7 @@ function buildRuleBasedFallback(
       status: conversionRate >= previousConversionRate ? 'positive' : 'warning',
       badge: 'Prioridade comercial',
       finding: `${contacts} contato${contacts !== 1 ? 's' : ''} para ${users} usuários representam uma taxa de contato de ${conversionRate.toFixed(1).replace('.', ',')}%${rateChange !== null ? ` (${rateChange >= 0 ? '+' : ''}${rateChange}% vs. ciclo anterior)` : ''}.`,
-      action: `Revise a página ${topPage}: deixe a oferta, uma prova de confiança e o CTA no mesmo trecho visível antes de pedir qualquer informação ao visitante.`,
+      action: `Revise a página ${topPage}: deixe a oferta, uma prova de confiança e uma chamada para ação (botão de contato ou link de formulário) no mesmo trecho visível antes de pedir qualquer informação ao visitante.`,
       projection: `Elevar a taxa em 1 ponto percentual no volume atual adicionaria aproximadamente ${Math.max(1, Math.round(users / 100))} contato${Math.max(1, Math.round(users / 100)) > 1 ? 's' : ''} por ciclo.`
     })
   }
@@ -1168,18 +1168,19 @@ function buildRuleBasedFallback(
   }
 
   const exitRate = Number(riskiestPage?.exitRate || 0)
+  const riskiestPageName = riskiestPage?.path === '/' ? 'PÁGINA INICIAL' : riskiestPage?.path
   list.push({
     key: 'opportunity',
     type: 'opportunity',
-    title: riskiestPage ? `Saída alta em ${riskiestPage.path}` : `Prioridade na página ${topPage}`,
+    title: riskiestPage ? `Saída alta em ${riskiestPageName}` : `Prioridade na página ${topPage}`,
     status: riskiestPage && exitRate >= 50 ? 'warning' : 'neutral',
     badge: 'Experiência da página',
     finding: riskiestPage
-      ? `A página "${riskiestPage.path}" perde ${exitRate.toFixed(1).replace('.', ',')}% das visitas (${Number(riskiestPage.views || 0)} visualizações). ${Number(riskiestPage.attentionSeconds || 0) < attention ? 'Ela também segura menos atenção que a média do site.' : 'O conteúdo prende atenção, mas não conduz o visitante ao próximo passo.'}`
+      ? `A página "${riskiestPageName}" perde ${exitRate.toFixed(1).replace('.', ',')}% das visitas (${Number(riskiestPage.views || 0)} visualizações). ${Number(riskiestPage.attentionSeconds || 0) < attention ? 'Ela também segura menos atenção que a média do site.' : 'O conteúdo prende atenção, mas não conduz o visitante ao próximo passo.'}`
       : `A página "${topPage}" concentrou ${topPageViews} visualizações e média de ${attention}s de atenção; ainda não há taxa de saída suficiente para diagnosticar o ponto de abandono.`,
     action: riskiestPage
-      ? `Revise os primeiros blocos de "${riskiestPage.path}": deixe claro o benefício, retire distrações e adicione um CTA relacionado ao serviço antes de metade da página.`
-      : `Use "${topPage}" como página prioritária: mostre o principal benefício, para quem é e um CTA de contato antes de o visitante rolar a tela.`,
+      ? `Revise os primeiros blocos de "${riskiestPageName}": deixe claro o benefício, retire distrações e adicione uma chamada para ação (botão de contato ou link de formulário) relacionada ao serviço antes de metade da página.`
+      : `Use "${topPage}" como página prioritária: mostre o principal benefício, para quem é e uma chamada para ação (botão de contato ou link de formulário) antes de o visitante rolar a tela.`,
     projection: riskiestPage
       ? 'Na próxima segunda, compare a taxa de saída desta página; uma queda de 10 pontos mostrará que a mudança reduziu abandono de forma concreta.'
       : 'Quando houver mais sessões por página, o relatório apontará o trecho com maior risco de abandono para priorizar a próxima correção.'
@@ -1217,7 +1218,8 @@ async function runDeepInfraAnalysis(
 
   const topSource = metrics?.sources?.[0]?.name || 'direto'
   const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
-  const topPage = metrics?.pages?.[0]?.path || '/'
+  const topPagePath = metrics?.pages?.[0]?.path || '/'
+  const topPage = topPagePath === '/' ? 'PÁGINA INICIAL' : topPagePath
   const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
 
   const prompt = `Você é o IZI INTELLIGENCE, o analista sênior de negócios do Analizi. Seu cliente é um pequeno ou médio empreendedor sem conhecimento técnico em métricas e web analytics.
@@ -1243,13 +1245,14 @@ Gere exatamente 4 insights pré-definidos padronizados em JSON, adaptados ao esc
 1. "traffic_growth" ou "traffic_drop": explique a causa mais provável usando a variação e o principal canal; não trate correlação como certeza.
 2. "lead_conversion": calcule a taxa contatos/usuários, explique em linguagem simples onde a pessoa pode estar desistindo antes de entrar em contato e indique uma mudança específica na página prioritária.
 3. "top_channel": informe a concentração percentual do principal canal e se ela representa risco; proponha um teste mensurável de aquisição.
-4. "opportunity": diagnostique retenção/saída da página mais relevante e dê uma correção concreta para o conteúdo ou CTA acima da dobra.
+4. "opportunity": diagnostique retenção/saída da página mais relevante e dê uma correção concreta para o conteúdo ou chamada para ação acima da primeira parte visível da página.
 
 REGRAS DE QUALIDADE:
 - Não use conselhos genéricos como "melhore o site", "continue divulgando" ou "mantenha a frequência" sem dizer onde, o que testar e qual métrica acompanhar.
 - Não invente benchmarks, dados de mercado, taxas ou causalidades que não estejam nos dados fornecidos.
 - Cada finding deve citar pelo menos um número real do contexto; se a base for insuficiente, diga isso explicitamente.
-- Escreva para quem não conhece analytics: prefira palavras como "visitas", "pessoas" e "contatos"; se usar um termo técnico, explique-o na mesma frase.
+- Escreva para quem não conhece analytics: prefira palavras como "visitas", "pessoas" e "contatos".
+- Todo termo de marketing digital ou web analytics deve vir imediatamente explicado entre parênteses, sem exceção. Exemplos: "CTA (chamada para ação, como botão de contato ou link de formulário)", "tráfego orgânico (visitas que chegam sem anúncio pago)", "remarketing (anúncio para quem já visitou seu site)", "funil (caminho da visita até o contato)" e "taxa de saída (percentual de visitas que deixam a página sem continuar)". Se não conseguir explicar o termo de modo simples, não o use.
 - Cada action deve ter 2 ou 3 passos curtos, em ordem, executáveis em até 48 horas. Diga onde fazer a mudança, o que mudar e qual número acompanhar depois. Não chame cliques, formulários ou contatos de "conversões".
 - Cada projection deve ser condicional e mensurável: diga qual métrica deve mudar na próxima leitura e em que direção, sem prometer vendas ou resultados garantidos.
 - Nunca exiba o caminho "/". Sempre escreva exatamente "PÁGINA INICIAL" ao se referir a ele.
