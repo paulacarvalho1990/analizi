@@ -2267,7 +2267,7 @@ function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) {
 
 function ConnectionStatus() {
   const { currentSite } = useBusiness();
-  const [state, setState] = useState<'loading' | 'none' | 'pending' | 'warning_24h' | 'inactive_24h' | 'ready'>('loading');
+  const [state, setState] = useState<'loading' | 'none' | 'configured' | 'pending' | 'warning_24h' | 'inactive_24h' | 'ready'>('loading');
   const [updatedAt, setUpdatedAt] = useState('');
 
   useEffect(() => {
@@ -2300,9 +2300,10 @@ function ConnectionStatus() {
           // provisionada ou o registro pode estar incompleto. Não apresente
           // isso como “sem conexão”, que orienta o usuário para uma ação
           // incorreta e bloqueia a leitura do estado real do onboarding.
-          if (isMounted) setState('pending');
+          if (isMounted) setState('configured');
           return;
         }
+        const isLegacyTracker = !item && trackerConfigured;
 
         // A fonte estar conectada apenas confirma a configuração. Dados só existem
         // depois de uma sincronização ou de um evento recebido pelo tracker.
@@ -2356,6 +2357,11 @@ function ConnectionStatus() {
           return;
         }
 
+        if (isLegacyTracker) {
+          if (isMounted) setState('configured');
+          return;
+        }
+
         const createdAt = item?.created_at ? new Date(item.created_at).getTime() : Date.now();
         const hoursSinceCreation = (Date.now() - createdAt) / (1000 * 60 * 60);
 
@@ -2405,6 +2411,14 @@ function ConnectionStatus() {
       <article className="connection-status">
         <b>Você acabou de conectar seu site.</b>
         <p>Seus dados serão coletados em até 24 horas.</p>
+      </article>
+    );
+  }
+  if (state === 'configured') {
+    return (
+      <article className="connection-status">
+        <b>SEU RASTREADOR JÁ ESTÁ CONFIGURADO.</b>
+        <p>Aguardamos novos eventos para confirmar a atividade mais recente deste site.</p>
       </article>
     );
   }
