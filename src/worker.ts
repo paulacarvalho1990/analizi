@@ -1867,7 +1867,8 @@ async function authenticatedUser(request: Request, env: Env): Promise<Authentica
 
 async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env): Promise<{ id: string, tracker_site_id: string } | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?id=eq.${encodeURIComponent(siteId)}&select=id,tracker_site_id`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${user.token}` } })
+  const encodedSite = encodeURIComponent(siteId)
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})&select=id,tracker_site_id`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${user.token}` } })
   if (!response.ok) return null
   const rows = await response.json() as Array<{ id: string, tracker_site_id: string }>
   return rows[0] || null
@@ -1931,9 +1932,12 @@ async function ga4Connect(request: Request, env: Env) {
   const user = await authenticatedUser(request, env)
   if (!user) return json({ error: 'Sessão inválida.' }, 401)
   const body = await request.json().catch(() => ({})) as { siteId?: string, propertyId?: string, refreshToken?: string, googleUserId?: string }
-  const propertyId = compactText(body.propertyId, 32)
-  const site = await ownedSite(compactText(body.siteId, 64), user, env)
-  if (!site || !/^\d+$/.test(propertyId)) return json({ error: 'Site ou propriedade inválidos.' }, 400)
+  const propertyId = compactText(body.propertyId, 64).replace(/^properties\//i, '')
+  const siteId = compactText(body.siteId, 64)
+  if (!siteId) return json({ error: 'O site atual não foi informado. Recarregue a página e tente novamente.' }, 400)
+  const site = await ownedSite(siteId, user, env)
+  if (!site) return json({ error: 'Não encontramos este site na sua conta. Recarregue o painel para atualizar o site selecionado.' }, 404)
+  if (!/^\d+$/.test(propertyId)) return json({ error: 'O identificador da propriedade GA4 é inválido. Selecione uma propriedade da lista.' }, 400)
   if (!body.refreshToken) return json({ error: 'O Google não forneceu um token de renovação. Autorize novamente.' }, 400)
   try {
     const encrypted = await encryptToken(body.refreshToken, env)
