@@ -1008,7 +1008,8 @@ function buildRuleBasedFallback(
 
   const topSource = metrics?.sources?.[0]?.name || 'direto'
   const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
-  const topPage = metrics?.pages?.[0]?.path || '/'
+  const topPagePath = metrics?.pages?.[0]?.path || '/'
+  const topPage = topPagePath === '/' ? 'PÁGINA INICIAL' : topPagePath
   const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
   const riskiestPage = [...(metrics?.pages || [])]
     .filter((page) => Number(page.views || 0) > 0 && page.exitRate != null)
@@ -1061,7 +1062,7 @@ function buildRuleBasedFallback(
     list.push({
       key: 'lead_conversion',
       type: 'lead_conversion',
-      title: 'Conversão ainda não pode ser medida',
+      title: 'Contatos ainda são poucos',
       status: 'neutral',
       badge: 'Dados insuficientes',
       finding: 'Ainda não há usuários suficientes no período para avaliar se o site transforma visitas em contatos.',
@@ -1074,7 +1075,7 @@ function buildRuleBasedFallback(
       type: 'lead_conversion',
       title: 'Tráfego não vira conversa',
       status: 'warning',
-      badge: 'Foco em Conversão',
+      badge: 'Foco em contatos',
       finding: `${users} pessoas visitaram o site e nenhuma iniciou contato. O gargalo está entre a navegação e a proposta de próximo passo, não necessariamente na aquisição.`,
       action: `Na página ${topPage}, coloque um único CTA visível na primeira tela com benefício claro (por exemplo, “Pedir orçamento” ou “Falar com especialista”) e valide o clique no rastreador.`,
       projection: `A primeira meta é sair de 0 para ${Math.max(1, Math.ceil(users * 0.01))} contato${Math.max(1, Math.ceil(users * 0.01)) > 1 ? 's' : ''} no próximo ciclo; só então compare versões do CTA.`
@@ -1084,10 +1085,10 @@ function buildRuleBasedFallback(
     list.push({
       key: 'lead_conversion',
       type: 'lead_conversion',
-      title: 'Conversão precisa de escala',
+      title: 'Contatos precisam de escala',
       status: conversionRate >= previousConversionRate ? 'positive' : 'warning',
       badge: 'Prioridade comercial',
-      finding: `${contacts} contato${contacts !== 1 ? 's' : ''} para ${users} usuários representam ${conversionRate.toFixed(1).replace('.', ',')}% de conversão${rateChange !== null ? ` (${rateChange >= 0 ? '+' : ''}${rateChange}% vs. ciclo anterior)` : ''}.`,
+      finding: `${contacts} contato${contacts !== 1 ? 's' : ''} para ${users} usuários representam uma taxa de contato de ${conversionRate.toFixed(1).replace('.', ',')}%${rateChange !== null ? ` (${rateChange >= 0 ? '+' : ''}${rateChange}% vs. ciclo anterior)` : ''}.`,
       action: `Revise a página ${topPage}: deixe a oferta, uma prova de confiança e o CTA no mesmo trecho visível antes de pedir qualquer informação ao visitante.`,
       projection: `Elevar a taxa em 1 ponto percentual no volume atual adicionaria aproximadamente ${Math.max(1, Math.round(users / 100))} contato${Math.max(1, Math.round(users / 100)) > 1 ? 's' : ''} por ciclo.`
     })
@@ -1188,7 +1189,7 @@ DADOS DO CLIENTE E NEGÓCIO:
 TAREFA OBRIGATÓRIA:
 Gere exatamente 4 insights pré-definidos padronizados em JSON, adaptados ao escopo ${scope}:
 1. "traffic_growth" ou "traffic_drop": explique a causa mais provável usando a variação e o principal canal; não trate correlação como certeza.
-2. "lead_conversion": calcule a taxa contatos/usuários, identifique o gargalo entre aquisição e CTA e indique uma mudança específica na página prioritária.
+2. "lead_conversion": calcule a taxa contatos/usuários, explique em linguagem simples onde a pessoa pode estar desistindo antes de entrar em contato e indique uma mudança específica na página prioritária.
 3. "top_channel": informe a concentração percentual do principal canal e se ela representa risco; proponha um teste mensurável de aquisição.
 4. "opportunity": diagnostique retenção/saída da página mais relevante e dê uma correção concreta para o conteúdo ou CTA acima da dobra.
 
@@ -1196,8 +1197,10 @@ REGRAS DE QUALIDADE:
 - Não use conselhos genéricos como "melhore o site", "continue divulgando" ou "mantenha a frequência" sem dizer onde, o que testar e qual métrica acompanhar.
 - Não invente benchmarks, dados de mercado, taxas ou causalidades que não estejam nos dados fornecidos.
 - Cada finding deve citar pelo menos um número real do contexto; se a base for insuficiente, diga isso explicitamente.
-- Cada action deve ser uma única ação executável em até 48 horas, com página/canal/elemento específico.
-- Cada projection deve ser condicional e mensurável: diga qual métrica deve mudar na próxima leitura e em que direção.
+- Escreva para quem não conhece analytics: prefira palavras como "visitas", "pessoas" e "contatos"; se usar um termo técnico, explique-o na mesma frase.
+- Cada action deve ter 2 ou 3 passos curtos, em ordem, executáveis em até 48 horas. Diga onde fazer a mudança, o que mudar e qual número acompanhar depois. Não chame cliques, formulários ou contatos de "conversões".
+- Cada projection deve ser condicional e mensurável: diga qual métrica deve mudar na próxima leitura e em que direção, sem prometer vendas ou resultados garantidos.
+- Nunca exiba o caminho "/". Sempre escreva exatamente "PÁGINA INICIAL" ao se referir a ele.
 
 Responda ESTRITAMENTE um objeto JSON no formato:
 {

@@ -39,11 +39,11 @@ function PageChart({ pages }: { pages: AnalyticsData['pages'] }) {
                 </div>
                 <div className="metric-tooltip-section">
                   <b>Por que é importante</b>
-                  <p>Identifica os conteúdos que geram mais tração e revela quais páginas merecem botões de ação e conversão.</p>
+                  <p>Identifica os conteúdos que geram mais tração e revela quais páginas merecem botões claros para iniciar contato.</p>
                 </div>
                 <div className="metric-tooltip-section tip">
                   <b><Lightbulb size={12} style={{ display: 'inline', verticalAlign: '-1px', marginRight: 4, color: '#fbbf24' }} /> Como melhorar:</b>
-                  <p>Se as páginas do topo tiverem pouca conversão, adicione chamadas para WhatsApp ou formulários curtos nelas.</p>
+                  <p>Se as páginas do topo tiverem poucos contatos, adicione chamadas para WhatsApp ou formulários curtos nelas.</p>
                 </div>
               </div>
             </div>
@@ -531,7 +531,7 @@ function Dashboard() {
                 className={dailyTab === 'conversions' ? 'active' : ''}
                 onClick={() => { setDailyTab('conversions'); setDailyPage(0); }}
               >
-                Com conversões
+                Com contatos
               </button>
             </div>
           </div>
@@ -556,7 +556,7 @@ function Dashboard() {
           {!filteredDaily.length && (
             <p className="empty-state">
               {dailyTab === 'conversions'
-                ? 'Nenhum dia com contatos ou conversões registrado no período.'
+                ? 'Nenhum dia com contatos registrado no período.'
                 : 'Ainda não recebemos acessos neste período.'}
             </p>
           )}
@@ -704,14 +704,14 @@ function Acquisition() {
       <div className="dashboard-split" style={{ marginTop: 24 }}>
         <OriginChart analytics={analytics} />
 
-        <article className="table-card compact-table">
+        <article className="table-card compact-table acquisition-performance-table">
           <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <Layers size={17} style={{ color: '#FF3CAC' }} />
                 <h3 style={{ margin: 0 }}>Desempenho por canal e criativo</h3>
               </div>
-              <p className="chart-header-caption">Sessões, cliques e conversões por parâmetro de aquisição</p>
+              <p className="chart-header-caption">Sessões, cliques e contatos por parâmetro de aquisição</p>
             </div>
             <div className="heatmap-segmented-control">
               <button
@@ -745,18 +745,18 @@ function Acquisition() {
             </div>
           </div>
 
-          <div className="table-head" style={{ gridTemplateColumns: '1.4fr 80px 80px 90px 80px' }}>
+          <div className="table-head" style={{ gridTemplateColumns: 'minmax(0, 1.4fr) 72px 72px 82px 74px' }}>
             <span>Origem / Dimensão</span>
             <span>Sessões</span>
             <span>Usuários</span>
             <span>WhatsApp</span>
-            <span>Taxa Conv.</span>
+            <span>Taxa contato</span>
           </div>
 
           {visibleItems.map(item => {
             const conv = item.sessions > 0 ? ((item.contacts / item.sessions) * 100).toFixed(1).replace('.', ',') : '0,0';
             return (
-              <div className="page-row" key={item.key} style={{ gridTemplateColumns: '1.4fr 80px 80px 90px 80px' }}>
+              <div className="page-row" key={item.key} style={{ gridTemplateColumns: 'minmax(0, 1.4fr) 72px 72px 82px 74px' }}>
                 <span>
                   <b>{item.label}</b>
                   {item.sub && <small style={{ color: 'var(--muted-foreground)' }}>{item.sub}</small>}
@@ -1196,7 +1196,7 @@ function conversionTypeLabel(type: string): string {
     assinatura: 'Assinatura',
     compra: 'Compra',
   };
-  return labels[type] || 'Outra conversão';
+  return labels[type] || 'Outro contato ou intenção';
 }
 
 function Results() {
@@ -1374,7 +1374,7 @@ function Results() {
               className={smTab === 'conversions' ? 'active' : ''}
               onClick={() => { setSmTab('conversions'); setSmPage(0); }}
             >
-              Com conversões
+              Com contatos
             </button>
             <button
               type="button"
@@ -1424,12 +1424,12 @@ function Results() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <Target size={17} style={{ color: '#10b981' }} />
-                <h3 style={{ margin: 0 }}>Desempenho de conversão</h3>
+                <h3 style={{ margin: 0 }}>Desempenho de contatos</h3>
               </div>
               <p>
                 {conversionTab === 'pages'
-                  ? 'Páginas do site que mais convertem visitantes em contatos e leads'
-                  : 'Canais e fontes de tráfego com maior taxa de conversão'}
+                  ? 'Páginas do site com mais contatos iniciados pelos visitantes'
+                  : 'Canais e fontes de tráfego com maior taxa de contato'}
               </p>
             </div>
             <div className="heatmap-segmented-control">
@@ -1604,7 +1604,7 @@ function Results() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               <Target size={17} style={{ color: '#10b981' }} />
-              <h3 style={{ margin: 0 }}>Conversões e intenções</h3>
+              <h3 style={{ margin: 0 }}>Contatos e intenções</h3>
             </div>
             <p>Envios confirmados de formulário e ações comerciais iniciadas</p>
           </div>
@@ -1627,7 +1627,7 @@ function Results() {
             <span><b>{Number(item.conversions || 0).toLocaleString('pt-BR')}</b></span>
           </div>
         ))}
-        {!conversionEvents.length && <p className="empty-state">Ainda não há conversões ou intenções registradas neste período.</p>}
+        {!conversionEvents.length && <p className="empty-state">Ainda não há contatos ou intenções registrados neste período.</p>}
         <TablePagination page={conversionEventPage} total={conversionEvents.length} setPage={setConversionEventPage} />
       </article>
 
@@ -1712,6 +1712,12 @@ interface GeneratedInsight {
   finding: string
   action: string
   projection: string
+}
+
+function formatInsightText(value: string) {
+  return value
+    .replace(/([“"'])\/([”"'])/g, '$1PÁGINA INICIAL$2')
+    .replace(/página\s+\/(?=[\s,.;:!?]|$)/gi, 'PÁGINA INICIAL')
 }
 
 function Insights() {
@@ -1871,22 +1877,22 @@ function Insights() {
                     <span className="insight-date-stamp">{reportDate ? `Atualizado em ${reportDate}` : 'Atualização semanal: segunda-feira'}</span>
                   </div>
 
-                  <h3>{item.title}</h3>
+                  <h3>{formatInsightText(item.title)}</h3>
 
                   <div className="insight-box-block">
                     <strong style={{ display: 'block', marginBottom: 4, color: 'var(--foreground)' }}>O que os dados mostram:</strong>
-                    <span>{item.finding}</span>
+                    <span>{formatInsightText(item.finding)}</span>
                   </div>
 
                   <div className="insight-action-grid">
                     <div className="insight-sub-box">
                       <span className="insight-sub-box-title">Recomendação prática:</span>
-                      <p>{item.action}</p>
+                      <p>{formatInsightText(item.action)}</p>
                     </div>
 
                     <div className="insight-sub-box">
                       <span className="insight-sub-box-title">Projeção esperada:</span>
-                      <p>{item.projection}</p>
+                      <p>{formatInsightText(item.projection)}</p>
                     </div>
                   </div>
                 </div>
