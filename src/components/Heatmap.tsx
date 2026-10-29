@@ -5,7 +5,7 @@ import {
   CreditCard, Flag, TextCursorInput, Link as LinkIcon,
   BarChart3, SlidersHorizontal, Table as TableIcon, MapPin, HelpCircle,
   MessageSquareQuote, Volume2, GalleryHorizontal, ZoomIn, ZoomOut, Maximize2,
-  Calendar, FileText
+  Calendar, FileText, Layers
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
@@ -177,6 +177,13 @@ interface ScrollRetention {
   percentage: number
 }
 
+interface HeatmapLayoutVersion {
+  hash: string
+  firstSeenAt: string
+  lastSeenAt: string
+  sampleCount: number
+}
+
 interface HeatmapPayload {
   pagePath: string
   deviceType: string
@@ -189,6 +196,8 @@ interface HeatmapPayload {
     updatedAt: string
     blocks: LayoutBlock[]
   } | null
+  activeVersion: HeatmapLayoutVersion | null
+  versions: HeatmapLayoutVersion[]
   clicks: HeatmapClick[]
   scrollRetention: Record<string, ScrollRetention>
 }
@@ -502,6 +511,7 @@ export function Heatmap() {
   const [periodDays, setPeriodDays] = useState<number>(30)
   const [customStart, setCustomStart] = useState<string>('')
   const [customEnd, setCustomEnd] = useState<string>('')
+  const [selectedVersion, setSelectedVersion] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<HeatmapPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -525,6 +535,7 @@ export function Heatmap() {
         device: dev,
         period: String(days)
       })
+      if (selectedVersion) query.set('version', selectedVersion)
       if (days === 0 && customStart && customEnd) {
         query.set('start', customStart)
         query.set('end', customEnd)
@@ -533,6 +544,8 @@ export function Heatmap() {
       if (!res.ok) throw new Error('Falha ao carregar dados do heatmap.')
       const json: HeatmapPayload = await res.json()
       setData(json)
+      const activeHash = json.activeVersion?.hash || ''
+      if (activeHash !== selectedVersion) setSelectedVersion(activeHash)
       if (json.availablePages?.length && !json.availablePages.includes(page)) {
         setSelectedPage(json.availablePages[0])
       }
@@ -547,7 +560,7 @@ export function Heatmap() {
     if (targetSiteId) {
       fetchHeatmap(selectedPage, device, periodDays)
     }
-  }, [targetSiteId, selectedPage, device, periodDays, customStart, customEnd])
+  }, [targetSiteId, selectedPage, device, periodDays, customStart, customEnd, selectedVersion])
 
   const layout = data?.layout
   const rawBlocks = layout?.blocks || []
@@ -633,6 +646,29 @@ export function Heatmap() {
             <option value={0}>Personalizado (De/Até)</option>
           </select>
         </div>
+
+        {(data?.versions?.length ?? 0) > 0 && data && (
+          <div className="heatmap-control-group">
+            <Layers size={15} style={{ color: 'var(--muted-foreground)' }} />
+            <label htmlFor="layout-version">Versão visual:</label>
+            <select
+              id="layout-version"
+              value={selectedVersion || data.activeVersion?.hash || ''}
+              onChange={(e) => setSelectedVersion(e.target.value)}
+              className="heatmap-select"
+              title="Selecione a versão visual da página para comparar o comportamento"
+            >
+              {data.versions.map((version, index) => {
+                const date = new Date(version.firstSeenAt).toLocaleDateString('pt-BR')
+                return (
+                  <option key={version.hash} value={version.hash}>
+                    {index === 0 ? 'Mais observada' : `Versão ${index + 1}`} · {date} ({version.sampleCount} capturas)
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+        )}
 
         {periodDays === 0 && (
           <div className="heatmap-control-group" style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>

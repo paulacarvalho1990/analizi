@@ -102,6 +102,16 @@ function safeMetadata(value: unknown) {
   return serialized.length <= 2_000 ? serialized : '{}'
 }
 
+function layoutHash(value: unknown) {
+  const input = JSON.stringify(value)
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `v${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
 function requestedHost(request: Request) {
   const origin = request.headers.get('origin')
   if (!origin) return null
@@ -220,14 +230,28 @@ async function collect(request: Request, env: Env) {
 
     // Trata armazenamento estrutural de Layout (sem gravar na tabela events para economizar espaço)
     if (name === 'page_layout') {
-      const layoutObj = (event.metadata as { layout?: { viewport_width?: number; viewport_height?: number; page_height?: number; blocks?: unknown[] } })?.layout
+      const metadata = event.metadata as { layout?: { viewport_width?: number; viewport_height?: number; page_height?: number; blocks?: unknown[] }; layout_hash?: string } | undefined
+      const layoutObj = metadata?.layout
       if (layoutObj && Array.isArray(layoutObj.blocks)) {
         const pagePath = compactText(event.pagePath, 1_024) || '/'
         const devType = compactText(event.deviceType, 32) || 'desktop'
         const vpW = Number(layoutObj.viewport_width) || 1280
         const vpH = Number(layoutObj.viewport_height) || 800
         const pageH = Number(layoutObj.page_height) || 1200
-        const layoutJson = JSON.stringify(layoutObj.blocks.slice(0, 120))
+        const blocks = layoutObj.blocks.slice(0, 120)
+        const layoutJson = JSON.stringify(blocks)
+        const versionHash = compactText(metadata?.layout_hash, 40) || layoutHash(blocks)
+        const seenAt = event.occurredAt || new Date().toISOString()
+        statements.push(env.ANALIZI_EVENTS.prepare(`
+          insert into page_layout_versions (tracker_site_id, page_path, device_type, layout_hash, viewport_width, viewport_height, page_height, layout_json, first_seen_at, last_seen_at, sample_count)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+          on conflict(tracker_site_id, page_path, device_type, layout_hash) do update set
+            viewport_width = excluded.viewport_width,
+            viewport_height = excluded.viewport_height,
+            page_height = excluded.page_height,
+            last_seen_at = excluded.last_seen_at,
+            sample_count = page_layout_versions.sample_count + 1
+        `).bind(siteId, pagePath, devType, versionHash, vpW, vpH, pageH, layoutJson, seenAt, seenAt))
         statements.push(env.ANALIZI_EVENTS.prepare(`
           insert into page_layouts (tracker_site_id, page_path, device_type, viewport_width, viewport_height, page_height, layout_json, updated_at)
           values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
@@ -827,6 +851,7 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
 
   const pagePath = searchParams.get('page') || '/'
   const deviceType = searchParams.get('device') || 'desktop'
+  const requestedVersion = compactText(searchParams.get('version'), 40)
   const browser = compactText(searchParams.get('browser'), 80)
   const source = compactText(searchParams.get('source'), 120)
   const medium = compactText(searchParams.get('medium'), 120)
@@ -843,7 +868,20 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
   if (medium) { extraEventWhere += ` and lower(${SQL_NORMALIZED_MEDIUM}) = lower(?)`; extraEventParams.push(medium) }
   if (campaign) { extraEventWhere += ' and lower(coalesce(campaign, \'\')) = lower(?)'; extraEventParams.push(campaign) }
 
-  // 1. Busca layout salvo
+  // 1. Busca snapshots de layout que estiveram ativos no período.
+  const versionsQuery = env.ANALIZI_EVENTS.prepare(`
+    select layout_hash, viewport_width, viewport_height, page_height, layout_json, first_seen_at, last_seen_at, sample_count
+    from page_layout_versions
+    where tracker_site_id = ? and page_path = ? and device_type = ?
+      and last_seen_at >= ? and first_seen_at <= ?
+    order by sample_count desc, last_seen_at desc
+    limit 30
+  `).bind(safeId, pagePath, deviceType, startDate, `${endDate}T23:59:59`)
+  const versionResults = await env.ANALIZI_EVENTS.batch([versionsQuery]) as Array<{ results?: Array<Record<string, unknown>> }>
+  const versions = versionResults[0]?.results || []
+  const activeVersion = versions.find((version) => String(version.layout_hash) === requestedVersion) || versions[0]
+
+  // 2. Busca o layout atual como fallback para instalações anteriores à migration.
   const layoutQuery = env.ANALIZI_EVENTS.prepare(`
     select page_path, device_type, viewport_width, viewport_height, page_height, layout_json, updated_at
     from page_layouts
@@ -856,7 +894,9 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
     select distinct page_path from page_layouts where tracker_site_id = ? order by page_path asc limit 100
   `).bind(safeId)
 
-  // 3. Busca cliques com coordenadas agregadas
+  // 3. Busca cliques associados à versão selecionada.
+  const clickVersionWhere = activeVersion?.layout_hash ? ` and json_extract(metadata_json, '$.layout_hash') = ?` : ''
+  const clickVersionParams = activeVersion?.layout_hash ? [String(activeVersion.layout_hash)] : []
   const clicksQuery = env.ANALIZI_EVENTS.prepare(`
     select
       cast(json_extract(metadata_json, '$.click_x_pct') as integer) as x_pct,
@@ -870,11 +910,11 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
       and (device_type = ? or (? = 'desktop' and device_type is null))
       and event_name in ('button_click', 'media_click', 'whatsapp_contact', 'sign_up', 'login', 'outbound_click', 'file_download')
       and json_extract(metadata_json, '$.click_x_pct') is not null
-      and date(occurred_at) >= ? and date(occurred_at) <= ?${extraEventWhere}
+      and date(occurred_at) >= ? and date(occurred_at) <= ?${clickVersionWhere}${extraEventWhere}
     group by x_pct, round(y_px / 15), tag, label
     order by count desc
     limit 250
-  `).bind(safeId, pagePath, deviceType, deviceType, startDate, endDate, ...extraEventParams)
+  `).bind(safeId, pagePath, deviceType, deviceType, startDate, endDate, ...clickVersionParams, ...extraEventParams)
 
   // 4. Busca consolidação de scroll depth
   const scrollQuery = env.ANALIZI_EVENTS.prepare(`
@@ -901,7 +941,7 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
     visitorsQuery
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
-  const layoutRow = results[0]?.results?.[0]
+  const layoutRow = activeVersion || results[0]?.results?.[0]
   const availablePages = (results[1]?.results || []).map((r) => String(r.page_path))
   const clicks = results[2]?.results || []
   const scrollRows = results[3]?.results || []
@@ -939,9 +979,21 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
       viewportWidth: layoutRow.viewport_width,
       viewportHeight: layoutRow.viewport_height,
       pageHeight: layoutRow.page_height,
-      updatedAt: layoutRow.updated_at,
+      updatedAt: layoutRow.updated_at || layoutRow.last_seen_at,
       blocks
     } : null,
+    activeVersion: activeVersion ? {
+      hash: String(activeVersion.layout_hash),
+      firstSeenAt: activeVersion.first_seen_at,
+      lastSeenAt: activeVersion.last_seen_at,
+      sampleCount: Number(activeVersion.sample_count || 0)
+    } : null,
+    versions: versions.map((version) => ({
+      hash: String(version.layout_hash),
+      firstSeenAt: version.first_seen_at,
+      lastSeenAt: version.last_seen_at,
+      sampleCount: Number(version.sample_count || 0)
+    })),
     clicks,
     scrollRetention
   }, 200)

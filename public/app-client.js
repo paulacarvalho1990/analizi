@@ -318,12 +318,20 @@
   }
 
   // --- Heatmap Econômico: 1. Extração Estrutural de Layout (1 vez por sessão por página, no page_view e navegação SPA) ---
-  const getLayoutSentKey = (path = location.pathname) => `analizi:${siteId}:layout:${sessionId}:${path}`
+  const hashLayout = (blocks) => {
+    const input = JSON.stringify(blocks)
+    let hash = 2166136261
+    for (let index = 0; index < input.length; index += 1) {
+      hash ^= input.charCodeAt(index)
+      hash = Math.imul(hash, 16777619)
+    }
+    return `v${(hash >>> 0).toString(16).padStart(8, '0')}`
+  }
+  let currentLayoutHash = ''
+  const getLayoutSentKey = (path = location.pathname, hash = '') => `analizi:${siteId}:layout:${sessionId}:${path}:${hash}`
   const captureLayout = (targetPath = location.pathname) => {
     // Se a rota mudou entre o agendamento e a execução, usa a rota atual
     const currentPath = location.pathname || targetPath || '/'
-    const sentKey = getLayoutSentKey(currentPath)
-    if (get(session, sentKey)) return
     try {
       const vpW = Math.max(320, window.innerWidth || document.documentElement.clientWidth || 1280)
       const docW = vpW
@@ -552,6 +560,12 @@
 
       // Reordena de cima para baixo para leitura limpa
       accepted.sort((a, b) => a.top - b.top || a.left - b.left)
+      const versionHash = hashLayout(accepted)
+      const sentKey = getLayoutSentKey(currentPath, versionHash)
+      if (get(session, sentKey)) {
+        currentLayoutHash = versionHash
+        return
+      }
 
       const layoutData = {
         viewport_width: Math.max(window.innerWidth || 0, docW),
@@ -560,7 +574,8 @@
         blocks: accepted
       }
 
-      send('page_layout', { layout: layoutData }, { consumeTime: false })
+      currentLayoutHash = versionHash
+      send('page_layout', { layout: layoutData, layout_hash: versionHash }, { consumeTime: false })
       set(session, sentKey, '1')
     } catch {}
   }
@@ -730,6 +745,7 @@
     send(eventName, {
       button_label: label || (isFileDownload ? 'Download de arquivo' : isOutbound ? 'Link externo' : isMedia ? `Mídia (${targetTag.toLowerCase()})` : 'Elemento sem texto'),
       button_id: truncate(target.id, 120),
+      layout_hash: currentLayoutHash,
       destination: cleanUrl(href),
       contact_intent: intent,
       is_contact_lead: isContactLead ? 1 : 0,
