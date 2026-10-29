@@ -3908,7 +3908,7 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
 }
 function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
   const { currentSite } = useBusiness();
-  const [properties, setProperties] = useState<Array<{ id: string, name: string, accountName: string }>>([]);
+  const [properties, setProperties] = useState<Array<{ id: string, name: string, accountName: string, websiteUrl?: string }>>([]);
   const [selectedProperty, setSelectedProperty] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -3929,7 +3929,7 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
       const response = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/ga4/properties', {
         method: 'POST', headers: await authorizationHeaders(), body: JSON.stringify({ accessToken })
       });
-      const payload = await response.json() as { properties?: Array<{ id: string, name: string, accountName: string }>, error?: string };
+      const payload = await response.json() as { properties?: Array<{ id: string, name: string, accountName: string, websiteUrl?: string }>, error?: string };
       if (!response.ok) throw new Error(payload.error || 'Não foi possível listar suas propriedades.');
       setProperties(payload.properties || []);
       if (payload.properties?.length === 1) setSelectedProperty(payload.properties[0].id);
@@ -3982,6 +3982,16 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
     finally { setLoading(false); }
   };
 
+  const selectedPropertyInfo = properties.find(item => item.id === selectedProperty);
+  const normalizedHost = (value?: string) => {
+    if (!value) return '';
+    try { return new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`).hostname.replace(/^www\./i, '').toLowerCase(); }
+    catch { return ''; }
+  };
+  const propertyHost = normalizedHost(selectedPropertyInfo?.websiteUrl);
+  const currentHost = normalizedHost(currentSite?.domain);
+  const propertyMismatch = Boolean(propertyHost && currentHost && propertyHost !== currentHost);
+
   return (
     <>
       <SourceHeader
@@ -4013,7 +4023,13 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
                   {properties.map(property => <option key={property.id} value={property.id}>{property.name} — {property.accountName}</option>)}
                 </select>
               </label>
-              <Button className="full" onClick={() => void connect()} disabled={loading || !selectedProperty} style={{ marginTop: 16 }}>Conectar propriedade</Button>
+              <Button className="full" onClick={() => void connect()} disabled={loading || !selectedProperty || propertyMismatch} style={{ marginTop: 16 }}>Conectar propriedade</Button>
+              {propertyMismatch && (
+                <div className="permission-box" style={{ marginTop: 14, color: '#9a3412', background: '#fff7ed' }}>
+                  <AlertTriangle size={19}/>
+                  <span>Esta propriedade usa <b>{propertyHost}</b>, mas o site selecionado é <b>{currentHost}</b>. Troque o site no seletor do topo antes de conectar.</span>
+                </div>
+              )}
             </>
           )}
           {message && <p className="setup-help" style={{ color: message.includes('sucesso') ? '#087f5b' : undefined }}>{message}</p>}

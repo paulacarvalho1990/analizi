@@ -385,7 +385,10 @@ async function provisionTrackerSite(request: Request, env: Env) {
   await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare(`
     insert into tracker_sites (tracker_site_id, supabase_site_id, business_id, plan, domain, is_active)
     values (?, ?, ?, ?, ?, 1)
-    on conflict(tracker_site_id) do update set domain = excluded.domain, plan = case when tracker_sites.plan = 'admin' then 'admin' else excluded.plan end, is_active = 1, updated_at = current_timestamp
+    on conflict(tracker_site_id) do update set
+      supabase_site_id = case when excluded.supabase_site_id <> excluded.tracker_site_id then excluded.supabase_site_id else tracker_sites.supabase_site_id end,
+      business_id = case when excluded.business_id <> excluded.tracker_site_id then excluded.business_id else tracker_sites.business_id end,
+      domain = excluded.domain, plan = case when tracker_sites.plan = 'admin' then 'admin' else excluded.plan end, is_active = 1, updated_at = current_timestamp
   `).bind(id, supabaseSiteId || id, businessId || id, plan, domain)])
   return json({ trackerSiteId: id, domain, plan })
 }
@@ -1937,7 +1940,7 @@ async function googleJson(url: string, accessToken: string) {
   return response.json() as Promise<Record<string, unknown>>
 }
 
-async function listGa4Properties(accessToken: string): Promise<Ga4Property[]> {
+async function listGa4Properties(accessToken: string): Promise<Array<Ga4Property & { websiteUrl?: string }>> {
   const properties: Ga4Property[] = []
   let pageToken = ''
   do {
@@ -1951,7 +1954,13 @@ async function listGa4Properties(accessToken: string): Promise<Ga4Property[]> {
     }
     pageToken = data.nextPageToken || ''
   } while (pageToken)
-  return properties
+  return Promise.all(properties.map(async property => {
+    try {
+      const data = await googleJson(`https://analyticsadmin.googleapis.com/v1beta/properties/${property.id}/dataStreams`, accessToken) as { dataStreams?: Array<{ type?: string, webStreamData?: { defaultUri?: string } }> }
+      const websiteUrl = data.dataStreams?.find(stream => stream.type === 'WEB_DATA_STREAM')?.webStreamData?.defaultUri
+      return { ...property, websiteUrl }
+    } catch { return property }
+  }))
 }
 
 async function ga4Properties(request: Request, env: Env) {
