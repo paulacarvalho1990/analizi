@@ -1846,10 +1846,20 @@ function ga4Configured(env: Env) {
 async function authenticatedUser(request: Request, env: Env): Promise<AuthenticatedUser | null> {
   const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
   if (!token || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
-  const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${token}` } })
-  if (!response.ok) return null
-  const user = await response.json() as { id?: string }
-  return user.id ? { id: user.id, token } : null
+  // O PostgREST valida a assinatura e as políticas RLS na consulta de ownedSite.
+  // Aqui só extraímos o subject para evitar uma chamada extra ao endpoint Auth,
+  // que pode rejeitar tokens válidos quando a chave pública foi rotacionada.
+  try {
+    const part = token.split('.')[1]
+    if (!part) return null
+    const normalized = part.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((part.length + 3) % 4)
+    const claims = JSON.parse(atob(normalized)) as { sub?: string, exp?: number, iss?: string }
+    if (!claims.sub || (claims.exp && claims.exp < Math.floor(Date.now() / 1000))) return null
+    if (claims.iss && !claims.iss.includes('/auth/v1')) return null
+    return { id: claims.sub, token }
+  } catch {
+    return null
+  }
 }
 
 async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env): Promise<{ id: string, tracker_site_id: string } | null> {
@@ -2001,6 +2011,9 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+    if (request.method === 'OPTIONS' && url.pathname.startsWith('/v1/ga4/')) {
+      return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' } })
+    }
     if (url.pathname === '/v1/events' || url.pathname === '/v1/sync' || url.pathname === '/v1/collect') {
       return collect(request, env)
     }
