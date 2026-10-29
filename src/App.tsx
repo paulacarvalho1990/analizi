@@ -1832,7 +1832,7 @@ function Insights() {
       />
       <div className="insights-context-row">
         <span className="badge-ia">
-          <Sparkles size={13} /> IA
+          <Sparkles size={13} /> IZI INTELLIGENCE
         </span>
         <span className="source-badge">
           <span className="source-badge-dot"></span>
