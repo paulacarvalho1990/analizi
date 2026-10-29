@@ -255,13 +255,30 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
 
           // Busca todos os sites vinculados a esses businesses
           const bizIds = normalizedBusinesses.map(b => b.id)
-          const { data: sitesData, error: sitesError } = await supabase
+          const fullSitesResult = await supabase
             .from('sites')
             .select('id, business_id, name, domain, tracker_site_id, is_active, analytics_source')
             .in('business_id', bizIds)
             .order('name', { ascending: true })
+          let sitesData: Partial<SiteItem>[] | null = fullSitesResult.data
+          let sitesError = fullSitesResult.error
 
-          let loadedSites = (!sitesError && sitesData) ? (sitesData as SiteItem[]) : []
+          // Compatibilidade com bancos que ainda não receberam a migration
+          // analytics_source. Sem este fallback, a consulta falha inteira e o
+          // painel perde o tracker_site_id, exibindo métricas zeradas.
+          if (sitesError && /analytics_source/i.test(sitesError.message || '')) {
+            const legacySitesResult = await supabase
+              .from('sites')
+              .select('id, business_id, name, domain, tracker_site_id, is_active')
+              .in('business_id', bizIds)
+              .order('name', { ascending: true })
+            sitesData = legacySitesResult.data
+            sitesError = legacySitesResult.error
+          }
+
+          let loadedSites = (!sitesError && sitesData)
+            ? (sitesData as SiteItem[]).map(site => ({ ...site, analytics_source: site.analytics_source || 'tracker' }))
+            : []
 
           // O Worker é a fonte de verdade para o identificador que recebe os
           // eventos. Reconcilia sites antigos cujo tracker_site_id no Supabase
