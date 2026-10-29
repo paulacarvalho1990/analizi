@@ -184,6 +184,12 @@ const normalizeSiteDomain = (value: string) => {
   return { domain, url: `https://${domain}` }
 }
 
+const comparableDomain = (value: string) => value
+  .replace(/^https?:\/\//, '')
+  .replace(/^www\./, '')
+  .split('/')[0]
+  .toLowerCase()
+
 const BusinessContext = createContext<BusinessContextValue | null>(null)
 
 export function BusinessProvider({ children }: { children: React.ReactNode }) {
@@ -255,7 +261,26 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
             .in('business_id', bizIds)
             .order('name', { ascending: true })
 
-          const loadedSites = (!sitesError && sitesData) ? (sitesData as SiteItem[]) : []
+          let loadedSites = (!sitesError && sitesData) ? (sitesData as SiteItem[]) : []
+
+          // O Worker é a fonte de verdade para o identificador que recebe os
+          // eventos. Reconcilia sites antigos cujo tracker_site_id no Supabase
+          // ficou desatualizado após o provisionamento inicial.
+          try {
+            const trackerResponse = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites')
+            if (trackerResponse.ok) {
+              const trackerPayload = await trackerResponse.json() as { sites?: Array<{ tracker_site_id: string; supabase_site_id?: string; domain: string }> }
+              const trackerSites = trackerPayload.sites || []
+              loadedSites = loadedSites.map(site => {
+                const trackerSite = trackerSites.find(candidate =>
+                  candidate.supabase_site_id === site.id || comparableDomain(candidate.domain) === comparableDomain(site.domain)
+                )
+                return trackerSite ? { ...site, tracker_site_id: trackerSite.tracker_site_id } : site
+              })
+            }
+          } catch {
+            // Mantém os dados do Supabase se o Worker estiver indisponível.
+          }
           setSites(loadedSites)
 
           // Restaura business selecionado ou seleciona o primeiro
