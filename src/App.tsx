@@ -2291,15 +2291,19 @@ function ConnectionStatus() {
           .limit(1);
 
         const item = source?.data?.[0];
-        if (!item) {
+        // Sites criados antes da tabela de fontes existir podem não ter ainda
+        // um registro em data_sources, embora já tenham um rastreador válido.
+        // Nesse caso, o status do tracker é a fonte de verdade.
+        const trackerConfigured = Boolean(currentSite.tracker_site_id) && currentSite.analytics_source !== 'ga4';
+        if (!item && !trackerConfigured) {
           if (isMounted) setState('none');
           return;
         }
 
         // A fonte estar conectada apenas confirma a configuração. Dados só existem
         // depois de uma sincronização ou de um evento recebido pelo tracker.
-        let hasEvents = Boolean(item.last_synced_at);
-        let lastEventAt: string | null = item.last_synced_at || null;
+        let hasEvents = Boolean(item?.last_synced_at);
+        let lastEventAt: string | null = item?.last_synced_at || null;
 
         if (currentSite.tracker_site_id) {
           try {
@@ -2320,7 +2324,7 @@ function ConnectionStatus() {
           const lastEventTime = new Date(lastEventAt).getTime();
           const hoursSinceLastEvent = (Date.now() - lastEventTime) / (1000 * 60 * 60);
 
-          if (item.status === 'pending') {
+          if (item?.status === 'pending') {
             const nowIso = new Date().toISOString();
             void supabase
               .from('data_sources')
@@ -2348,7 +2352,7 @@ function ConnectionStatus() {
           return;
         }
 
-        const createdAt = item.created_at ? new Date(item.created_at).getTime() : Date.now();
+        const createdAt = item?.created_at ? new Date(item.created_at).getTime() : Date.now();
         const hoursSinceCreation = (Date.now() - createdAt) / (1000 * 60 * 60);
 
         if (isMounted) {
