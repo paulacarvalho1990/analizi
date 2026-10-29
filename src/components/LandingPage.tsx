@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import { Button } from './ui/Button'
+import { APP_VERSION } from '../lib/version'
 import './LandingPage.css'
 
 interface LandingPageProps {
@@ -789,7 +790,7 @@ export function LandingPage({ onStartTrial, onLogin }: LandingPageProps) {
               Analytics descomplicado e direto ao ponto para negócios reais.
               Entenda seus visitantes e multiplique seus contatos.
             </p>
-            <small>© 2026 Analizi Tecnologia. Todos os direitos reservados.</small>
+            <small>© 2026 Analizi Tecnologia. Todos os direitos reservados. · {APP_VERSION}</small>
           </div>
 
           <div className="footer-links-column">
