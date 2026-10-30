@@ -3916,6 +3916,7 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
   const [message, setMessage] = useState('');
   const [sessionRestored, setSessionRestored] = useState(false);
   const [workspaceSite, setWorkspaceSite] = useState<SiteItem | null>(null);
+  const [connectedProperty, setConnectedProperty] = useState<{ id: string, name: string | null } | null>(null);
   const providerToken = () => sessionStorage.getItem('analizi-ga4-provider-token') || '';
   const providerRefreshToken = () => sessionStorage.getItem('analizi-ga4-provider-refresh-token') || '';
 
@@ -3958,6 +3959,25 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
 
   useEffect(() => { if (sessionRestored) void loadProperties(); }, [sessionRestored]);
 
+  useEffect(() => {
+    const selectedSite = workspaceSite || currentSite;
+    if (!sessionRestored || !selectedSite || !supabase) return;
+    let active = true;
+    void supabase
+      .from('data_sources')
+      .select('ga4_property_id, ga4_property_name, status')
+      .eq('site_id', selectedSite.id)
+      .eq('kind', 'ga4')
+      .eq('status', 'connected')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!active || !data?.ga4_property_id) return;
+        setConnectedProperty({ id: data.ga4_property_id, name: data.ga4_property_name });
+        setSelectedProperty(data.ga4_property_id);
+      });
+    return () => { active = false; };
+  }, [sessionRestored, workspaceSite, currentSite]);
+
   const authorize = async () => {
     if (!supabase) return;
     setLoading(true); setMessage('');
@@ -3999,12 +4019,13 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
         connected_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), last_error: null
       }, { onConflict: 'site_id,kind' });
       if (error) throw new Error(error.message);
-      sessionStorage.removeItem('analizi-ga4-provider-token');
-      sessionStorage.removeItem('analizi-ga4-provider-refresh-token');
+      // Mantém a autorização apenas nesta aba para que "Alterar propriedade"
+      // possa voltar direto ao seletor; o token duradouro fica cifrado no Worker.
       sessionStorage.removeItem('analizi-ga4-workspace-access-token');
       sessionStorage.removeItem('analizi-ga4-workspace-refresh-token');
       sessionStorage.removeItem('analizi-ga4-workspace-site');
-      setMessage('Google Analytics conectado com sucesso. A sincronização inicial será iniciada em seguida.');
+      setConnectedProperty({ id: selectedProperty, name: property?.name || null });
+      setMessage('');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível concluir a conexão.'); }
     finally { setLoading(false); }
   };
@@ -4018,6 +4039,13 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
   const propertyHost = normalizedHost(selectedPropertyInfo?.websiteUrl);
   const currentHost = normalizedHost((workspaceSite || currentSite)?.domain);
   const propertyMismatch = Boolean(propertyHost && currentHost && propertyHost !== currentHost);
+  const changeProperty = () => {
+    setConnectedProperty(null);
+    setMessage('');
+    if (properties.length) return;
+    if (providerToken()) void loadProperties();
+    else void authorize();
+  };
 
   return (
     <>
@@ -4030,15 +4058,31 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
       />
       <section className="setup-layout">
         <article className="setup-card">
-          <div className="step-label">{properties.length ? 'PASSO 2 DE 3' : 'PASSO 1 DE 3'}</div>
-          <span className="source-icon ga large"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
-          <h2>{properties.length ? 'Escolha sua propriedade GA4' : 'Conecte sua conta Google'}</h2>
-          <p>{properties.length ? 'Selecione qual propriedade deve fornecer os dados para este site.' : <>Você será levado ao Google para autorizar o Analizi a <b>somente visualizar</b> os dados do Analytics.</>}</p>
-          <div className="permission-box">
-            <ShieldCheck size={19}/>
-            <span>Não teremos acesso para editar sua conta, criar campanhas ou fazer alterações.</span>
-          </div>
-          {!properties.length ? (
+          {connectedProperty ? (
+            <div className="ga4-connected-state">
+              <div className="step-label">PASSO 3 DE 3</div>
+              <div className="ga4-connected-icon">
+                <span className="source-icon ga large"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
+                <CircleCheck aria-label="Conectado" />
+              </div>
+              <h2>Propriedade conectada</h2>
+              <p><b>{connectedProperty.name || 'Sua propriedade GA4'}</b> já está fornecendo dados para este site.</p>
+              <div className="ga4-sync-note">
+                <Clock size={19}/>
+                <span>Os dados do Google Analytics são recebidos em segurança e podem levar até 24 horas para aparecerem por completo. Depois disso, o painel é atualizado diariamente.</span>
+              </div>
+              <Button className="full" variant="secondary" onClick={changeProperty} disabled={loading}>Alterar propriedade</Button>
+            </div>
+          ) : <>
+            <div className="step-label">{properties.length ? 'PASSO 2 DE 3' : 'PASSO 1 DE 3'}</div>
+            <span className="source-icon ga large"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
+            <h2>{properties.length ? 'Escolha sua propriedade GA4' : 'Conecte sua conta Google'}</h2>
+            <p>{properties.length ? 'Selecione qual propriedade deve fornecer os dados para este site.' : <>Você será levado ao Google para autorizar o Analizi a <b>somente visualizar</b> os dados do Analytics.</>}</p>
+            <div className="permission-box">
+              <ShieldCheck size={19}/>
+              <span>Não teremos acesso para editar sua conta, criar campanhas ou fazer alterações.</span>
+            </div>
+            {!properties.length ? (
             <Button className="full" onClick={() => void authorize()} disabled={loading}>Conectar conta Google <ExternalLink size={16}/></Button>
           ) : (
             <>
@@ -4058,14 +4102,15 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
               )}
             </>
           )}
+          </>}
           {message && <p className="setup-help" style={{ color: message.includes('sucesso') ? '#087f5b' : undefined }}>{message}</p>}
         </article>
         <aside className="setup-sidebar">
           <span className="eyebrow">O QUE VEM DEPOIS</span>
           <ol>
-            <li className={!properties.length ? 'current' : ''}><i>1</i><span><b>Conectar sua conta</b><small>Autorize a leitura dos dados</small></span></li>
-            <li className={properties.length ? 'current' : ''}><i>2</i><span><b>Escolher a propriedade</b><small>Encontre o seu site na lista</small></span></li>
-            <li><i>3</i><span><b>Validar conexão</b><small>Confirmaremos que está tudo certo</small></span></li>
+            <li className={!connectedProperty && !properties.length ? 'current' : ''}><i>1</i><span><b>Conectar sua conta</b><small>Autorize a leitura dos dados</small></span></li>
+            <li className={!connectedProperty && properties.length ? 'current' : ''}><i>2</i><span><b>Escolher a propriedade</b><small>Encontre o seu site na lista</small></span></li>
+            <li className={connectedProperty ? 'current' : ''}><i>3</i><span><b>Conexão confirmada</b><small>Seus dados estão a caminho</small></span></li>
           </ol>
         </aside>
       </section>
