@@ -1870,23 +1870,37 @@ async function authenticatedUser(request: Request, env: Env): Promise<Authentica
 }
 
 async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trackerSiteId = '', businessId = ''): Promise<{ id: string, tracker_site_id: string } | null> {
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+  // Nunca registra identificadores, e-mails ou tokens: estes marcadores existem
+  // apenas para diagnosticar falhas de vínculo entre o painel e o Supabase.
+  const audit = (stage: string, detail: Record<string, boolean | number> = {}) => console.warn('ga4_site_access', JSON.stringify({ stage, ...detail }))
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+    audit('supabase_not_configured')
+    return null
+  }
   const apiKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY
   const requestHeaders = { apikey: apiKey, authorization: `Bearer ${apiKey}` }
   const encodedSite = encodeURIComponent(siteId)
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
-  if (!response.ok) return null
+  if (!response.ok) {
+    audit('site_query_failed', { status: response.status, usingServiceRole: Boolean(env.SUPABASE_SERVICE_ROLE_KEY) })
+    return null
+  }
   const rows = await response.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
+  audit('site_query_complete', { rows: rows.length, hasTrackerFallback: Boolean(trackerSiteId), hasBusinessFallback: Boolean(businessId) })
   const isMember = async (businessId: string) => {
     if (!env.SUPABASE_SERVICE_ROLE_KEY) return true
     const memberResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/business_members?business_id=eq.${encodeURIComponent(businessId)}&user_id=eq.${encodeURIComponent(user.id)}&select=user_id&limit=1`, { headers: requestHeaders })
-    if (!memberResponse.ok) return false
+    if (!memberResponse.ok) {
+      audit('membership_query_failed', { status: memberResponse.status })
+      return false
+    }
     const members = await memberResponse.json() as Array<{ user_id: string }>
     return Boolean(members[0])
   }
   const canAccessBusiness = async (businessId: string) => {
     if (await isMember(businessId)) return true
     const ownerResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/businesses?id=eq.${encodeURIComponent(businessId)}&owner_id=eq.${encodeURIComponent(user.id)}&select=id&limit=1`, { headers: requestHeaders })
+    if (!ownerResponse.ok) audit('owner_query_failed', { status: ownerResponse.status })
     return ownerResponse.ok && Boolean((await ownerResponse.json() as Array<{ id: string }>)[0])
   }
   if (rows[0] && await canAccessBusiness(rows[0].business_id)) return { id: rows[0].id, tracker_site_id: rows[0].tracker_site_id }
@@ -1910,6 +1924,7 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
       }
     }
   }
+  audit('access_not_resolved', { initialSiteFound: Boolean(rows[0]) })
   return null
 }
 
