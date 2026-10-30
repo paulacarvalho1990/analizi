@@ -2020,12 +2020,20 @@ function useAnalytics() {
   }, []);
   useEffect(() => {
     const load = async () => {
-      if (!currentSite?.tracker_site_id) {
+      if (!currentSite) {
         setData(null);
         return;
       }
       const source = supabase ? await supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id) : null;
       const ga4Connected = currentSite.analytics_source === 'ga4' && (source?.data?.some(item => item.kind === 'ga4' && item.status === 'connected') || false);
+      const activeSource = ga4Connected ? 'ga4' : 'tracker';
+
+      // Um site conectado somente ao GA4 não precisa, nem deve depender, de
+      // um identificador do Rastreador Analizi para abrir os painéis.
+      if (activeSource === 'tracker' && !currentSite.tracker_site_id) {
+        setData(null);
+        return;
+      }
       const query = new URLSearchParams({ start: filter.start, end: filter.end, group: filter.group });
       if (filter.page) query.set('page', filter.page);
       if (filter.source) query.set('source', filter.source);
@@ -2043,7 +2051,10 @@ function useAnalytics() {
         });
         if (response.ok) {
           const payload = await response.json() as AnalyticsData;
-          setData({ ...payload, sourceKind: ga4Connected ? 'ga4' : source?.data?.[0]?.kind });
+          // Não use a primeira fonte retornada pelo banco: quando as duas
+          // conexões existem, sua ordem não é garantida. O selo e todos os
+          // painéis devem refletir a fonte que o usuário selecionou.
+          setData({ ...payload, sourceKind: activeSource });
           if (supabase && currentSite.id && payload?.totals && (Number(payload.totals.pageViews || 0) > 0 || Number(payload.totals.users || 0) > 0)) {
             void supabase.from('data_sources').update({
               status: 'connected',
@@ -3856,22 +3867,18 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
         <ShieldCheck size={21}/>
         <div>
           <b>Fonte usada nos painéis</b>
-          <p>Escolha qual fonte deve alimentar os números do site selecionado. O rastreador pode continuar instalado para heatmap e cliques, mesmo com GA4 selecionado.</p>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-            <Button variant={currentSite?.analytics_source !== 'ga4' ? 'primary' : 'secondary'} disabled={updating} onClick={() => void chooseSource('tracker')}>Usar Rastreador Analizi</Button>
-            <Button variant={currentSite?.analytics_source === 'ga4' ? 'primary' : 'secondary'} disabled={updating || !ga4Connected} onClick={() => void chooseSource('ga4')}>Usar Google Analytics 4{!ga4Connected ? ' (conecte primeiro)' : ''}</Button>
-          </div>
+          <p>Escolha qual fonte deve alimentar os números do site selecionado. A mudança recarrega todos os painéis com os dados da conexão escolhida. O rastreador pode continuar instalado para heatmap e cliques, mesmo com GA4 selecionado.</p>
           {message && <p style={{ marginTop: 10, color: message.includes('agora usam') ? '#087f5b' : '#b42318' }}>{message}</p>}
         </div>
       </section>
       <section className="source-options">
-        <article className="source-config-card">
+        <article className={`source-config-card ${currentSite?.analytics_source !== 'ga4' ? 'is-active' : ''}`}>
           <div className="source-card-heading">
             <span className="source-icon"><BrandLogo compact /></span>
             <div>
               <span className="eyebrow">RECOMENDADO · NATIVO</span>
               <h2>Rastreador Analizi</h2>
-              <p>Comece uma coleta nova, focada no seu negócio e sem cookies intrusivos.</p>
+              <p>{currentSite?.analytics_source !== 'ga4' ? 'Fonte selecionada para os painéis deste site.' : 'Comece uma coleta nova, focada no seu negócio e sem cookies intrusivos.'}</p>
             </div>
           </div>
           <ul>
@@ -3879,23 +3886,33 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
             <li><Check size={16}/>Captura automática de WhatsApp, cliques e rolagem</li>
             <li><Check size={16}/>Privacidade total conforme LGPD/GDPR</li>
           </ul>
-          <Button onClick={() => setPage('tracker-setup')}>Ver código de instalação <ArrowRight size={17}/></Button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Button variant={currentSite?.analytics_source !== 'ga4' ? 'secondary' : 'primary'} disabled={updating} onClick={() => void chooseSource('tracker')}>
+              {currentSite?.analytics_source !== 'ga4' ? 'Fonte selecionada' : 'Selecionar esta fonte'}
+            </Button>
+            <Button variant="secondary" onClick={() => setPage('tracker-setup')}>Ver código de instalação <ArrowRight size={17}/></Button>
+          </div>
         </article>
 
-        <article className="source-config-card">
+        <article className={`source-config-card ${currentSite?.analytics_source === 'ga4' ? 'is-active' : ''}`}>
           <div className="source-card-heading">
             <span className="source-icon ga"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
             <div>
               <span className="eyebrow">GOOGLE ANALYTICS 4</span>
               <h2>Conectar propriedade existente</h2>
-              <p>Traga os dados que você já acompanha no Google Analytics.</p>
+              <p>{currentSite?.analytics_source === 'ga4' ? 'Fonte selecionada para os painéis deste site.' : 'Traga os dados que você já acompanha no Google Analytics.'}</p>
             </div>
           </div>
           <ul>
             <li><Check size={16}/>Importa histórico disponível de sessões e acessos</li>
             <li><Check size={16}/>Leitura segura, sem alterar sua conta Google</li>
           </ul>
-          <Button variant="secondary" onClick={() => setPage('ga4-setup')}>{ga4Connected ? 'Gerenciar Google Analytics' : 'Configurar Google Analytics'} <ArrowRight size={17}/></Button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Button variant={currentSite?.analytics_source === 'ga4' ? 'secondary' : 'primary'} disabled={updating || !ga4Connected} onClick={() => void chooseSource('ga4')}>
+              {currentSite?.analytics_source === 'ga4' ? 'Fonte selecionada' : ga4Connected ? 'Selecionar esta fonte' : 'Conecte o GA4 primeiro'}
+            </Button>
+            <Button variant="secondary" onClick={() => setPage('ga4-setup')}>{ga4Connected ? 'Gerenciar GA4' : 'Configurar GA4'} <ArrowRight size={17}/></Button>
+          </div>
         </article>
       </section>
       <article className="source-note">
