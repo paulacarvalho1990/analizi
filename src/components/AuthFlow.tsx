@@ -466,7 +466,7 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
         <h1>De onde vamos trazer os dados?</h1>
         <p>Escolha a opção mais simples para você. Você poderá alterar isso depois.</p>
         <button type="button" className={`source-card ${source === 'ga4' ? 'selected' : ''}`} onClick={() => setSource('ga4')}>
-          <span className="source-icon ga">G</span>
+          <span className="source-icon ga"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
           <span><b>Conectar Google Analytics</b><small>Use os dados que você já acompanha no Google.</small></span>
           {source === 'ga4' && <Check size={20} />}
         </button>

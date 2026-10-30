@@ -3564,7 +3564,7 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
             <article style={{ background: 'var(--surface-subtle, #F9FAFB)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, fontSize: 14 }}>
-                  <Globe2 size={20} style={{ color: '#F59E0B' }} /> Google Analytics 4
+                  <img className="ga4-logo" src="/ga4-icon.png" alt="" /> Google Analytics 4
                 </span>
                 <span className="settings-connection-status-pill pending">Opcional</span>
               </div>
@@ -3795,7 +3795,8 @@ function SourceHeader({
   setPage,
   eyebrow,
   icon: Icon,
-  iconColor
+  iconColor,
+  iconImage
 }: {
   title: string;
   subtitle: string;
@@ -3803,6 +3804,7 @@ function SourceHeader({
   eyebrow?: string;
   icon?: React.ComponentType<{ size?: number; style?: React.CSSProperties; className?: string }>;
   iconColor?: string;
+  iconImage?: string;
 }) {
   return (
     <header className="source-header" style={{ marginBottom: 24 }}>
@@ -3812,7 +3814,7 @@ function SourceHeader({
       <div>
         {eyebrow && <span className="eyebrow">{eyebrow}</span>}
         <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {Icon && <Icon size={26} style={iconColor ? { color: iconColor } : undefined} />}
+          {iconImage ? <img className="ga4-logo source-header-icon" src={iconImage} alt="Google Analytics 4" /> : Icon && <Icon size={26} style={iconColor ? { color: iconColor } : undefined} />}
           {title}
         </h1>
         <p className="subtitle">{subtitle}</p>
@@ -3882,7 +3884,7 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
 
         <article className="source-config-card">
           <div className="source-card-heading">
-            <span className="source-icon ga">G</span>
+            <span className="source-icon ga"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
             <div>
               <span className="eyebrow">GOOGLE ANALYTICS 4</span>
               <h2>Conectar propriedade existente</h2>
@@ -4021,8 +4023,7 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
     <>
       <SourceHeader
         eyebrow="CONFIGURAÇÃO GOOGLE"
-        icon={Globe2}
-        iconColor="#f59e0b"
+        iconImage="/ga4-icon.png"
         title="Conectar Google Analytics"
         subtitle="Em poucos passos, vamos encontrar os dados do seu site."
         setPage={setPage}
@@ -4030,7 +4031,7 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
       <section className="setup-layout">
         <article className="setup-card">
           <div className="step-label">{properties.length ? 'PASSO 2 DE 3' : 'PASSO 1 DE 3'}</div>
-          <span className="source-icon ga large">G</span>
+          <span className="source-icon ga large"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
           <h2>{properties.length ? 'Escolha sua propriedade GA4' : 'Conecte sua conta Google'}</h2>
           <p>{properties.length ? 'Selecione qual propriedade deve fornecer os dados para este site.' : <>Você será levado ao Google para autorizar o Analizi a <b>somente visualizar</b> os dados do Analytics.</>}</p>
           <div className="permission-box">
@@ -4316,6 +4317,10 @@ export function App() {
         // Mantemos-os apenas até a conexão GA4 ser finalizada nesta aba.
         if (newSession.provider_token) sessionStorage.setItem('analizi-ga4-provider-token', newSession.provider_token);
         if (newSession.provider_refresh_token) sessionStorage.setItem('analizi-ga4-provider-refresh-token', newSession.provider_refresh_token);
+        // A autorização GA4 pode usar outra conta Google. Não deixe esse
+        // callback substituir o workspace Analizi enquanto restauramos a
+        // sessão original preservada pela tela de conexão.
+        if (sessionStorage.getItem('analizi-ga4-workspace-access-token')) return;
         void routeAuthenticatedUser();
       } else {
         setMode(window.location.pathname === '/entrar' ? 'login' : 'landing');
