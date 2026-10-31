@@ -1221,17 +1221,21 @@ function Results() {
   const generalClicks = allClicks.filter(item => !isLeadClick(item));
   const rawSmResults = analytics?.sourceMediumResults ?? [];
   const conversionEvents = analytics?.conversionEvents ?? [];
-  const formSubmits = conversionEvents.filter(item => ['contato', 'agendamento', 'orcamento', 'newsletter'].includes(item.type) && item.stage === 'confirmada').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
+  const contactDetails = analytics?.contactDetails ?? [];
+  const formSubmits = analytics?.sourceKind === 'ga4'
+    ? contactDetails.filter(item => item.type === 'form_submit').reduce((sum, item) => sum + Number(item.contacts || 0), 0)
+    : conversionEvents.filter(item => ['contato', 'agendamento', 'orcamento', 'newsletter'].includes(item.type) && item.stage === 'confirmada').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
   const purchaseIntents = conversionEvents.filter(item => ['checkout', 'pagamento', 'assinatura'].includes(item.type) && item.stage === 'intencao').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
   const visibleConversionEvents = conversionEvents.slice(conversionEventPage * ITEMS_PER_PAGE, (conversionEventPage + 1) * ITEMS_PER_PAGE);
 
   const totalDownloads = allClicks.filter(item => isDownloadClick(item)).reduce((sum, item) => sum + Number(item.clicks || 0), 0);
   const totalOutbound = allClicks.filter(item => isOutboundClick(item)).reduce((sum, item) => sum + Number(item.clicks || 0), 0);
+  const totalWhatsApp = allClicks.filter(item => /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whats)/i.test((item.destination || '') + (item.label || ''))).reduce((sum, item) => sum + Number(item.clicks || 0), 0);
 
-  const formStarts = (analytics?.contactDetails ?? [])
+  const formStarts = contactDetails
     .filter(c => c.type === 'form_start')
     .reduce((sum, c) => sum + Number(c.contacts || 0), 0);
-  const formAbandons = (analytics?.contactDetails ?? [])
+  const formAbandons = contactDetails
     .filter(c => c.type === 'form_abandon')
     .reduce((sum, c) => sum + Number(c.contacts || 0), 0);
   const formAbandonRate = formStarts > 0 ? Math.round((formAbandons / formStarts) * 100) : 0;
@@ -1337,7 +1341,7 @@ function Results() {
       </div>
       <section className="metrics">
         <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
-        <MetricCard title="WhatsApp" value={String(t?.whatsappContacts ?? '—')} {...comparison(t?.whatsappContacts, p?.whatsappContacts)} />
+        <MetricCard title="WhatsApp" value={String(analytics?.sourceKind === 'ga4' ? totalWhatsApp : t?.whatsappContacts ?? '—')} {...comparison(analytics?.sourceKind === 'ga4' ? totalWhatsApp : t?.whatsappContacts, p?.whatsappContacts)} />
         <MetricCard title="Cadastros" value={String(t?.signUps ?? '—')} {...comparison(t?.signUps, p?.signUps)} />
         <MetricCard title="Formulários enviados" value={String(formSubmits || '—')} note="envios confirmados" />
         <MetricCard title="Intenções de compra" value={String(purchaseIntents || '—')} note="checkout, pagamento ou assinatura" />
