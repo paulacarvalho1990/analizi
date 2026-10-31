@@ -3837,15 +3837,29 @@ function SourceHeader({
 function DataSources({ setPage }: { setPage: (page: Page) => void }) {
   const { currentSite, refreshBusinesses } = useBusiness();
   const [ga4Connected, setGa4Connected] = useState(false);
-  const [trackerConnected, setTrackerConnected] = useState(Boolean(currentSite?.tracker_site_id));
+  const [trackerConnected, setTrackerConnected] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState('');
   useEffect(() => {
     if (!supabase || !currentSite) return;
-    void supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id).then(({ data }) => {
+    let active = true;
+    setGa4Connected(false);
+    setTrackerConnected(false);
+    void (async () => {
+      const { data } = await supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id);
+      if (!active) return;
       setGa4Connected(Boolean(data?.some(item => item.kind === 'ga4' && item.status === 'connected')));
-      setTrackerConnected(Boolean(currentSite.tracker_site_id) && (Boolean(data?.some(item => item.kind === 'tracker' && item.status === 'connected')) || !data?.some(item => item.kind === 'tracker')));
-    });
+      const sourceReportsActive = Boolean(data?.some(item => item.kind === 'tracker' && item.status === 'connected'));
+      if (!currentSite.tracker_site_id) return;
+      try {
+        const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${currentSite.tracker_site_id}/status`);
+        const status = response.ok ? await response.json() as { received?: boolean } : null;
+        if (active) setTrackerConnected(Boolean(status?.received) || sourceReportsActive);
+      } catch {
+        if (active) setTrackerConnected(sourceReportsActive);
+      }
+    })();
+    return () => { active = false; };
   }, [currentSite?.id]);
   const chooseSource = async (source: 'tracker' | 'ga4') => {
     if (!supabase || !currentSite || (source === 'ga4' && !ga4Connected)) return;
@@ -3873,7 +3887,7 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
         </div>
         <div className="data-source-choices" role="radiogroup" aria-label="Fonte de dados dos painéis">
           <button type="button" role="radio" aria-checked={currentSite?.analytics_source !== 'ga4'} className={currentSite?.analytics_source !== 'ga4' ? 'selected' : ''} disabled={updating || !trackerConnected} onClick={() => void chooseSource('tracker')}>
-            <span className="source-icon"><BrandLogo compact /></span>
+            <span className="source-icon source-icon-with-status"><BrandLogo compact />{trackerConnected && <CircleCheck className="source-icon-check" aria-label="Rastreador conectado" />}</span>
             <span><b>Rastreador Analizi</b><small>{trackerConnected ? 'Selecionar como fonte' : 'Não configurado'}</small></span>
             {currentSite?.analytics_source !== 'ga4' && <Check size={18}/>}
           </button>
@@ -3900,12 +3914,12 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
             <li><Check size={16}/>Captura automática de WhatsApp, cliques e rolagem</li>
             <li><Check size={16}/>Privacidade total conforme LGPD/GDPR</li>
           </ul>
-          <Button variant="secondary" onClick={() => setPage('tracker-setup')}>Ver código de instalação <ArrowRight size={17}/></Button>
+          <Button variant="secondary" onClick={() => setPage('tracker-setup')}>Configurar rastreador <ArrowRight size={17}/></Button>
         </article>
 
         <article className={`source-config-card ${currentSite?.analytics_source === 'ga4' ? 'is-active' : ''}`}>
           <div className="source-card-heading">
-            <span className="source-icon ga"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
+            <span className="source-icon ga source-icon-with-status"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" />{ga4Connected && <CircleCheck className="source-icon-check" aria-label="GA4 conectado" />}</span>
             <div>
               <span className={`source-status ${ga4Connected ? 'connected' : 'not-configured'}`}>{ga4Connected ? <><CircleCheck size={14}/> CONECTADO</> : <><AlertTriangle size={14}/> NÃO CONFIGURADO</>}</span>
               <h2>Conectar propriedade existente</h2>
@@ -3916,7 +3930,7 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
             <li><Check size={16}/>Importa histórico disponível de sessões e acessos</li>
             <li><Check size={16}/>Leitura segura, sem alterar sua conta Google</li>
           </ul>
-          <Button variant="secondary" onClick={() => setPage('ga4-setup')}>{ga4Connected ? 'Gerenciar GA4' : 'Configurar GA4'} <ArrowRight size={17}/></Button>
+          <Button variant="secondary" onClick={() => setPage('ga4-setup')}>Configurar GA4 <ArrowRight size={17}/></Button>
         </article>
       </section>
       <article className="source-note">
