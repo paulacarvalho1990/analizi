@@ -672,7 +672,7 @@ function Acquisition() {
       />
       <AnalyticsFilters analytics={analytics} />
       <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />RASTREADOR ANALIZI ATIVO</span>
+        <span className="source-badge"><span className="source-badge-dot" />{analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}</span>
       </div>
 
       <section className="metrics">
@@ -1017,7 +1017,7 @@ function Audience() {
           <div className="source-pages-head">
             <span>Canal</span>
             <span>Página de destino</span>
-            <span>Visualizações</span>
+            <span>{analytics?.sourceKind === 'ga4' ? 'Sessões' : 'Visualizações'}</span>
             <span>Usuários</span>
           </div>
           {visibleSources.map(item => (
@@ -1836,7 +1836,7 @@ function Insights() {
         </span>
         <span className="source-badge">
           <span className="source-badge-dot"></span>
-          RASTREADOR ANALIZI ATIVO
+          {analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}
         </span>
       </div>
 
