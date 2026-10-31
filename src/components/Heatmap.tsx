@@ -5,10 +5,11 @@ import {
   CreditCard, Flag, TextCursorInput, Link as LinkIcon,
   BarChart3, SlidersHorizontal, Table as TableIcon, MapPin, HelpCircle,
   MessageSquareQuote, Volume2, GalleryHorizontal, ZoomIn, ZoomOut, Maximize2,
-  Calendar, FileText, Layers
+  Calendar, FileText, Layers, Settings, ArrowRight
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
+import { supabase } from '../lib/supabase'
 
 interface LayoutBlock {
   type: string
@@ -505,6 +506,7 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
 
 export function Heatmap() {
   const { currentSite } = useBusiness()
+  const [trackerConfigured, setTrackerConfigured] = useState<boolean | null>(null)
   const [selectedPage, setSelectedPage] = useState<string>('/')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [activeLayer, setActiveLayer] = useState<'clicks' | 'scroll'>('clicks')
@@ -521,6 +523,31 @@ export function Heatmap() {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
 
   const targetSiteId = currentSite?.tracker_site_id || (currentSite?.id?.startsWith('ANLZ') ? currentSite.id : '')
+  const previewTrackerRequired = new URLSearchParams(window.location.search).get('preview') === 'tracker-required'
+
+  useEffect(() => {
+    if (!currentSite) {
+      setTrackerConfigured(null)
+      return
+    }
+    // O heatmap é sempre nativo. Quando GA4 é a fonte dos painéis, só o
+    // liberamos depois de o rastreador receber uma instalação confirmada.
+    if (currentSite.analytics_source !== 'ga4' || !supabase) {
+      setTrackerConfigured(true)
+      return
+    }
+    let active = true
+    void supabase
+      .from('data_sources')
+      .select('status')
+      .eq('site_id', currentSite.id)
+      .eq('kind', 'tracker')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setTrackerConfigured(data?.status === 'connected')
+      })
+    return () => { active = false }
+  }, [currentSite?.id, currentSite?.analytics_source])
 
   const fetchHeatmap = async (page = selectedPage, dev = device, days = periodDays) => {
     if (!targetSiteId) {
@@ -612,6 +639,7 @@ export function Heatmap() {
 
   const scaledStageWidth = Math.round(totalDeviceWidth * activeScale)
   const scaledStageHeight = Math.round((pageHeight + frameBorderPadding) * activeScale)
+  const needsTracker = previewTrackerRequired || (currentSite?.analytics_source === 'ga4' && trackerConfigured === false)
 
   return (
     <div className="heatmap-container">
@@ -626,6 +654,20 @@ export function Heatmap() {
           </p>
         </div>
       </header>
+
+      {needsTracker ? (
+        <section className="heatmap-empty-card heatmap-tracker-required">
+          <div className="heatmap-empty-icon-box">
+            <Flame size={32} />
+          </div>
+          <span className="heatmap-empty-badge">RECURSO DO RASTREADOR ANALIZI</span>
+          <h3>Heatmap e rolagem precisam do Rastreador Analizi</h3>
+          <p>Essa funcionalidade está inclusa no Rastreador Analizi. Configure-o para visualizar onde as pessoas clicam e até onde elas rolam nas páginas do seu site.</p>
+          <a className="heatmap-setup-link" href="/configuracoes/rastreador">
+            <Settings size={17} /> Configurar rastreador <ArrowRight size={17} />
+          </a>
+        </section>
+      ) : <>
 
       {/* Barra de Controles e Filtros */}
       <div className="heatmap-toolbar">
@@ -990,6 +1032,7 @@ export function Heatmap() {
           </div>
         </>
       )}
+      </>}
     </div>
   )
 }

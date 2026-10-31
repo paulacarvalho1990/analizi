@@ -1143,6 +1143,7 @@ body { background:var(--background); color:var(--foreground); }
   border-radius: 20px;
   margin-top: 4px;
 }
+.heatmap-tracker-required { border-style:solid; margin-top:8px; min-height:360px; }.heatmap-tracker-required .heatmap-empty-icon-box { background:linear-gradient(145deg,#fff0e8,#fff3f8); border-color:#ffd5c2; color:#e86a2a; }.heatmap-tracker-required .heatmap-empty-badge { background:#fff0e8; color:#a74a1c; }.heatmap-setup-link { align-items:center; background:#d61f83; border-radius:9px; color:#fff; display:inline-flex; font-size:13px; font-weight:800; gap:8px; margin-top:5px; padding:11px 15px; text-decoration:none; transition:.16s ease; }.heatmap-setup-link:hover { background:#b9166e; transform:translateY(-1px); }
 
 [data-theme="dark"] .heatmap-empty-badge {
   background: #17362e;
