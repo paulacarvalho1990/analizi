@@ -3218,17 +3218,29 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
     currentBusiness,
     currentSite,
     effectivePlan,
-    subscriptionStatus,
     totalSitesCount,
-    setNewSiteModalOpen
+    setNewSiteModalOpen,
+    refreshBusinesses
   } = useBusiness()
 
-  const [activeTab, setActiveTab] = useState<'general' | 'tracker' | 'sources' | 'plan' | 'team' | 'notifications'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'sources' | 'plan' | 'team' | 'notifications'>('sources')
 
   // Geral form
   const [siteName, setSiteName] = useState(currentSite?.name || currentBusiness?.name || '')
   const [siteDomain, setSiteDomain] = useState(currentSite?.domain || currentBusiness?.website_url || '')
-  const [segment, setSegment] = useState(currentBusiness?.segment || 'Serviços')
+  const normalizeSegment = (value?: string | null): 'products' | 'services' | 'health' => {
+    if (value === 'products' || value === 'Produtos') return 'products'
+    if (value === 'health' || value === 'Saúde') return 'health'
+    return 'services'
+  }
+  const subsegmentOptions: Record<'products' | 'services' | 'health', string[]> = {
+    products: ['Moda e acessórios', 'Beleza e cosméticos', 'Alimentos e bebidas', 'Casa e decoração', 'Eletrônicos', 'Saúde e bem-estar', 'Pet shop', 'Autopeças e acessórios', 'Livros e papelaria', 'Produtos infantis', 'Outros'],
+    services: ['Advocacia', 'Contabilidade', 'Arquitetura e engenharia', 'Construção e reformas', 'Tecnologia', 'Educação', 'Consultoria', 'Fotografia e eventos', 'Beleza e estética', 'Serviços automotivos', 'Outros'],
+    health: ['Clínica médica', 'Odontologia', 'Psicologia', 'Fisioterapia', 'Nutrição', 'Dermatologia', 'Exames e diagnóstico', 'Bem-estar e terapias', 'Outros']
+  }
+  const [segment, setSegment] = useState<'products' | 'services' | 'health'>(normalizeSegment(currentBusiness?.segment))
+  const [subsegment, setSubsegment] = useState(currentBusiness?.subsegment || '')
+  const [segmentDetail, setSegmentDetail] = useState(currentBusiness?.segment_detail || '')
   const [timezone, setTimezone] = useState('America/Sao_Paulo')
   const [generalFeedback, setGeneralFeedback] = useState<string | null>(null)
 
@@ -3237,62 +3249,52 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
       setSiteName(currentSite.name || currentBusiness?.name || '')
       setSiteDomain(currentSite.domain || currentBusiness?.website_url || '')
     }
-  }, [currentSite?.id])
+    setSegment(normalizeSegment(currentBusiness?.segment))
+    setSubsegment(currentBusiness?.subsegment || '')
+    setSegmentDetail(currentBusiness?.segment_detail || '')
+  }, [currentSite?.id, currentBusiness?.id])
 
-  const handleSaveGeneral = (e: React.FormEvent) => {
+  const handleSaveGeneral = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (currentSite) {
-      currentSite.name = siteName
-      currentSite.domain = siteDomain
-      if (currentBusiness) {
-        currentBusiness.name = siteName
-        currentBusiness.website_url = siteDomain
-        currentBusiness.segment = segment
+    if (currentSite && currentBusiness) {
+      if (!subsegment) {
+        setGeneralFeedback('Selecione o segmento secundário do seu site.')
+        return
+      }
+      if (subsegment === 'Outros' && segmentDetail.trim().length < 2) {
+        setGeneralFeedback('Descreva os detalhes do segmento do seu site.')
+        return
       }
       try {
+        if (supabase) {
+          const [{ error: businessError }, { error: siteError }] = await Promise.all([
+            supabase.from('businesses').update({ name: siteName, website_url: siteDomain, segment, subsegment, segment_detail: segmentDetail.trim() || null }).eq('id', currentBusiness.id),
+            supabase.from('sites').update({ name: siteName, domain: siteDomain }).eq('id', currentSite.id)
+          ])
+          if (businessError || siteError) throw new Error(businessError?.message || siteError?.message)
+        }
+      currentSite.name = siteName
+      currentSite.domain = siteDomain
+      currentBusiness.name = siteName
+      currentBusiness.website_url = siteDomain
+      currentBusiness.segment = segment
+      currentBusiness.subsegment = subsegment
+      currentBusiness.segment_detail = segmentDetail.trim() || null
+      try {
         const prevB = JSON.parse(localStorage.getItem('analizi-custom-businesses') || '[]') as BusinessItem[]
-        const updatedB = prevB.map(b => b.id === currentBusiness?.id ? { ...b, name: siteName, website_url: siteDomain, segment } : b)
+        const updatedB = prevB.map(b => b.id === currentBusiness.id ? { ...b, name: siteName, website_url: siteDomain, segment, subsegment, segment_detail: segmentDetail.trim() || null } : b)
         localStorage.setItem('analizi-custom-businesses', JSON.stringify(updatedB))
 
         const prevS = JSON.parse(localStorage.getItem('analizi-custom-sites') || '[]') as SiteItem[]
         const updatedS = prevS.map(s => s.id === currentSite.id ? { ...s, name: siteName, domain: siteDomain } : s)
         localStorage.setItem('analizi-custom-sites', JSON.stringify(updatedS))
       } catch {}
+      await refreshBusinesses()
       setGeneralFeedback('Configurações do site salvas com sucesso!')
       setTimeout(() => setGeneralFeedback(null), 4000)
-    }
-  }
-
-  // Rastreador
-  const siteId = currentSite?.tracker_site_id || ''
-  const snippet = siteId ? `<script async src="https://analizi.carvalhopaula1990.workers.dev/izi.js" data-site="${siteId}"></script>` : ''
-  const [copiedSnippet, setCopiedSnippet] = useState(false)
-  const [isTesting, setIsTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ received?: boolean; lastEventAt?: string | null } | null>(null)
-
-  const handleCopySnippet = () => {
-    if (!snippet) return
-    void navigator.clipboard.writeText(snippet)
-    setCopiedSnippet(true)
-    setTimeout(() => setCopiedSnippet(false), 3000)
-  }
-
-  const handleTestConnection = async () => {
-    if (!siteId) return
-    setIsTesting(true)
-    setTestResult(null)
-    try {
-      const res = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${siteId}/status`)
-      if (res.ok) {
-        const status = await res.json() as { received?: boolean; lastEventAt?: string | null }
-        setTestResult(status)
-      } else {
-        setTestResult({ received: false })
+      } catch (error) {
+        setGeneralFeedback(error instanceof Error ? error.message : 'Não foi possível salvar as configurações do site.')
       }
-    } catch {
-      setTestResult({ received: false })
-    } finally {
-      setIsTesting(false)
     }
   }
 
@@ -3352,24 +3354,17 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
       <div className="settings-tab-bar">
         <button
           type="button"
-          className={`settings-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
-          onClick={() => setActiveTab('general')}
-        >
-          <Globe size={16} /> Meu Site & Geral
-        </button>
-        <button
-          type="button"
-          className={`settings-tab-btn ${activeTab === 'tracker' ? 'active' : ''}`}
-          onClick={() => setActiveTab('tracker')}
-        >
-          <Compass size={16} /> Rastreador & Código
-        </button>
-        <button
-          type="button"
           className={`settings-tab-btn ${activeTab === 'sources' ? 'active' : ''}`}
           onClick={() => setActiveTab('sources')}
         >
           <Link2 size={16} /> Fontes de Dados
+        </button>
+        <button
+          type="button"
+          className={`settings-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
+          onClick={() => setActiveTab('general')}
+        >
+          <Globe size={16} /> Meu Site & Geral
         </button>
         <button
           type="button"
@@ -3403,7 +3398,7 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
               ● RASTREADOR ATIVO ({currentSite?.tracker_site_id})
             </span>
           </div>
-          <p className="section-desc">Altere o nome exibido, o domínio e as preferências regionais do site selecionado.</p>
+          <p className="section-desc">Altere o nome, domínio e a classificação usada no cadastro deste site.</p>
 
           {generalFeedback && (
             <div className="settings-feedback-banner">
@@ -3436,24 +3431,25 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
               </div>
 
               <div className="settings-field">
-                <label>Segmento de Atuação</label>
-                <select value={segment} onChange={(e) => setSegment(e.target.value)}>
-                  <option value="Serviços">Prestação de Serviços / B2B</option>
-                  <option value="Produtos">Produtos / E-commerce / Varejo</option>
-                  <option value="Saúde">Saúde, Clínicas e Bem-estar</option>
-                  <option value="Tecnologia">Tecnologia, SaaS e Startups</option>
-                  <option value="Educação">Educação, Cursos e Treinamentos</option>
+                <label>Segmento principal</label>
+                <select value={segment} onChange={(e) => { setSegment(e.target.value as 'products' | 'services' | 'health'); setSubsegment(''); setSegmentDetail('') }}>
+                  <option value="services">Serviços</option>
+                  <option value="products">Produtos / E-commerce</option>
+                  <option value="health">Saúde e Bem-estar</option>
                 </select>
               </div>
 
               <div className="settings-field">
-                <label>Fuso Horário Padrão</label>
-                <select value={timezone} onChange={(e) => setTimezone(e.target.value)}>
-                  <option value="America/Sao_Paulo">Horário de Brasília (GMT-3)</option>
-                  <option value="America/Manaus">Horário de Manaus (GMT-4)</option>
-                  <option value="America/Belem">Horário de Belém (GMT-3)</option>
-                  <option value="UTC">UTC (Universal Time)</option>
+                <label>Segmento secundário</label>
+                <select required value={subsegment} onChange={(e) => { setSubsegment(e.target.value); setSegmentDetail('') }}>
+                  <option value="" disabled>Selecione uma opção</option>
+                  {subsegmentOptions[segment].map(option => <option key={option} value={option}>{option}</option>)}
                 </select>
+              </div>
+
+              <div className="settings-field">
+                <label>{subsegment === 'Outros' ? 'Detalhes do segmento (obrigatório)' : 'Detalhes do segmento (opcional)'}</label>
+                <input type="text" required={subsegment === 'Outros'} value={segmentDetail} onChange={(e) => setSegmentDetail(e.target.value)} placeholder="Ex.: Clínica odontológica especializada em implantes" />
               </div>
             </div>
 
@@ -3466,129 +3462,7 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
         </section>
       )}
 
-      {/* ABA 2: RASTREADOR & CÓDIGO */}
-      {activeTab === 'tracker' && (
-        <section className="settings-section-card">
-          <h3>Código de Instalação do Rastreador</h3>
-          <p className="section-desc">
-            Instale o script oficial do Analizi no cabeçalho (antes da tag <code>&lt;/head&gt;</code>) do seu site para coletar visitas, cliques em botões, WhatsApp e profundidade de rolagem.
-          </p>
-
-          <div style={{ marginBottom: 12 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted-foreground)' }}>IDENTIFICADOR ÚNICO DO SITE:</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-              <code style={{ fontSize: 14, fontWeight: 800, color: '#ff3cac', background: 'rgba(255, 60, 172, 0.1)', padding: '4px 10px', borderRadius: 6 }}>
-                {siteId || 'Nenhum site configurado'}
-              </code>
-            </div>
-          </div>
-
-          <div className="settings-code-box">
-            <code>{snippet || 'Carregando script de rastreamento...'}</code>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={handleCopySnippet}
-              disabled={!snippet}
-              style={{ flexShrink: 0 }}
-            >
-              <Copy size={15} /> {copiedSnippet ? 'Copiado!' : 'Copiar'}
-            </Button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginTop: 18 }}>
-            <Button
-              type="button"
-              onClick={handleTestConnection}
-              disabled={!siteId || isTesting}
-            >
-              <RefreshCw size={15} className={isTesting ? 'spin' : ''} />
-              {isTesting ? 'Verificando eventos...' : 'Testar Conexão em Tempo Real'}
-            </Button>
-
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setPage('tracker-setup')}
-            >
-              Ver tutorial passo a passo por CMS <ArrowRight size={15} />
-            </Button>
-          </div>
-
-          {testResult && (
-            <div
-              className="settings-feedback-banner"
-              style={{
-                marginTop: 18,
-                background: testResult.received ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
-                borderColor: testResult.received ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)',
-                color: testResult.received ? '#059669' : '#D97706'
-              }}
-            >
-              {testResult.received ? (
-                <>
-                  <CircleCheck size={18} />
-                  <span>
-                    <b>Conexão Ativa!</b> O Analizi confirmou o recebimento de eventos recentes do seu domínio.
-                  </span>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle size={18} />
-                  <span>
-                    <b>Aguardando eventos:</b> Publique o código no seu site, abra a página em outra aba e clique novamente em Testar.
-                  </span>
-                </>
-              )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* ABA 3: FONTES DE DADOS */}
-      {activeTab === 'sources' && (
-        <section className="settings-section-card">
-          <h3>Fontes de Dados Conectadas</h3>
-          <p className="section-desc">Acompanhe as integrações ativas de coleta de dados do seu site.</p>
-
-          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
-            <article style={{ background: 'var(--surface-subtle, #F9FAFB)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, fontSize: 14 }}>
-                  <BrandLogo compact /> Rastreador Analizi
-                </span>
-                <span className="settings-connection-status-pill active">Ativo</span>
-              </div>
-              <p style={{ fontSize: 13, color: 'var(--muted-foreground)', marginBottom: 16 }}>
-                Script nativo ultra rápido (&lt; 2 KB). Rastreia visualizações, cliques de WhatsApp, chamadas, rolagem e métricas Core Web Vitals.
-              </p>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <Button variant="secondary" onClick={() => setPage('tracker-setup')}>
-                  Ver Código & Guias
-                </Button>
-                <Button variant="ghost" onClick={handleTestConnection}>
-                  Testar Status
-                </Button>
-              </div>
-            </article>
-
-            <article style={{ background: 'var(--surface-subtle, #F9FAFB)', border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, fontSize: 14 }}>
-                  <img className="ga4-logo" src="/ga4-icon.png" alt="" /> Google Analytics 4
-                </span>
-                <span className="settings-connection-status-pill pending">Opcional</span>
-              </div>
-              <p style={{ fontSize: 13, color: 'var(--muted-foreground)', marginBottom: 16 }}>
-                Conecte sua propriedade do Google Analytics 4 para sincronizar dados históricos e visitas registradas pelo GA4.
-              </p>
-              <Button onClick={() => setPage('ga4-setup')}>
-                Conectar Google Analytics <ArrowRight size={15} />
-              </Button>
-            </article>
-          </div>
-        </section>
-      )}
+      {activeTab === 'sources' && <DataSources setPage={setPage} embedded />}
 
       {/* ABA 4: PLANO & ASSINATURA */}
       {activeTab === 'plan' && (
@@ -3613,7 +3487,7 @@ function Settings({ setPage }: { setPage: (page: Page) => void }) {
             <div style={{ background: 'var(--surface-subtle, #F9FAFB)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
               <span style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 700 }}>STATUS DA ASSINATURA</span>
               <h2 style={{ margin: '6px 0 2px', fontSize: 24, fontWeight: 800, color: '#059669' }}>
-                Ativa e Regular
+                ATIVA
               </h2>
               <p style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>Todos os recursos e métricas desbloqueados.</p>
             </div>
@@ -3834,7 +3708,7 @@ function SourceHeader({
   );
 }
 
-function DataSources({ setPage }: { setPage: (page: Page) => void }) {
+function DataSources({ setPage, embedded = false }: { setPage: (page: Page) => void; embedded?: boolean }) {
   const { currentSite, refreshBusinesses } = useBusiness();
   const [ga4Connected, setGa4Connected] = useState(false);
   const [trackerConnected, setTrackerConnected] = useState(false);
@@ -3871,14 +3745,14 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
   };
   return (
     <>
-      <SourceHeader
+      {!embedded && <SourceHeader
         eyebrow="INTEGRAÇÕES DE DADOS"
         icon={Link2}
         iconColor="#2563EB"
         title="Fontes de Dados"
         subtitle="Escolha de onde o Analizi vai receber os eventos e métricas do seu site."
         setPage={setPage}
-      />
+      />}
       <section className="data-source-selector">
         <div>
           <span className="eyebrow">FONTE DOS PAINÉIS</span>
@@ -3914,7 +3788,7 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
             <li><Check size={16}/>Captura automática de WhatsApp, cliques e rolagem</li>
             <li><Check size={16}/>Privacidade total conforme LGPD/GDPR</li>
           </ul>
-          <Button variant="secondary" onClick={() => setPage('tracker-setup')}>Configurar rastreador <ArrowRight size={17}/></Button>
+          <Button variant="secondary" onClick={() => setPage('tracker-setup')}>{trackerConnected ? 'Gerenciar rastreador' : 'Configurar rastreador'} <ArrowRight size={17}/></Button>
         </article>
 
         <article className={`source-config-card ${currentSite?.analytics_source === 'ga4' ? 'is-active' : ''}`}>
@@ -3922,7 +3796,7 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
             <span className="source-icon ga source-icon-with-status"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" />{ga4Connected && <CircleCheck className="source-icon-check" aria-label="GA4 conectado" />}</span>
             <div>
               <span className={`source-status ${ga4Connected ? 'connected' : 'not-configured'}`}>{ga4Connected ? <><CircleCheck size={14}/> CONECTADO</> : <><AlertTriangle size={14}/> NÃO CONFIGURADO</>}</span>
-              <h2>Conectar propriedade existente</h2>
+              <h2>Google Analytics 4</h2>
               <p>Traga os dados que você já acompanha no Google Analytics.</p>
             </div>
           </div>
@@ -3930,7 +3804,7 @@ function DataSources({ setPage }: { setPage: (page: Page) => void }) {
             <li><Check size={16}/>Importa histórico disponível de sessões e acessos</li>
             <li><Check size={16}/>Leitura segura, sem alterar sua conta Google</li>
           </ul>
-          <Button variant="secondary" onClick={() => setPage('ga4-setup')}>Configurar GA4 <ArrowRight size={17}/></Button>
+          <Button variant="secondary" onClick={() => setPage('ga4-setup')}>{ga4Connected ? 'Gerenciar GA4' : 'Configurar GA4'} <ArrowRight size={17}/></Button>
         </article>
       </section>
       <article className="source-note">
