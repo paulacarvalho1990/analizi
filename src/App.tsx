@@ -4165,6 +4165,9 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
   const [copied, setCopied] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState('');
+  const [installed, setInstalled] = useState(false);
+  const [lastEventAt, setLastEventAt] = useState<string | null>(null);
+  const [showInstallation, setShowInstallation] = useState(false);
   useEffect(() => {
     const init = async () => {
       if (!siteId || !domain) return;
@@ -4176,6 +4179,19 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
     };
     void init();
   }, [siteId, domain]);
+  useEffect(() => {
+    if (!siteId) return;
+    let active = true;
+    void fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${siteId}/status`)
+      .then(async response => response.ok ? await response.json() as { received?: boolean; lastEventAt?: string | null } : null)
+      .then(status => {
+        if (!active || !status?.received) return;
+        setInstalled(true);
+        setLastEventAt(status.lastEventAt || null);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [siteId]);
   const testInstallation = async () => {
     if (!siteId) return;
     setTesting(true);
@@ -4184,6 +4200,9 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
       const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${siteId}/status`);
       const status = await response.json() as { received?: boolean; lastEventAt?: string | null };
       if (status.received) {
+        setInstalled(true);
+        setLastEventAt(status.lastEventAt || null);
+        setShowInstallation(false);
         setTestResult('Instalação confirmada. Recebemos um evento do seu site.');
         if (supabase && currentSite?.id) {
           const nowIso = new Date().toISOString();
@@ -4216,12 +4235,23 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
       eyebrow="INSTALAÇÃO RÁPIDA"
       icon={Compass}
       iconColor="#10b981"
-      title="Instalar o Rastreador Analizi"
-      subtitle="Meça visitas e ações importantes no seu site sem coletar conteúdo de formulários."
+      title={installed && !showInstallation ? 'Rastreador Analizi ativo' : 'Instalar o Rastreador Analizi'}
+      subtitle={installed && !showInstallation ? 'Seu site está enviando eventos com segurança para o Analizi.' : 'Meça visitas e ações importantes no seu site sem coletar conteúdo de formulários.'}
       setPage={setPage}
     />
     <section className="setup-layout">
       <article className="setup-card tracker-card">
+        {installed && !showInstallation ? <>
+          <div className="step-label">RASTREADOR ATIVO</div>
+          <div className="tracker-connected-icon"><span className="source-icon large"><BrandLogo compact /></span><CircleCheck aria-label="Rastreador conectado" /></div>
+          <h2>O rastreador está funcionando</h2>
+          <p>Já recebemos eventos de <b>{domain || currentSite?.name || 'seu site'}</b>. Heatmap, rolagem e cliques comerciais estão disponíveis conforme novas visitas chegam.</p>
+          <div className="tracker-active-note"><ShieldCheck size={19}/><span>{lastEventAt ? `Último evento recebido em ${new Date(lastEventAt).toLocaleString('pt-BR')}.` : 'Conexão confirmada com o seu site.'}</span></div>
+          <Button className="full" onClick={testInstallation} disabled={testing}>{testing ? 'Verificando conexão...' : 'Verificar conexão'} <RefreshCw size={17}/></Button>
+          <Button variant="secondary" className="full" onClick={() => setPage('heatmap')}>Ver heatmap e rolagem <ArrowRight size={17}/></Button>
+          <Button variant="ghost" className="full" onClick={() => setShowInstallation(true)}>Ver código de instalação</Button>
+          {testResult && <p className="form-feedback">{testResult}</p>}
+        </> : <>
         <div className="step-label">PASSO 1 DE 2</div>
         <span className="source-icon large"><BrandLogo compact /></span>
         <h2>Instale o código do Analizi</h2>
@@ -4248,6 +4278,8 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
         <Button className="full" onClick={testInstallation} disabled={!siteId || testing}>{testing ? 'Testando instalação...' : 'Testar instalação'} <ArrowRight size={17}/></Button>
         {testResult && <p className="form-feedback">{testResult}</p>}
         <Button variant="ghost" className="full" onClick={() => setPage('dashboard')}>Continuar e configurar depois</Button>
+        {installed && <Button variant="ghost" className="full" onClick={() => setShowInstallation(false)}>Voltar ao status do rastreador</Button>}
+        </>}
       </article>
       <aside className="setup-sidebar">
         <span className="eyebrow">PRECISA DE AJUDA?</span>
