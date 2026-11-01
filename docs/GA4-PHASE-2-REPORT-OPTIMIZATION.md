@@ -43,7 +43,13 @@ Cada relatório agora solicita `returnPropertyQuota: true` e registra no log:
 - quantidade de linhas retornadas;
 - quota retornada pelo GA4.
 
-Quando `rowCount` supera a quantidade efetivamente retornada, o Worker emite `ga4_report_truncated`. Isso identifica relatórios que atingiram o limite atual de 10.000 linhas e precisam de paginação ou redução de cardinalidade.
+Os relatórios agora usam paginação com até 100.000 linhas por página. Quando, mesmo após a paginação, `rowCount` supera a quantidade efetivamente retornada, o Worker emite `ga4_report_truncated`.
+
+### Datas e timezone
+
+As datas retornadas pelo GA4 no formato `YYYYMMDD` são normalizadas para `YYYY-MM-DD` antes da separação entre período atual e anterior.
+
+O limite D-1 usa a timezone persistida no site. Enquanto o campo `timezone` ainda não existir ou estiver inválido no Supabase, o Worker usa `America/Sao_Paulo` como fallback e registra a ocorrência.
 
 ## Resultado esperado
 
@@ -56,6 +62,9 @@ O ganho imediato é uma redução de aproximadamente 11% no número de requisiç
 - `git diff --check` sem erros.
 - Payload de saída preservado no código de transformação.
 - Separação entre período atual e anterior preservada.
+- Datas `YYYYMMDD` normalizadas antes das comparações.
+- Paginação implementada para relatórios com mais de 10.000 linhas.
+- Cálculo de D-1 alterado para usar a timezone do site quando disponível.
 
 ## Validação pendente
 
@@ -65,6 +74,7 @@ O ganho imediato é uma redução de aproximadamente 11% no número de requisiç
 - Confirmar compatibilidade de todas as dimensões e métricas.
 - Testar períodos longos próximos do limite de 730 dias.
 - Decidir se algum relatório adicional pode ser combinado sem aumentar o custo.
+- Persistir e expor a configuração `timezone` no cadastro do site.
 
 ## Próximo passo
 

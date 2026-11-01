@@ -408,6 +408,11 @@ async function trackerStatus(id: string, env: Env) {
 }
 
 function isoDate(value: Date) { return value.toISOString().slice(0, 10) }
+function isoDateInTimeZone(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value)
+  const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
 function shiftDate(value: string, days: number) { const date = new Date(`${value}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); return isoDate(date) }
 function validDate(value: string | null) { return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))) }
 
@@ -2069,17 +2074,56 @@ function ga4Filters(query: URLSearchParams, pageField = 'pagePathPlusQueryString
 }
 
 async function ga4Report(propertyId: string, accessToken: string, label: string, start: string, end: string, dimensions: string[], metrics: string[], dimensionFilter?: Ga4DimensionFilter): Promise<Ga4ReportResult> {
-  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
-    method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ dateRanges: [{ startDate: start, endDate: end }], dimensions: dimensions.map(name => ({ name })), metrics: metrics.map(name => ({ name })), ...(dimensionFilter ? { dimensionFilter } : {}), limit: 10000, returnPropertyQuota: true })
-  })
-  if (!response.ok) throw new Error(`Não foi possível consultar os dados GA4 (${response.status}).`)
-  const payload = await response.json() as { rowCount?: number, propertyQuota?: unknown, rows?: Array<{ dimensionValues?: Array<{ value?: string }>, metricValues?: Array<{ value?: string }> }> }
-  const rows = (payload.rows || []).map(row => ({ dimensions: (row.dimensionValues || []).map(value => value.value || ''), metrics: (row.metricValues || []).map(value => Number(value.value || 0)) }))
-  const rowCount = Number(payload.rowCount ?? rows.length)
-  if (rowCount > rows.length) console.warn('ga4_report_truncated', JSON.stringify({ label, start, end, rowCount, returnedRows: rows.length, limit: 10000 }))
-  console.log('ga4_report_measurement', JSON.stringify({ label, start, end, dimensions, metrics, rowCount, returnedRows: rows.length, propertyQuota: payload.propertyQuota ?? null }))
-  return { rows, rowCount, propertyQuota: payload.propertyQuota }
+  const endpoint = `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`
+  const limit = 100000
+  const rows: Ga4ReportRow[] = []
+  let rowCount = 0
+  let offset = 0
+  let propertyQuota: unknown
+  let page = 0
+
+  while (true) {
+    const response = await fetch(endpoint, {
+      method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ dateRanges: [{ startDate: start, endDate: end }], dimensions: dimensions.map(name => ({ name })), metrics: metrics.map(name => ({ name })), ...(dimensionFilter ? { dimensionFilter } : {}), limit, offset, returnPropertyQuota: true })
+    })
+    if (!response.ok) throw new Error(`Não foi possível consultar os dados GA4 (${response.status}).`)
+    const payload = await response.json() as { rowCount?: number, propertyQuota?: unknown, rows?: Array<{ dimensionValues?: Array<{ value?: string }>, metricValues?: Array<{ value?: string }> }> }
+    const pageRows = (payload.rows || []).map(row => ({ dimensions: (row.dimensionValues || []).map(value => value.value || ''), metrics: (row.metricValues || []).map(value => Number(value.value || 0)) }))
+    rowCount = Number(payload.rowCount ?? rowCount + pageRows.length)
+    propertyQuota = payload.propertyQuota ?? propertyQuota
+    rows.push(...pageRows)
+    console.log('ga4_report_measurement', JSON.stringify({ label, start, end, dimensions, metrics, page, offset, rowCount, returnedRows: pageRows.length, totalRows: rows.length, propertyQuota: payload.propertyQuota ?? null }))
+    if (!pageRows.length || rows.length >= rowCount || pageRows.length < limit) break
+    offset += pageRows.length
+    page += 1
+  }
+
+  if (rowCount > rows.length) console.warn('ga4_report_truncated', JSON.stringify({ label, start, end, rowCount, returnedRows: rows.length, limit }))
+  return { rows, rowCount, propertyQuota }
+}
+
+function validTimeZone(value: unknown): value is string {
+  if (typeof value !== 'string' || !value.trim()) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format()
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function siteTimeZone(siteId: string, env: Env) {
+  const fallback = 'America/Sao_Paulo'
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return fallback
+  const apiKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?id=eq.${encodeURIComponent(siteId)}&select=timezone&limit=1`, { headers: { apikey: apiKey, authorization: `Bearer ${apiKey}` } })
+  if (!response.ok) {
+    console.warn('ga4_site_timezone_fallback', JSON.stringify({ status: response.status }))
+    return fallback
+  }
+  const rows = await response.json() as Array<{ timezone?: string | null }>
+  return validTimeZone(rows[0]?.timezone) ? rows[0]!.timezone! : fallback
 }
 
 async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) {
@@ -2091,7 +2135,8 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
   const result = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select property_id, refresh_token_ciphertext, refresh_token_iv from ga4_connections where supabase_site_id = ?').bind(site.id)]) as Array<{ results?: Array<{ property_id: string, refresh_token_ciphertext: string, refresh_token_iv: string }> }>
   const connection = result[0]?.results?.[0]
   if (!connection) return json({ error: 'Nenhuma propriedade GA4 está conectada a este site.' }, 404)
-  const today = isoDate(new Date())
+  const timeZone = await siteTimeZone(site.id, env)
+  const today = isoDateInTimeZone(new Date(), timeZone)
   const end = validDate(query.get('end')) && query.get('end')! < today ? query.get('end')! : shiftDate(today, -1)
   const start = validDate(query.get('start')) && query.get('start')! <= end ? query.get('start')! : shiftDate(end, -6)
   const previousStart = shiftDate(start, -Math.max(1, Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1))
@@ -2110,8 +2155,9 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
       ga4Report(connection.property_id, accessToken, 'conversion-events', start, end, ['date', 'eventName', 'pagePathPlusQueryString'], ['keyEvents', 'sessions'], dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'event-details', start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions'], dimensionFilter)
     ])
-    const daily = dailyRange.rows.filter(row => row.dimensions[0] >= start && row.dimensions[0] <= end)
-    const previousDaily = dailyRange.rows.filter(row => row.dimensions[0] >= previousStart && row.dimensions[0] < start)
+    const ga4Date = (value: string) => /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : value
+    const daily = dailyRange.rows.filter(row => ga4Date(row.dimensions[0]) >= start && ga4Date(row.dimensions[0]) <= end)
+    const previousDaily = dailyRange.rows.filter(row => ga4Date(row.dimensions[0]) >= previousStart && ga4Date(row.dimensions[0]) < start)
     const sources = sourcesResult.rows
     const pages = pagesResult.rows
     const sourcePages = sourcePagesResult.rows
@@ -2127,7 +2173,6 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
     previousTotals.attentionSeconds = previousTotals.sessions ? Math.round(previousTotals.attentionSeconds / previousTotals.sessions) : 0
     const sourceRows = sources.map(row => ({ source: row.dimensions[0] || 'Direto', medium: row.dimensions[1] || 'direto', campaign: row.dimensions[2] || '', page: '', device: '', browser: '', pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], conversions: row.metrics[4], generalClicks: 0, contactClicks: row.metrics[4], whatsappClicks: 0, signUps: 0, logins: 0 }))
     const sourceTotals = Array.from(sourceRows.reduce((map, row) => map.set(row.source, (map.get(row.source) || 0) + row.sessions), new Map<string, number>())).map(([name, value]) => ({ name, value }))
-    const ga4Date = (value: string) => `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
     const isWhatsApp = (value: string) => /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whatsapp)/i.test(value)
     const clickDetails = eventDetails
       .filter(row => ['click', 'file_download', 'whatsapp_click', 'whatsapp_contact'].includes(row.dimensions[1]) || Boolean(row.dimensions[5]))
