@@ -2086,10 +2086,22 @@ async function ga4Report(propertyId: string, accessToken: string, label: string,
   let page = 0
 
   while (true) {
-    const response = await fetch(endpoint, {
-      method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ dateRanges: [{ startDate: start, endDate: end }], dimensions: dimensions.map(name => ({ name })), metrics: metrics.map(name => ({ name })), ...(dimensionFilter ? { dimensionFilter } : {}), limit, offset, returnPropertyQuota: true })
-    })
+    let response: Response | null = null
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ dateRanges: [{ startDate: start, endDate: end }], dimensions: dimensions.map(name => ({ name })), metrics: metrics.map(name => ({ name })), ...(dimensionFilter ? { dimensionFilter } : {}), limit, offset, returnPropertyQuota: true })
+        })
+      } catch (error) {
+        if (attempt === 2) throw error
+        await new Promise(resolve => setTimeout(resolve, 250 * (2 ** attempt)))
+        continue
+      }
+      if (response.ok || ![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break
+      await new Promise(resolve => setTimeout(resolve, 250 * (2 ** attempt)))
+    }
+    if (!response) throw new Error('Não foi possível consultar os dados GA4.')
     if (!response.ok) throw new Error(`Não foi possível consultar os dados GA4 (${response.status}).`)
     const payload = await response.json() as { rowCount?: number, propertyQuota?: unknown, rows?: Array<{ dimensionValues?: Array<{ value?: string }>, metricValues?: Array<{ value?: string }> }> }
     const pageRows = (payload.rows || []).map(row => ({ dimensions: (row.dimensionValues || []).map(value => value.value || ''), metrics: (row.metricValues || []).map(value => Number(value.value || 0)) }))
@@ -2107,6 +2119,221 @@ async function ga4Report(propertyId: string, accessToken: string, label: string,
 }
 
 const ANALYTICS_TIMEZONE = 'America/Sao_Paulo'
+
+type Ga4SyncConnection = {
+  supabase_site_id: string
+  property_id: string
+  refresh_token_ciphertext: string
+  refresh_token_iv: string
+}
+
+type Ga4DailySyncReports = {
+  dailyRange: Ga4ReportResult
+  sources: Ga4ReportResult
+  pages: Ga4ReportResult
+  sourcePages: Ga4ReportResult
+  devices: Ga4ReportResult
+  locations: Ga4ReportResult
+  conversionEvents: Ga4ReportResult
+  eventDetails: Ga4ReportResult
+  peakHours: Ga4ReportResult
+  pageContactSessions: Ga4ReportResult
+}
+
+function ga4DateValue(value: string) {
+  return /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : value
+}
+
+function ga4ConversionType(name: string) {
+  if (name === 'whatsapp_contact' || name === 'whatsapp_click') return 'whatsapp'
+  if (name === 'sign_up') return 'cadastro'
+  if (name === 'form_submit') return 'contato'
+  if (name === 'file_download') return 'download'
+  if (name === 'checkout_start') return 'checkout'
+  if (name === 'payment_start') return 'pagamento'
+  if (name === 'subscription_start' || name === 'subscription') return 'assinatura'
+  if (name === 'purchase') return 'compra'
+  return 'outro'
+}
+
+function ga4ClickIntent(eventName: string, destination: string) {
+  if (eventName === 'file_download') return 'download'
+  if (eventName === 'whatsapp_click' || eventName === 'whatsapp_contact' || /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whatsapp)/i.test(destination)) return 'whatsapp'
+  return 'link_externo'
+}
+
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function ga4DailySyncReports(propertyId: string, accessToken: string, start: string, end: string): Promise<Ga4DailySyncReports> {
+  const metricNames = ['screenPageViews', 'activeUsers', 'newUsers', 'sessions', 'keyEvents', 'averageSessionDuration']
+  const contactEventFilter = ga4EventFilter(undefined, ['whatsapp_contact', 'whatsapp_click', 'sign_up', 'form_submit'])
+  const [dailyRange, sources, pages, sourcePages, devices, locations, conversionEvents, eventDetails, peakHours, pageContactSessions] = await Promise.all([
+    ga4Report(propertyId, accessToken, 'sync-daily', start, end, ['date'], metricNames),
+    ga4Report(propertyId, accessToken, 'sync-sources', start, end, ['date', 'sessionSource', 'sessionMedium', 'sessionCampaignName'], metricNames.slice(0, 5)),
+    ga4Report(propertyId, accessToken, 'sync-pages', start, end, ['date', 'pagePathPlusQueryString'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration', 'bounceRate', 'sessions']),
+    ga4Report(propertyId, accessToken, 'sync-source-pages', start, end, ['date', 'sessionSource', 'landingPage'], ['sessions', 'activeUsers']),
+    ga4Report(propertyId, accessToken, 'sync-devices', start, end, ['date', 'deviceCategory', 'browser'], metricNames.slice(0, 5)),
+    ga4Report(propertyId, accessToken, 'sync-locations', start, end, ['date', 'country', 'region', 'city'], metricNames.slice(0, 5)),
+    ga4Report(propertyId, accessToken, 'sync-conversion-events', start, end, ['date', 'eventName', 'pagePathPlusQueryString'], ['keyEvents', 'sessions']),
+    ga4Report(propertyId, accessToken, 'sync-event-details', start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions']),
+    ga4Report(propertyId, accessToken, 'sync-peak-hours', start, end, ['date', 'dayOfWeek', 'hour'], ['sessions', 'screenPageViews', 'keyEvents']),
+    ga4Report(propertyId, accessToken, 'sync-page-contact-sessions', start, end, ['date', 'pagePathPlusQueryString'], ['sessions'], contactEventFilter),
+  ])
+  return { dailyRange, sources, pages, sourcePages, devices, locations, conversionEvents, eventDetails, peakHours, pageContactSessions }
+}
+
+async function persistGa4DailyReports(env: Env, connection: Ga4SyncConnection, start: string, end: string, reports: Ga4DailySyncReports) {
+  const statements: D1Statement[] = []
+  const add = (sql: string, values: unknown[]) => statements.push(env.ANALIZI_EVENTS.prepare(sql).bind(...values))
+  const dates = []
+  for (let date = start; date <= end; date = shiftDate(date, 1)) dates.push(date)
+  const rowsOn = (report: Ga4ReportResult, date: string) => report.rows.filter(row => ga4DateValue(row.dimensions[0] || '') === date)
+
+  for (const date of dates) {
+    for (const row of rowsOn(reports.dailyRange, date)) {
+      add(`insert into ga4_daily_metrics (supabase_site_id, property_id, metric_date, sessions, users, new_users, page_views, key_events, average_session_duration)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, key_events=excluded.key_events, average_session_duration=excluded.average_session_duration`,
+      [connection.supabase_site_id, connection.property_id, date, row.metrics[3] || 0, row.metrics[1] || 0, row.metrics[2] || 0, row.metrics[0] || 0, row.metrics[4] || 0, row.metrics[5] || 0])
+    }
+    for (const row of rowsOn(reports.sources, date)) {
+      const source = row.dimensions[1] || 'Direto'
+      const medium = row.dimensions[2] || 'direto'
+      const campaign = row.dimensions[3] || ''
+      const keyEvents = row.metrics[4] || 0
+      add(`insert into ga4_daily_source_medium_results (supabase_site_id, property_id, metric_date, source, medium, campaign, sessions, page_views, users, new_users, key_events, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, logins, conversions)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, 0, 0, ?)
+        on conflict(supabase_site_id, property_id, metric_date, source, medium, campaign) do update set sessions=excluded.sessions, page_views=excluded.page_views, users=excluded.users, new_users=excluded.new_users, key_events=excluded.key_events, contact_clicks=excluded.contact_clicks, conversions=excluded.conversions`,
+      [connection.supabase_site_id, connection.property_id, date, source, medium, campaign, row.metrics[3] || 0, row.metrics[0] || 0, row.metrics[1] || 0, row.metrics[2] || 0, keyEvents, keyEvents, keyEvents])
+    }
+    for (const row of rowsOn(reports.pages, date)) {
+      add(`insert into ga4_daily_pages (supabase_site_id, property_id, metric_date, page_path, page_views, users, sessions, key_events, bounce_rate, average_session_duration)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, page_path) do update set page_views=excluded.page_views, users=excluded.users, sessions=excluded.sessions, key_events=excluded.key_events, bounce_rate=excluded.bounce_rate, average_session_duration=excluded.average_session_duration`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || '/', row.metrics[0] || 0, row.metrics[1] || 0, row.metrics[5] || 0, row.metrics[2] || 0, row.metrics[4] || 0, row.metrics[3] || 0])
+    }
+    for (const row of rowsOn(reports.sourcePages, date)) {
+      add(`insert into ga4_daily_source_pages (supabase_site_id, property_id, metric_date, source, landing_page, sessions, users)
+        values (?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, source, landing_page) do update set sessions=excluded.sessions, users=excluded.users`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || 'Direto', row.dimensions[2] || '/', row.metrics[0] || 0, row.metrics[1] || 0])
+    }
+    for (const row of rowsOn(reports.devices, date)) {
+      add(`insert into ga4_daily_devices (supabase_site_id, property_id, metric_date, device_type, browser, sessions, users, new_users, page_views, key_events)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, device_type, browser) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, key_events=excluded.key_events`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || 'desktop', row.dimensions[2] || 'Outro', row.metrics[3] || 0, row.metrics[1] || 0, row.metrics[2] || 0, row.metrics[0] || 0, row.metrics[4] || 0])
+    }
+    for (const row of rowsOn(reports.locations, date)) {
+      add(`insert into ga4_daily_locations (supabase_site_id, property_id, metric_date, country, region, city, sessions, users, page_views, key_events)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, country, region, city) do update set sessions=excluded.sessions, users=excluded.users, page_views=excluded.page_views, key_events=excluded.key_events`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || '', row.dimensions[2] || '', row.dimensions[3] || '', row.metrics[3] || 0, row.metrics[1] || 0, row.metrics[0] || 0, row.metrics[4] || 0])
+    }
+    for (const row of rowsOn(reports.conversionEvents, date)) {
+      const name = row.dimensions[1] || ''
+      add(`insert into ga4_daily_conversion_events (supabase_site_id, property_id, metric_date, conversion_type, conversion_name, conversion_stage, page_path, conversions, sessions)
+        values (?, ?, ?, ?, ?, 'confirmada', ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, conversion_type, conversion_name, conversion_stage, page_path) do update set conversions=excluded.conversions, sessions=excluded.sessions`,
+      [connection.supabase_site_id, connection.property_id, date, ga4ConversionType(name), name, row.dimensions[2] || '/', row.metrics[0] || 0, row.metrics[1] || 0])
+    }
+    for (const row of rowsOn(reports.peakHours, date)) {
+      add(`insert into ga4_daily_peak_hours (supabase_site_id, property_id, metric_date, day_of_week, hour_of_day, sessions, page_views, key_events)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, day_of_week, hour_of_day) do update set sessions=excluded.sessions, page_views=excluded.page_views, key_events=excluded.key_events`,
+      [connection.supabase_site_id, connection.property_id, date, Number(row.dimensions[1] || 0), Number(row.dimensions[2] || 0), row.metrics[0] || 0, row.metrics[1] || 0, row.metrics[2] || 0])
+    }
+    for (const row of rowsOn(reports.pageContactSessions, date)) {
+      add(`insert into ga4_daily_contacts (supabase_site_id, property_id, metric_date, contact_type, page_path, contacts, sessions)
+        values (?, ?, ?, 'contact_session', ?, 0, ?)
+        on conflict(supabase_site_id, property_id, metric_date, contact_type, page_path) do update set contacts=excluded.contacts, sessions=excluded.sessions`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || '/', row.metrics[0] || 0])
+    }
+    for (const row of rowsOn(reports.eventDetails, date)) {
+      const eventName = row.dimensions[1] || 'click'
+      const path = row.dimensions[2] || '/'
+      const label = row.dimensions[3] || (eventName === 'file_download' ? 'Download de arquivo' : 'Link externo')
+      const buttonId = row.dimensions[4] || ''
+      const destination = row.dimensions[5] || ''
+      if (eventName === 'form_start' || eventName === 'form_submit') {
+        add(`insert into ga4_daily_contacts (supabase_site_id, property_id, metric_date, contact_type, page_path, contacts, sessions)
+          values (?, ?, ?, ?, ?, ?, ?)
+          on conflict(supabase_site_id, property_id, metric_date, contact_type, page_path) do update set contacts=excluded.contacts, sessions=excluded.sessions`,
+        [connection.supabase_site_id, connection.property_id, date, eventName, path, row.metrics[0] || 0, row.metrics[1] || 0])
+      }
+      if (['click', 'file_download', 'whatsapp_click', 'whatsapp_contact'].includes(eventName) || destination) {
+        const intent = ga4ClickIntent(eventName, destination)
+        const isContactLead = intent === 'whatsapp' ? 1 : 0
+        const dimensionKey = await sha256Hex([path, label, buttonId, destination, intent, isContactLead].join('\u001f'))
+        add(`insert into ga4_daily_clicks (supabase_site_id, property_id, metric_date, dimension_key, page_path, label, button_id, destination, intent, is_contact_lead, clicks, sessions)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          on conflict(supabase_site_id, property_id, metric_date, dimension_key) do update set page_path=excluded.page_path, label=excluded.label, button_id=excluded.button_id, destination=excluded.destination, intent=excluded.intent, is_contact_lead=excluded.is_contact_lead, clicks=excluded.clicks, sessions=excluded.sessions`,
+        [connection.supabase_site_id, connection.property_id, date, dimensionKey, path, label, buttonId, destination, intent, isContactLead, row.metrics[0] || 0, row.metrics[1] || 0])
+      }
+    }
+  }
+
+  let rowCount = 0
+  for (let index = 0; index < statements.length; index += 80) {
+    const batch = statements.slice(index, index + 80)
+    await env.ANALIZI_EVENTS.batch(batch)
+    rowCount += batch.length
+  }
+  return rowCount
+}
+
+async function runScheduledGa4Sync(env: Env): Promise<void> {
+  if (!ga4Configured(env)) {
+    console.warn('GA4 cron ignorado: integração não configurada.')
+    return
+  }
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  const dates = [shiftDate(today, -3), shiftDate(today, -2), shiftDate(today, -1)]
+  const start = dates[0]
+  const end = dates[dates.length - 1]
+  const connectionsResult = await env.ANALIZI_EVENTS.batch([
+    env.ANALIZI_EVENTS.prepare('select supabase_site_id, property_id, refresh_token_ciphertext, refresh_token_iv from ga4_connections')
+  ]) as Array<{ results?: Ga4SyncConnection[] }>
+  const connections = connectionsResult[0]?.results ?? []
+
+  for (const connection of connections) {
+    const runId = `ga4_${connection.supabase_site_id}_${Date.now()}`
+    try {
+      await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare(`insert into ga4_sync_runs (id, supabase_site_id, property_id, sync_kind, period_start, period_end, status) values (?, ?, ?, 'daily', ?, ?, 'running')`).bind(runId, connection.supabase_site_id, connection.property_id, start, end),
+        ...dates.map(date => env.ANALIZI_EVENTS.prepare(`insert into ga4_sync_periods (supabase_site_id, property_id, period_type, period_start, status, attempts, last_run_id, last_error, updated_at)
+          values (?, ?, 'day', ?, 'running', 1, ?, null, current_timestamp)
+          on conflict(supabase_site_id, property_id, period_type, period_start) do update set status='running', attempts=ga4_sync_periods.attempts + 1, last_run_id=excluded.last_run_id, last_error=null, updated_at=current_timestamp`).bind(connection.supabase_site_id, connection.property_id, date, runId))
+      ])
+
+      const accessToken = await ga4AccessToken(connection, env)
+      const reports = await ga4DailySyncReports(connection.property_id, accessToken, start, end)
+      const rowCount = await persistGa4DailyReports(env, connection, start, end, reports)
+      const validation = await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare('select count(*) as row_count from ga4_daily_metrics where supabase_site_id = ? and property_id = ? and metric_date >= ? and metric_date <= ?').bind(connection.supabase_site_id, connection.property_id, start, end)
+      ]) as Array<{ results?: Array<{ row_count: number }> }>
+      const persistedRows = Number(validation[0]?.results?.[0]?.row_count || 0)
+      const quotaJson = JSON.stringify({ reports: Object.fromEntries(Object.entries(reports).map(([label, report]) => [label, report.propertyQuota ?? null])) })
+      await env.ANALIZI_EVENTS.batch([
+        ...dates.map(date => env.ANALIZI_EVENTS.prepare(`update ga4_sync_periods set status='success', last_success_at=current_timestamp, last_error=null, updated_at=current_timestamp where supabase_site_id=? and property_id=? and period_type='day' and period_start=? and last_run_id=?`).bind(connection.supabase_site_id, connection.property_id, date, runId)),
+        env.ANALIZI_EVENTS.prepare(`update ga4_sync_runs set status='success', report_count=10, row_count=?, quota_json=?, finished_at=current_timestamp where id=?`).bind(rowCount, quotaJson, runId),
+        env.ANALIZI_EVENTS.prepare(`update ga4_connections set last_synced_at=current_timestamp, last_error=null where supabase_site_id=?`).bind(connection.supabase_site_id)
+      ])
+      console.log('ga4_sync_success', JSON.stringify({ siteId: connection.supabase_site_id, propertyId: connection.property_id, start, end, upsertStatements: rowCount, persistedMetricRows: persistedRows }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha desconhecida na sincronização GA4.'
+      await env.ANALIZI_EVENTS.batch([
+        ...dates.map(date => env.ANALIZI_EVENTS.prepare(`update ga4_sync_periods set status='failed', last_error=?, updated_at=current_timestamp where supabase_site_id=? and property_id=? and period_type='day' and period_start=? and last_run_id=?`).bind(message.slice(0, 1000), connection.supabase_site_id, connection.property_id, date, runId)),
+        env.ANALIZI_EVENTS.prepare(`update ga4_sync_runs set status='failed', error_message=?, finished_at=current_timestamp where id=?`).bind(message.slice(0, 1000), runId),
+        env.ANALIZI_EVENTS.prepare(`update ga4_connections set last_error=? where supabase_site_id=?`).bind(message.slice(0, 1000), connection.supabase_site_id)
+      ]).catch(updateError => console.error('ga4_sync_failure_update_error', updateError))
+      console.error('ga4_sync_failed', JSON.stringify({ siteId: connection.supabase_site_id, propertyId: connection.property_id, start, end, error: message }))
+    }
+  }
+}
 
 async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) {
   if (!ga4Configured(env)) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
@@ -2235,9 +2462,9 @@ export default {
   },
   async scheduled(event: { cron?: string }, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
     const jobs: Promise<void>[] = [runDailyConsolidationAndCleanup(env)]
-    // O único cron diário configurado é o de consolidação. Qualquer outro
-    // evento agendado é o fechamento semanal — inclusive o valor enviado pelo
-    // endpoint /__scheduled do Wrangler durante testes.
+    // O cron diário também sincroniza o GA4. O fechamento semanal roda no
+    // segundo cron e não repete a consulta ao GA4.
+    if (event.cron === '0 3 * * *') jobs.push(runScheduledGa4Sync(env))
     if (event.cron !== '0 3 * * *') jobs.push(runScheduledWeeklyInsights(env))
     ctx.waitUntil(Promise.all(jobs))
   },
