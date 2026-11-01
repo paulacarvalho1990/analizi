@@ -2045,6 +2045,13 @@ type Ga4DimensionFilter = {
   }
 }
 
+type Ga4ReportRow = { dimensions: string[], metrics: number[] }
+type Ga4ReportResult = {
+  rows: Ga4ReportRow[]
+  rowCount: number
+  propertyQuota?: unknown
+}
+
 function ga4Filters(query: URLSearchParams, pageField = 'pagePathPlusQueryString'): Ga4DimensionFilter | undefined {
   const fields: Array<[string, string, number]> = [
     ['page', pageField, 1024],
@@ -2061,14 +2068,18 @@ function ga4Filters(query: URLSearchParams, pageField = 'pagePathPlusQueryString
   return expressions.length ? { andGroup: { expressions } } : undefined
 }
 
-async function ga4Report(propertyId: string, accessToken: string, start: string, end: string, dimensions: string[], metrics: string[], dimensionFilter?: Ga4DimensionFilter) {
+async function ga4Report(propertyId: string, accessToken: string, label: string, start: string, end: string, dimensions: string[], metrics: string[], dimensionFilter?: Ga4DimensionFilter): Promise<Ga4ReportResult> {
   const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
     method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ dateRanges: [{ startDate: start, endDate: end }], dimensions: dimensions.map(name => ({ name })), metrics: metrics.map(name => ({ name })), ...(dimensionFilter ? { dimensionFilter } : {}), limit: 10000 })
+    body: JSON.stringify({ dateRanges: [{ startDate: start, endDate: end }], dimensions: dimensions.map(name => ({ name })), metrics: metrics.map(name => ({ name })), ...(dimensionFilter ? { dimensionFilter } : {}), limit: 10000, returnPropertyQuota: true })
   })
   if (!response.ok) throw new Error(`Não foi possível consultar os dados GA4 (${response.status}).`)
-  const payload = await response.json() as { rows?: Array<{ dimensionValues?: Array<{ value?: string }>, metricValues?: Array<{ value?: string }> }> }
-  return (payload.rows || []).map(row => ({ dimensions: (row.dimensionValues || []).map(value => value.value || ''), metrics: (row.metricValues || []).map(value => Number(value.value || 0)) }))
+  const payload = await response.json() as { rowCount?: number, propertyQuota?: unknown, rows?: Array<{ dimensionValues?: Array<{ value?: string }>, metricValues?: Array<{ value?: string }> }> }
+  const rows = (payload.rows || []).map(row => ({ dimensions: (row.dimensionValues || []).map(value => value.value || ''), metrics: (row.metricValues || []).map(value => Number(value.value || 0)) }))
+  const rowCount = Number(payload.rowCount ?? rows.length)
+  if (rowCount > rows.length) console.warn('ga4_report_truncated', JSON.stringify({ label, start, end, rowCount, returnedRows: rows.length, limit: 10000 }))
+  console.log('ga4_report_measurement', JSON.stringify({ label, start, end, dimensions, metrics, rowCount, returnedRows: rows.length, propertyQuota: payload.propertyQuota ?? null }))
+  return { rows, rowCount, propertyQuota: payload.propertyQuota }
 }
 
 async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) {
@@ -2089,17 +2100,25 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
   try {
     const accessToken = await ga4AccessToken(connection, env)
     const metricNames = ['screenPageViews', 'activeUsers', 'newUsers', 'sessions', 'keyEvents', 'averageSessionDuration']
-    const [daily, previousDaily, sources, pages, sourcePages, devices, locations, conversionEvents, eventDetails] = await Promise.all([
-      ga4Report(connection.property_id, accessToken, start, end, ['date'], metricNames, dimensionFilter),
-      ga4Report(connection.property_id, accessToken, previousStart, shiftDate(start, -1), ['date'], metricNames, dimensionFilter),
-      ga4Report(connection.property_id, accessToken, start, end, ['sessionSource', 'sessionMedium', 'sessionCampaignName'], metricNames.slice(0, 5), dimensionFilter),
-      ga4Report(connection.property_id, accessToken, start, end, ['pagePathPlusQueryString'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration', 'bounceRate'], dimensionFilter),
-      ga4Report(connection.property_id, accessToken, start, end, ['sessionSource', 'landingPage'], ['sessions', 'activeUsers'], sourcePageFilter),
-      ga4Report(connection.property_id, accessToken, start, end, ['deviceCategory', 'browser'], metricNames.slice(0, 5), dimensionFilter),
-      ga4Report(connection.property_id, accessToken, start, end, ['country', 'region', 'city'], metricNames.slice(0, 5), dimensionFilter),
-      ga4Report(connection.property_id, accessToken, start, end, ['date', 'eventName', 'pagePathPlusQueryString'], ['keyEvents', 'sessions'], dimensionFilter),
-      ga4Report(connection.property_id, accessToken, start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions'], dimensionFilter)
+    const [dailyRange, sourcesResult, pagesResult, sourcePagesResult, devicesResult, locationsResult, conversionEventsResult, eventDetailsResult] = await Promise.all([
+      ga4Report(connection.property_id, accessToken, 'daily-current-and-previous', previousStart, end, ['date'], metricNames, dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'sources', start, end, ['sessionSource', 'sessionMedium', 'sessionCampaignName'], metricNames.slice(0, 5), dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'pages', start, end, ['pagePathPlusQueryString'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration', 'bounceRate'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'source-pages', start, end, ['sessionSource', 'landingPage'], ['sessions', 'activeUsers'], sourcePageFilter),
+      ga4Report(connection.property_id, accessToken, 'devices', start, end, ['deviceCategory', 'browser'], metricNames.slice(0, 5), dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'locations', start, end, ['country', 'region', 'city'], metricNames.slice(0, 5), dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'conversion-events', start, end, ['date', 'eventName', 'pagePathPlusQueryString'], ['keyEvents', 'sessions'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'event-details', start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions'], dimensionFilter)
     ])
+    const daily = dailyRange.rows.filter(row => row.dimensions[0] >= start && row.dimensions[0] <= end)
+    const previousDaily = dailyRange.rows.filter(row => row.dimensions[0] >= previousStart && row.dimensions[0] < start)
+    const sources = sourcesResult.rows
+    const pages = pagesResult.rows
+    const sourcePages = sourcePagesResult.rows
+    const devices = devicesResult.rows
+    const locations = locationsResult.rows
+    const conversionEvents = conversionEventsResult.rows
+    const eventDetails = eventDetailsResult.rows
     const dailyRows = daily.map(row => ({ date: `${row.dimensions[0].slice(0, 4)}-${row.dimensions[0].slice(4, 6)}-${row.dimensions[0].slice(6, 8)}`, pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], contacts: row.metrics[4], attentionSeconds: row.metrics[5] }))
     const totals = dailyRows.reduce((sum, row) => ({ pageViews: sum.pageViews + row.pageViews, users: sum.users + row.users, newUsers: sum.newUsers + row.newUsers, sessions: sum.sessions + row.sessions, contacts: sum.contacts + row.contacts, contactSessions: sum.contactSessions + row.contacts, attentionSeconds: sum.attentionSeconds + row.attentionSeconds * row.sessions }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
     totals.attentionSeconds = totals.sessions ? Math.round(totals.attentionSeconds / totals.sessions) : 0
