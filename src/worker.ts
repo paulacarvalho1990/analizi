@@ -2621,8 +2621,8 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
   const site = await ownedSite(compactText(query.get('siteId'), 64), user, env)
   if (!site) return json({ error: 'Site não encontrado.' }, 404)
   const connectionResult = await env.ANALIZI_EVENTS.batch([
-    env.ANALIZI_EVENTS.prepare('select property_id from ga4_connections where supabase_site_id = ?').bind(site.id)
-  ]) as Array<{ results?: Array<{ property_id: string }> }>
+    env.ANALIZI_EVENTS.prepare('select property_id, last_synced_at, last_error from ga4_connections where supabase_site_id = ?').bind(site.id)
+  ]) as Array<{ results?: Array<{ property_id: string, last_synced_at?: string | null, last_error?: string | null }> }>
   const connection = connectionResult[0]?.results?.[0]
   if (!connection) return json({ error: 'Nenhuma propriedade GA4 está conectada a este site.' }, 404)
 
@@ -2721,7 +2721,7 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
       pageConversionMap.set(path, current)
     })
     const dailyCutoff = shiftMonths(today, -5)
-    return json({ totals, previousTotals, daily, sources, pages, sourcePages, sourceMediumResults, devices, locations, contactDetails, clickDetails, conversionEvents, pageConversionResults: Array.from(pageConversionMap.values()).filter(row => row.sessions > 0 || row.contactSessions > 0), peakHours, filterPages: pages.map(row => ({ path: row.path })), filterSources: sourceMediumResults.map(row => ({ source: row.source })), filterMediums: sourceMediumResults.map(row => ({ medium: row.medium })), filterCampaigns: sourceMediumResults.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.device })), filterBrowsers: devices.map(row => ({ browser: row.browser })), periodDays: daily.length, sourceKind: 'ga4', dataSource: 'd1', granularity: start < dailyCutoff ? (end >= dailyCutoff ? 'mixed' : 'monthly') : 'daily' })
+    return json({ totals, previousTotals, daily, sources, pages, sourcePages, sourceMediumResults, devices, locations, contactDetails, clickDetails, conversionEvents, pageConversionResults: Array.from(pageConversionMap.values()).filter(row => row.sessions > 0 || row.contactSessions > 0), peakHours, filterPages: pages.map(row => ({ path: row.path })), filterSources: sourceMediumResults.map(row => ({ source: row.source })), filterMediums: sourceMediumResults.map(row => ({ medium: row.medium })), filterCampaigns: sourceMediumResults.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.device })), filterBrowsers: devices.map(row => ({ browser: row.browser })), periodDays: daily.length, sourceKind: 'ga4', dataSource: 'd1', granularity: start < dailyCutoff ? (end >= dailyCutoff ? 'mixed' : 'monthly') : 'daily', lastSyncedAt: connection.last_synced_at || null, lastSyncError: connection.last_error || null })
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Não foi possível consultar os dados persistidos do GA4.' }, 500)
   }

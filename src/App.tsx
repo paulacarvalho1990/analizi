@@ -1971,7 +1971,12 @@ interface AnalyticsData {
   filterBrowsers?: Array<{ browser: string }>,
   peakHours?: Array<{ dayOfWeek: number, hourOfDay: number, sessions: number, views: number, contacts: number }>,
   periodDays?: number,
-  sourceKind?: string
+  sourceKind?: string,
+  dataSource?: 'd1' | 'ga4' | string,
+  granularity?: 'daily' | 'monthly' | 'mixed' | string,
+  lastSyncedAt?: string | null,
+  syncStatus?: string | null,
+  lastSyncError?: string | null
 }
 interface AnalyticsFilter {
   start: string,
@@ -2059,7 +2064,7 @@ function useAnalytics() {
           // conexões existem, sua ordem não é garantida. O selo e todos os
           // painéis devem refletir a fonte que o usuário selecionou.
           setData({ ...payload, sourceKind: activeSource });
-          if (supabase && currentSite.id && payload?.totals && (Number(payload.totals.pageViews || 0) > 0 || Number(payload.totals.users || 0) > 0)) {
+          if (activeSource === 'tracker' && supabase && currentSite.id && payload?.totals && (Number(payload.totals.pageViews || 0) > 0 || Number(payload.totals.users || 0) > 0)) {
             void supabase.from('data_sources').update({
               status: 'connected',
               last_synced_at: new Date().toISOString()
@@ -2275,6 +2280,12 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
           </select>
         </div>
       </div>
+      {analytics?.sourceKind === 'ga4' && analytics.granularity && analytics.granularity !== 'daily' && (
+        <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: 12, lineHeight: 1.45 }}>
+          <b>{analytics.granularity === 'monthly' ? 'Histórico mensal' : 'Histórico com granularidade mista'}</b>
+          <span> · Acima de 6 meses, o GA4 é apresentado por mês. Usuários nesse período representam usuários-dia somados, não pessoas únicas no mês.</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -2314,12 +2325,14 @@ function ConnectionStatus() {
       try {
         const source = await supabase
           .from('data_sources')
-          .select('id,status,connected_at,last_synced_at,created_at')
+          .select('id,kind,status,connected_at,last_synced_at,last_error,created_at')
           .eq('site_id', currentSite.id)
-          .order('created_at', { ascending: false })
-          .limit(1);
+          .order('created_at', { ascending: false });
 
-        const item = source?.data?.[0];
+        const ga4Mode = currentSite.analytics_source === 'ga4';
+        const item = ga4Mode
+          ? (source?.data ?? []).find(item => item.kind === 'ga4')
+          : (source?.data ?? []).find(item => item.kind === 'tracker') || source?.data?.[0];
         // Sites criados antes da tabela de fontes existir podem não ter ainda
         // um registro em data_sources, embora já tenham um rastreador válido.
         // Nesse caso, o status do tracker é a fonte de verdade.
@@ -2333,6 +2346,39 @@ function ConnectionStatus() {
           return;
         }
         const isLegacyTracker = !item && trackerConfigured;
+
+        if (ga4Mode) {
+          if (!item) {
+            if (isMounted) setState('none');
+            return;
+          }
+          let lastSync: string | null = null;
+          let syncError: string | null = item.last_error || null;
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/ga4/analytics?siteId=${encodeURIComponent(currentSite.id)}&start=${shiftDays(dateString(new Date()), -1)}&end=${shiftDays(dateString(new Date()), -1)}`, {
+              headers: session?.access_token ? { authorization: `Bearer ${session.access_token}` } : undefined
+            });
+            if (response.ok) {
+              const payload = await response.json() as { lastSyncedAt?: string | null; lastSyncError?: string | null };
+              lastSync = payload.lastSyncedAt || null;
+              syncError = payload.lastSyncError || null;
+            }
+          } catch {
+            // o estado salvo no Supabase continua sendo um fallback visual
+          }
+          const connectedAt = item.connected_at ? new Date(item.connected_at).getTime() : Date.now();
+          const hoursSinceConnection = (Date.now() - connectedAt) / (1000 * 60 * 60);
+          if (lastSync && hoursSinceConnection >= 24) {
+            if (isMounted) {
+              setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lastSync)));
+              setState('ready');
+            }
+            return;
+          }
+          if (isMounted) setState(hoursSinceConnection >= 24 || syncError ? 'warning_24h' : 'pending');
+          return;
+        }
 
         // A fonte estar conectada apenas confirma a configuração. Dados só existem
         // depois de uma sincronização ou de um evento recebido pelo tracker.
@@ -2422,8 +2468,8 @@ function ConnectionStatus() {
   if (state === 'warning_24h') {
     return (
       <article className="connection-status danger">
-        <b>NENHUM EVENTO DETECTADO APÓS 24 HORAS.</b>
-        <p>Seu site foi configurado há mais de 24 horas, mas ainda não recebemos visitas. Verifique se o código do rastreador foi publicado corretamente.</p>
+        <b>{currentSite?.analytics_source === 'ga4' ? 'DADOS DO GA4 AINDA NÃO CAPTURADOS.' : 'NENHUM EVENTO DETECTADO APÓS 24 HORAS.'}</b>
+        <p>{currentSite?.analytics_source === 'ga4' ? 'A conexão foi autorizada, mas o cron ainda não confirmou dados persistidos. A primeira captura ocorre no próximo ciclo diário e a consulta fica disponível no dia seguinte.' : 'Seu site foi configurado há mais de 24 horas, mas ainda não recebemos visitas. Verifique se o código do rastreador foi publicado corretamente.'}</p>
       </article>
     );
   }
@@ -2438,8 +2484,8 @@ function ConnectionStatus() {
   if (state === 'pending') {
     return (
       <article className="connection-status">
-        <b>Você acabou de conectar seu site.</b>
-        <p>Seus dados serão coletados em até 24 horas.</p>
+        <b>{currentSite?.analytics_source === 'ga4' ? 'Google Analytics 4 conectado.' : 'Você acabou de conectar seu site.'}</b>
+        <p>{currentSite?.analytics_source === 'ga4' ? 'A conexão foi testada com sucesso. O próximo cron capturará os dados, que estarão disponíveis para consulta no dia seguinte.' : 'Seus dados serão coletados em até 24 horas.'}</p>
       </article>
     );
   }
@@ -2458,7 +2504,7 @@ function ConnectionStatus() {
 
   return (
     <article className="connection-status success">
-      <b>DADOS COLETADOS ATÉ {yesterdayFormatted}.</b>
+      <b>{currentSite?.analytics_source === 'ga4' ? `DADOS DO GA4 CAPTURADOS ATÉ ${yesterdayFormatted}.` : `DADOS COLETADOS ATÉ ${yesterdayFormatted}.`}</b>
       <p>{updatedAt ? `Última sincronização: ${updatedAt}.` : 'A próxima atualização será exibida aqui.'}</p>
     </article>
   );
@@ -3805,7 +3851,7 @@ function DataSources({ setPage, embedded = false }: { setPage: (page: Page) => v
             </div>
           </div>
           <ul>
-            <li><Check size={16}/>Importa histórico disponível de sessões e acessos</li>
+            <li><Check size={16}/>Captura sessões e acessos diariamente pelo cron</li>
             <li><Check size={16}/>Leitura segura, sem alterar sua conta Google</li>
           </ul>
           <Button variant="secondary" onClick={() => setPage('ga4-setup')}>{ga4Connected ? 'Gerenciar GA4' : 'Configurar GA4'} <ArrowRight size={17}/></Button>
@@ -3929,7 +3975,7 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
       const { error } = await supabase.from('data_sources').upsert({
         site_id: selectedSite.id, kind: 'ga4', status: 'connected', ga4_property_id: selectedProperty,
         ga4_property_name: property?.name || null, ga4_connected_google_email: session?.user.email || null,
-        connected_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), last_error: null
+        connected_at: new Date().toISOString(), last_synced_at: null, last_error: null
       }, { onConflict: 'site_id,kind' });
       if (error) throw new Error(error.message);
       // Mantém a autorização apenas nesta aba para que "Alterar propriedade"
@@ -3979,10 +4025,10 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
                 <CircleCheck aria-label="Conectado" />
               </div>
               <h2>Propriedade conectada</h2>
-              <p><b>{connectedProperty.name || 'Sua propriedade GA4'}</b> já está fornecendo dados para este site.</p>
+              <p><b>{connectedProperty.name || 'Sua propriedade GA4'}</b> foi configurada para este site.</p>
               <div className="ga4-sync-note">
                 <Clock size={19}/>
-                <span>Os dados do Google Analytics são recebidos em segurança e podem levar até 24 horas para aparecerem por completo. Depois disso, o painel é atualizado diariamente.</span>
+                <span>A conexão foi testada com sucesso. Nenhum relatório é carregado agora: o próximo cron capturará D-1, D-2 e D-3, e os dados estarão disponíveis para consulta no dia seguinte.</span>
               </div>
               <Button className="full" variant="secondary" onClick={changeProperty} disabled={loading}>Alterar propriedade</Button>
             </div>
