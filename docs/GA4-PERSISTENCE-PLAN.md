@@ -1,317 +1,115 @@
-# Plano de persistência e sincronização do GA4
+# Plano de atualização do GA4
 
 ## Objetivo
 
-Fazer com que as telas do Analizi leiam os dados do GA4 a partir do D1, mantendo a API do Google fora do caminho de leitura do painel.
+Fazer com que o Analizi consulte o GA4 somente por cron, persista os dados no D1 e mantenha o painel funcionando com dados diários e mensais.
 
-O cron será o único caminho de consulta ao GA4. Os dados serão persistidos como consolidados diários e mensais, com reprocessamento controlado dos dias recentes.
+## Política definida
 
-## Política de dados
+- Painel disponível até D-1.
+- Dados diários por 6 meses.
+- Dados mensais do 7º ao 27º mês.
+- Exclusão após 27 meses.
+- Granularidade menor que mensal bloqueada acima de 6 meses.
+- Reprocessamento GA4 de D-1, D-2 e D-3 com `upsert`.
+- Mesma política para GA4 e rastreador.
 
-- Dados disponíveis no painel até D-1.
-- Dados diários mantidos por 6 meses.
-- Dados mensais mantidos do 7º ao 27º mês.
-- Dados anteriores a 27 meses removidos.
-- Períodos de até 6 meses podem usar granularidade diária.
-- Períodos acima de 6 meses só podem usar granularidade mensal.
-- Períodos que atravessam os dois blocos retornam análise mensal.
-- GA4: importar e reprocessar D-1, D-2 e D-3 com `upsert`.
-- Rastreador e GA4 seguem a mesma política de retenção.
+## Etapas
 
-## Estado atual identificado
+### 1. Diagnóstico e contrato de dados
 
-### Leitura do GA4
+Mapear o fluxo atual, os dados usados pelas telas, os relatórios GA4, o payload compartilhado e os critérios de medição de quota.
 
-O hook `useAnalytics()` em `src/App.tsx` chama `/v1/ga4/analytics` quando a tela é montada ou quando o período/filtro muda. O endpoint atual está em `src/worker.ts`.
+- Inventariar consumidores do analytics.
+- Definir o contrato de saída do backend.
+- Identificar relatórios que podem compartilhar métricas.
+- Registrar decisões, riscos e pontos que exigem teste.
 
-Uma chamada ao endpoint executa nove `runReport` em paralelo:
+### 2. Otimização dos relatórios
 
-1. métricas diárias do período atual;
-2. métricas diárias do período anterior;
-3. fontes, mídias e campanhas;
-4. páginas;
-5. origem e landing page;
-6. dispositivos e navegadores;
-7. localização;
-8. conversões por evento;
-9. detalhes de eventos e cliques.
+Reduzir chamadas ao GA4 sem perder as informações necessárias ao produto.
 
-O endpoint retorna `Cache-Control: no-store` e não existe persistência dos resultados do GA4 no D1. Portanto, as telas podem repetir as mesmas consultas ao abrir, navegar ou alterar filtros.
+- Validar compatibilidade entre dimensões e métricas.
+- Testar agrupamento de métricas por família de relatório.
+- Medir linhas, duração e quota.
+- Escolher a menor configuração segura.
 
-### Retenção atual
+### 3. Persistência diária
 
-- Eventos brutos do rastreador: limpeza após aproximadamente 30 dias, desde que exista consolidação correspondente.
-- Tabelas consolidadas `daily_*`: não possuem limpeza de retenção atualmente.
-- Limite de consulta do rastreador: 730 dias.
-- Cron diário atual: `0 3 * * *` em UTC, equivalente a 00:00 no horário de São Paulo.
+Criar o armazenamento diário específico do GA4 e o controle de sincronização.
 
-## Fase 1 — Diagnóstico e contrato de dados
+- Criar migrações.
+- Definir chaves únicas.
+- Implementar `upsert`.
+- Registrar status e falhas por site.
 
-### Objetivo
+### 4. Cron e reprocessamento
 
-Documentar com precisão quais dados o painel precisa, quais relatórios podem ser combinados e qual será o contrato entre o importador GA4, o D1 e o frontend.
+Importar o GA4 diariamente e corrigir os dias recentes.
 
-Esta fase não muda o comportamento da aplicação nem desativa as consultas atuais ao GA4.
-
-### Inventário atual de consumidores
-
-O hook `useAnalytics()` é usado atualmente por:
-
-- `Dashboard`;
-- `Acquisition`;
-- `Audience`;
-- `Results`;
-- `Insights`;
-- `Pages`.
-
-O payload compartilhado precisa continuar atendendo essas telas sem que cada tela conheça a origem dos dados.
-
-### Contrato lógico do payload
-
-O backend deve continuar retornando, no mínimo:
-
-- `totals`;
-- `previousTotals`;
-- `daily`;
-- `sources`;
-- `pages`;
-- `sourcePages`;
-- `sourceMediumResults`;
-- `devices`;
-- `locations`;
-- `contactDetails`;
-- `clickDetails`;
-- `conversionEvents`;
-- listas de filtros;
-- `periodDays`;
-- `sourceKind`.
-
-As tabelas persistidas não precisam reproduzir esse payload. O Worker continuará responsável por agregá-las no formato consumido pelo frontend.
-
-### Matriz inicial de famílias de relatório
-
-#### 1. Métricas diárias gerais
-
-Dimensão principal:
-
-- `date`
-
-Métricas atuais:
-
-- `screenPageViews`;
-- `activeUsers`;
-- `newUsers`;
-- `sessions`;
-- `keyEvents`;
-- `averageSessionDuration`.
-
-Uso: `daily`, `totals` e `previousTotals`.
-
-O relatório atual do período e o relatório do período anterior deverão ser substituídos por uma consulta que cubra a janela necessária e permita separar os dias no Worker.
-
-#### 2. Fontes, mídias e campanhas
-
-Dimensões:
-
-- `sessionSource`;
-- `sessionMedium`;
-- `sessionCampaignName`.
-
-Métricas atuais: sessões, usuários, novos usuários, visualizações e eventos-chave.
-
-Uso: `sources`, `sourceMediumResults` e filtros de origem, mídia e campanha.
-
-#### 3. Páginas
-
-Dimensão:
-
-- `pagePathPlusQueryString`.
-
-Métricas atuais:
-
-- `screenPageViews`;
-- `activeUsers`;
-- `keyEvents`;
-- `averageSessionDuration`;
-- `bounceRate`.
-
-Uso: `pages` e filtro de páginas.
-
-#### 4. Origem e landing page
-
-Dimensões:
-
-- `sessionSource`;
-- `landingPage`.
-
-Métricas:
-
-- `sessions`;
-- `activeUsers`.
-
-Uso: `sourcePages`.
-
-#### 5. Dispositivo e navegador
-
-Dimensões:
-
-- `deviceCategory`;
-- `browser`.
-
-Métricas:
-
-- `screenPageViews`;
-- `activeUsers`;
-- `newUsers`;
-- `sessions`;
-- `keyEvents`.
-
-Uso: `devices` e filtros de dispositivo/navegador.
-
-#### 6. Localização
-
-Dimensões:
-
-- `country`;
-- `region`;
-- `city`.
-
-Métricas:
-
-- `screenPageViews`;
-- `activeUsers`;
-- `newUsers`;
-- `sessions`;
-- `keyEvents`.
-
-Uso: `locations`.
-
-#### 7. Eventos, conversões e cliques
-
-Relatórios atuais:
-
-- `date + eventName + pagePathPlusQueryString`;
-- `date + eventName + pagePathPlusQueryString + linkText + linkId + linkUrl`.
-
-Esta família será testada para verificar se pode ser consolidada em um relatório sem provocar explosão de cardinalidade. Se a combinação gerar muitas linhas ou custo maior, os dois relatórios permanecerão separados.
-
-### Regras de compatibilidade e medição
-
-Antes de consolidar relatórios, cada combinação deverá ser validada com o mecanismo de compatibilidade do GA4.
-
-Durante os testes, cada consulta deverá registrar:
-
-- quantidade de relatórios;
-- quantidade de linhas retornadas;
-- duração;
-- status HTTP;
-- erro de compatibilidade;
-- quota/token retornado pela API, quando disponível;
-- volume de dados persistido.
-
-O critério de escolha será o menor consumo real de quota, e não apenas o menor número de requisições HTTP.
-
-### Decisões da Fase 1
-
-- Persistir GA4 em tabelas próprias, sem misturar diretamente com `daily_*` do rastreador.
-- Manter o payload atual como contrato de saída do backend.
-- Usar `upsert` por site, data e combinação de dimensões.
-- Reprocessar D-1, D-2 e D-3.
-- Não permitir leitura direta da API nas telas após a conclusão da migração.
-- Criar carga inicial controlada para histórico de até 6 meses.
-- Gerar consolidados mensais antes de remover dados diários antigos.
-
-### Entregáveis da Fase 1
-
-- este documento com o plano geral;
-- inventário dos consumidores do payload;
-- matriz inicial de relatórios;
-- contrato lógico de saída;
-- política de retenção;
-- critérios de medição de quota;
-- lista de pontos que precisam de validação experimental.
-
-## Fase 2 — Otimização dos relatórios
-
-- Implementar os report builders por família.
-- Validar dimensões e métricas compatíveis.
-- Testar consulta contínua D-3 até D-1 com dimensão `date`.
-- Avaliar a fusão dos relatórios de eventos e cliques.
-- Medir linhas, tokens e duração.
-- Fixar a versão de menor custo que preserve os dados do painel.
-
-## Fase 3 — Persistência diária
-
-- Criar migrações das tabelas `ga4_daily_*`.
-- Criar tabela de controle de sincronização.
-- Implementar chaves únicas e `upsert`.
-- Persistir os dados por site, propriedade e data.
-- Registrar falhas sem interromper os demais sites.
-
-## Fase 4 — Cron e reprocessamento
-
-- Executar sincronização diária por site conectado.
 - Processar D-1, D-2 e D-3.
-- Aplicar retry e backoff para erros temporários.
-- Limitar concorrência entre propriedades.
-- Registrar quota e resultado por relatório.
+- Controlar concorrência entre sites.
+- Aplicar retry e backoff.
+- Registrar consumo e resultado das consultas.
 
-## Fase 5 — Carga inicial
+### 5. Carga inicial
 
-- Criar backfill de até 6 meses.
+Preencher o histórico de uma nova conexão sem sobrecarregar a API.
+
+- Importar até 6 meses.
 - Processar em blocos retomáveis.
-- Evitar concorrência excessiva com o cron diário.
-- Validar os primeiros sites no staging antes de ampliar.
+- Separar backfill do cron diário.
 
-## Fase 6 — Consolidação mensal e retenção
+### 6. Consolidação mensal e retenção
 
-- Criar tabelas `ga4_monthly_*`.
-- Gerar mensal a partir do diário.
-- Validar o mensal antes da exclusão.
-- Remover diários com mais de 6 meses.
-- Remover mensais com mais de 27 meses.
+Reduzir armazenamento mantendo histórico suficiente para análise.
 
-## Fase 7 — Backend somente D1
+- Gerar mensais a partir dos diários.
+- Validar antes de remover diários.
+- Remover diários após 6 meses.
+- Remover mensais após 27 meses.
 
-- Alterar `/v1/ga4/analytics` para ler somente o banco.
-- Aplicar limite D-1.
+### 7. Backend somente D1
+
+Fazer o endpoint de analytics ler exclusivamente os consolidados.
+
 - Selecionar diário ou mensal conforme o período.
+- Aplicar limite D-1.
 - Bloquear granularidades inválidas.
-- Manter o mesmo formato de resposta do frontend.
+- Preservar o payload atual.
 
-## Fase 8 — Adaptação do frontend
+### 8. Adaptação do frontend
 
-- Ajustar filtros de período e agrupamento.
-- Informar que históricos antigos são mensais.
-- Exibir data da última sincronização.
-- Remover dependência de atualização direta do GA4.
+Adaptar filtros e mensagens para a nova disponibilidade de granularidade.
 
-## Fase 9 — Testes e validação
+- Informar quando o histórico for mensal.
+- Exibir a data da última sincronização.
+- Remover dependência de consulta direta ao GA4.
+
+### 9. Testes e validação
+
+Garantir equivalência, consistência e segurança da migração.
 
 - Comparar API atual e dados persistidos.
-- Validar reprocessamento sem duplicação.
-- Testar atraso e falha do GA4.
-- Testar diário, mensal e período misto.
-- Testar limpeza de 6 e 27 meses.
-- Testar múltiplos sites simultâneos.
+- Testar reprocessamento sem duplicação.
+- Testar falhas, atrasos e períodos mistos.
+- Testar retenção e filtros.
 
-## Fase 10 — Staging e rollout
+### 10. Staging e rollout
+
+Validar gradualmente antes de desligar a leitura direta do GA4.
 
 - Rodar build e testes.
-- Fazer backfill de poucos sites.
-- Comparar resultados.
+- Fazer backfill controlado.
 - Monitorar quota e falhas.
-- Ampliar gradualmente.
-- Desativar a leitura direta do GA4 somente após validação.
+- Ampliar por etapas.
+- Desativar a leitura direta somente após validação.
 
-## Critérios de conclusão da demanda
+## Critérios de conclusão
 
-- Nenhuma tela consulta diretamente a API do GA4.
-- O cron importa e atualiza D-1, D-2 e D-3.
-- Reprocessamentos não duplicam dados.
-- O painel exibe dados até D-1.
-- Dados diários permanecem por 6 meses.
-- Dados mensais permanecem até 27 meses.
+- Telas não consultam diretamente a API do GA4.
+- Cron atualiza D-1, D-2 e D-3.
+- Reprocessamento não duplica dados.
+- Retenção diária/mensal funciona conforme definido.
 - Granularidades inválidas são rejeitadas.
-- O consumo de quota é observável.
-- O resultado persistido é compatível com o payload atual.
+- Consumo da API é observável.
