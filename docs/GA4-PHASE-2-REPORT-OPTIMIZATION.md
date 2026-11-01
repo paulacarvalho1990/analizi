@@ -8,7 +8,7 @@ Implementação inicial concluída e validada com build local. A medição em um
 
 ### Redução de chamadas
 
-O endpoint atual foi reduzido de nove para oito chamadas `runReport` por consulta.
+O endpoint atual mantém nove chamadas `runReport` por consulta, mas elimina a duplicação entre os relatórios diário atual e diário anterior. A nova composição inclui `peakHours`, que não existia no endpoint GA4.
 
 Os relatórios de métricas do período atual e do período anterior foram unidos em uma única consulta diária contínua, cobrindo `previousStart` até `end`.
 
@@ -27,9 +27,15 @@ Os demais relatórios continuam separados porque possuem diferentes granularidad
 - dispositivos e navegadores;
 - localizações;
 - eventos de conversão;
-- detalhes de cliques e eventos.
+- detalhes de cliques e eventos;
+- horários de pico.
 
 Os relatórios de conversão e cliques não foram unidos nesta etapa. A combinação poderia aumentar a cardinalidade e gerar mais custo ou truncamento que duas consultas menores.
+
+### Campos anteriormente ausentes
+
+- `pageConversionResults` é derivado dos relatórios de páginas, conversões e eventos, sem uma consulta adicional.
+- `peakHours` é preenchido por um relatório com `dayOfWeek`, `hour`, `sessions`, `screenPageViews` e `keyEvents`.
 
 ### Medição adicionada
 
@@ -53,7 +59,7 @@ O limite D-1 usa a timezone persistida no site. Enquanto o campo `timezone` aind
 
 ## Resultado esperado
 
-O ganho imediato é uma redução de aproximadamente 11% no número de requisições por abertura do endpoint, de 9 para 8. O ganho real de quota ainda precisa ser medido, porque o custo do GA4 depende de linhas, dimensões, período, filtros e cardinalidade.
+O ganho imediato é a eliminação de uma consulta duplicada entre o período atual e o anterior. A quantidade final permanece em nove relatórios porque `peakHours` agora é entregue corretamente. O ganho real de quota ainda precisa ser medido, porque o custo do GA4 depende de linhas, dimensões, período, filtros e cardinalidade.
 
 ## Validação executada
 
@@ -65,6 +71,8 @@ O ganho imediato é uma redução de aproximadamente 11% no número de requisiç
 - Datas `YYYYMMDD` normalizadas antes das comparações.
 - Paginação implementada para relatórios com mais de 10.000 linhas.
 - Cálculo de D-1 alterado para usar a timezone do site quando disponível.
+- `pageConversionResults` preenchido para GA4.
+- `peakHours` preenchido para GA4.
 
 ## Validação pendente
 

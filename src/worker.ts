@@ -2145,15 +2145,16 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
   try {
     const accessToken = await ga4AccessToken(connection, env)
     const metricNames = ['screenPageViews', 'activeUsers', 'newUsers', 'sessions', 'keyEvents', 'averageSessionDuration']
-    const [dailyRange, sourcesResult, pagesResult, sourcePagesResult, devicesResult, locationsResult, conversionEventsResult, eventDetailsResult] = await Promise.all([
+    const [dailyRange, sourcesResult, pagesResult, sourcePagesResult, devicesResult, locationsResult, conversionEventsResult, eventDetailsResult, peakHoursResult] = await Promise.all([
       ga4Report(connection.property_id, accessToken, 'daily-current-and-previous', previousStart, end, ['date'], metricNames, dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'sources', start, end, ['sessionSource', 'sessionMedium', 'sessionCampaignName'], metricNames.slice(0, 5), dimensionFilter),
-      ga4Report(connection.property_id, accessToken, 'pages', start, end, ['pagePathPlusQueryString'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration', 'bounceRate'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'pages', start, end, ['pagePathPlusQueryString'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration', 'bounceRate', 'sessions'], dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'source-pages', start, end, ['sessionSource', 'landingPage'], ['sessions', 'activeUsers'], sourcePageFilter),
       ga4Report(connection.property_id, accessToken, 'devices', start, end, ['deviceCategory', 'browser'], metricNames.slice(0, 5), dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'locations', start, end, ['country', 'region', 'city'], metricNames.slice(0, 5), dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'conversion-events', start, end, ['date', 'eventName', 'pagePathPlusQueryString'], ['keyEvents', 'sessions'], dimensionFilter),
-      ga4Report(connection.property_id, accessToken, 'event-details', start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions'], dimensionFilter)
+      ga4Report(connection.property_id, accessToken, 'event-details', start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'peak-hours', start, end, ['dayOfWeek', 'hour'], ['sessions', 'screenPageViews', 'keyEvents'], dimensionFilter)
     ])
     const ga4Date = (value: string) => /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : value
     const daily = dailyRange.rows.filter(row => ga4Date(row.dimensions[0]) >= start && ga4Date(row.dimensions[0]) <= end)
@@ -2165,6 +2166,7 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
     const locations = locationsResult.rows
     const conversionEvents = conversionEventsResult.rows
     const eventDetails = eventDetailsResult.rows
+    const peakHours = peakHoursResult.rows.map(row => ({ dayOfWeek: Number(row.dimensions[0] || 0), hourOfDay: Number(row.dimensions[1] || 0), sessions: row.metrics[0] || 0, views: row.metrics[1] || 0, contacts: row.metrics[2] || 0 }))
     const dailyRows = daily.map(row => ({ date: `${row.dimensions[0].slice(0, 4)}-${row.dimensions[0].slice(4, 6)}-${row.dimensions[0].slice(6, 8)}`, pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], contacts: row.metrics[4], attentionSeconds: row.metrics[5] }))
     const totals = dailyRows.reduce((sum, row) => ({ pageViews: sum.pageViews + row.pageViews, users: sum.users + row.users, newUsers: sum.newUsers + row.newUsers, sessions: sum.sessions + row.sessions, contacts: sum.contacts + row.contacts, contactSessions: sum.contactSessions + row.contacts, attentionSeconds: sum.attentionSeconds + row.attentionSeconds * row.sessions }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
     totals.attentionSeconds = totals.sessions ? Math.round(totals.attentionSeconds / totals.sessions) : 0
@@ -2192,7 +2194,27 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
       .filter(item => item.type === 'form_submit')
       .map(item => ({ date: item.date, path: item.path, label: 'Formulário enviado', intent: 'contato', isContactLead: 1, clicks: item.contacts, sessions: 0 }))
     const eventType = (name: string) => name === 'form_submit' ? 'contato' : name === 'file_download' ? 'download' : /whatsapp/i.test(name) ? 'whatsapp' : name === 'purchase' ? 'compra' : 'outro'
-    return json({ totals, previousTotals, daily: dailyRows, sources: sourceTotals, pages: pages.map(row => ({ path: row.dimensions[0] || '/', views: row.metrics[0], title: row.dimensions[0] || '/', attentionSeconds: Math.round(row.metrics[3]), exitRate: Math.round(row.metrics[4] * 1000) / 10 })), sourcePages: sourcePages.map(row => ({ source: row.dimensions[0] || 'Direto', path: row.dimensions[1] || '/', views: row.metrics[0], users: row.metrics[1] })), sourceMediumResults: sourceRows, devices: devices.map(row => ({ device: row.dimensions[0] || 'desktop', browser: row.dimensions[1] || 'Outro', views: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], conversions: row.metrics[4] })), locations: locations.map(row => ({ country: row.dimensions[0], region: row.dimensions[1], city: row.dimensions[2], views: row.metrics[0], users: row.metrics[1], sessions: row.metrics[3], conversions: row.metrics[4] })), contactDetails, clickDetails: [...clickDetails, ...formClicks], conversionEvents: conversionEvents.filter(row => row.metrics[0] > 0).map(row => ({ date: ga4Date(row.dimensions[0]), type: eventType(row.dimensions[1]), name: row.dimensions[1] || 'Evento-chave GA4', stage: 'confirmada', path: row.dimensions[2] || '/', conversions: row.metrics[0], sessions: row.metrics[1] })), filterPages: pages.map(row => ({ path: row.dimensions[0] || '/' })), filterSources: sourceRows.map(row => ({ source: row.source })), filterMediums: sourceRows.map(row => ({ medium: row.medium })), filterCampaigns: sourceRows.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.dimensions[0] || 'desktop' })), filterBrowsers: devices.map(row => ({ browser: row.dimensions[1] || 'Outro' })), periodDays: dailyRows.length, sourceKind: 'ga4' })
+    const pageConversionMap = new Map<string, { path: string, sessions: number, whatsappClicks: number, signUps: number, contactSessions: number }>()
+    pages.forEach(row => {
+      const path = row.dimensions[0] || '/'
+      pageConversionMap.set(path, { path, sessions: row.metrics[5] || 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 })
+    })
+    conversionEvents.forEach(row => {
+      const path = row.dimensions[2] || '/'
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      current.contactSessions += row.metrics[0] || 0
+      pageConversionMap.set(path, current)
+    })
+    eventDetails.forEach(row => {
+      const eventName = row.dimensions[1] || ''
+      if (eventName !== 'whatsapp_contact' && eventName !== 'sign_up') return
+      const path = row.dimensions[2] || '/'
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      if (eventName === 'whatsapp_contact') current.whatsappClicks += row.metrics[0] || 0
+      if (eventName === 'sign_up') current.signUps += row.metrics[0] || 0
+      pageConversionMap.set(path, current)
+    })
+    return json({ totals, previousTotals, daily: dailyRows, sources: sourceTotals, pages: pages.map(row => ({ path: row.dimensions[0] || '/', views: row.metrics[0], title: row.dimensions[0] || '/', attentionSeconds: Math.round(row.metrics[3]), exitRate: Math.round(row.metrics[4] * 1000) / 10 })), sourcePages: sourcePages.map(row => ({ source: row.dimensions[0] || 'Direto', path: row.dimensions[1] || '/', views: row.metrics[0], users: row.metrics[1] })), sourceMediumResults: sourceRows, devices: devices.map(row => ({ device: row.dimensions[0] || 'desktop', browser: row.dimensions[1] || 'Outro', views: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], conversions: row.metrics[4] })), locations: locations.map(row => ({ country: row.dimensions[0], region: row.dimensions[1], city: row.dimensions[2], views: row.metrics[0], users: row.metrics[1], sessions: row.metrics[3], conversions: row.metrics[4] })), contactDetails, clickDetails: [...clickDetails, ...formClicks], conversionEvents: conversionEvents.filter(row => row.metrics[0] > 0).map(row => ({ date: ga4Date(row.dimensions[0]), type: eventType(row.dimensions[1]), name: row.dimensions[1] || 'Evento-chave GA4', stage: 'confirmada', path: row.dimensions[2] || '/', conversions: row.metrics[0], sessions: row.metrics[1] })), pageConversionResults: Array.from(pageConversionMap.values()).filter(row => row.sessions > 0 || row.contactSessions > 0), peakHours, filterPages: pages.map(row => ({ path: row.dimensions[0] || '/' })), filterSources: sourceRows.map(row => ({ source: row.source })), filterMediums: sourceRows.map(row => ({ medium: row.medium })), filterCampaigns: sourceRows.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.dimensions[0] || 'desktop' })), filterBrowsers: devices.map(row => ({ browser: row.dimensions[1] || 'Outro' })), periodDays: dailyRows.length, sourceKind: 'ga4' })
   } catch (error) { return json({ error: error instanceof Error ? error.message : 'Não foi possível consultar o GA4.' }, 502) }
 }
 

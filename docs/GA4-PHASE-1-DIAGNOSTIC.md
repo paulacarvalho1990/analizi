@@ -52,12 +52,12 @@ O frontend espera o tipo `AnalyticsData`, que contém:
 
 O contrato de saída deve ser preservado na migração. As tabelas persistidas podem ter estrutura diferente, desde que o Worker faça a mesma transformação.
 
-Campos presentes no tipo `AnalyticsData`, mas que não são preenchidos pelo endpoint GA4 atual e precisam de decisão explícita na migração:
+Campos presentes no tipo `AnalyticsData` que exigiam decisão explícita na migração:
 
 - `pageConversionResults`;
 - `peakHours`.
 
-Esses campos já são consumidos ou previstos pelo frontend e não podem desaparecer silenciosamente no novo backend.
+Esses campos já são consumidos ou previstos pelo frontend e agora possuem estratégia de preenchimento na Fase 2: `pageConversionResults` é derivado de relatórios existentes e `peakHours` usa um relatório específico por dia da semana e hora.
 
 ## 4. Matriz de dados necessária
 
