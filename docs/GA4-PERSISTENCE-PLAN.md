@@ -87,6 +87,10 @@ Adaptar filtros e mensagens para a nova disponibilidade de granularidade.
 - Informar quando o histórico for mensal.
 - Exibir a data da última sincronização.
 - Remover dependência de consulta direta ao GA4.
+- Ao conectar o GA4, exibir o banner de acompanhamento de 24 horas com texto específico para GA4.
+- Ao concluir as 24 horas, exibir uma confirmação no sistema somente depois de validar que o cron capturou e persistiu dados do GA4.
+- A conexão deve apenas testar a autorização, salvar a configuração e confirmar sucesso; não deve iniciar uma carga imediata. Os dados serão capturados no próximo cron e estarão disponíveis para consulta no dia seguinte.
+- Envio de email ao final das 24 horas fica registrado no backlog, sem fazer parte da primeira implementação.
 
 ### 9. Testes e validação
 
