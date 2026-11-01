@@ -414,6 +414,12 @@ function isoDateInTimeZone(value: Date, timeZone: string) {
   return `${values.year}-${values.month}-${values.day}`
 }
 function shiftDate(value: string, days: number) { const date = new Date(`${value}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); return isoDate(date) }
+function monthStart(value: string) { return `${value.slice(0, 7)}-01` }
+function shiftMonths(value: string, months: number) {
+  const date = new Date(`${monthStart(value)}T00:00:00.000Z`)
+  date.setUTCMonth(date.getUTCMonth() + months)
+  return isoDate(date)
+}
 function validDate(value: string | null) { return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))) }
 
 const SQL_NORMALIZED_SOURCE = `case
@@ -1848,6 +1854,129 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
   }
 }
 
+async function runMonthlyConsolidationAndRetention(env: Env): Promise<void> {
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  // Mantém os seis meses correntes em granularidade diária. O mês que sai
+  // dessa janela passa a ser consultado exclusivamente no consolidado mensal.
+  const dailyCutoff = shiftMonths(today, -5)
+  const monthlyCutoff = shiftMonths(today, -26)
+  const statements: D1Statement[] = []
+  const add = (sql: string, ...values: unknown[]) => statements.push(env.ANALIZI_EVENTS.prepare(sql).bind(...values))
+
+  // Rastreador: consolidação mensal pondera médias por sessões/usuários e soma
+  // contagens, preservando a semântica das tabelas diárias.
+  add(`insert into monthly_metrics (tracker_site_id, month_start, sessions, users, new_users, page_views, conversions, whatsapp_contacts, sign_ups, form_submits, logins, average_engagement_seconds, exit_rate)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', sum(sessions), sum(users), sum(new_users), sum(page_views), sum(conversions), sum(whatsapp_contacts), sum(sign_ups), sum(form_submits), sum(logins), round(sum(average_engagement_seconds * sessions) / nullif(sum(sessions), 0), 2), round(sum(exit_rate * sessions) / nullif(sum(sessions), 0), 2)
+    from daily_metrics where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7)
+    on conflict(tracker_site_id, month_start) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, conversions=excluded.conversions, whatsapp_contacts=excluded.whatsapp_contacts, sign_ups=excluded.sign_ups, form_submits=excluded.form_submits, logins=excluded.logins, average_engagement_seconds=excluded.average_engagement_seconds, exit_rate=excluded.exit_rate`, dailyCutoff)
+  add(`insert into monthly_sources (tracker_site_id, month_start, source, medium, campaign, users, new_users, sessions, page_views, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', source, medium, campaign, sum(users), sum(new_users), sum(sessions), sum(page_views), sum(conversions)
+    from daily_sources where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), source, medium, campaign
+    on conflict(tracker_site_id, month_start, source, medium, campaign) do update set users=excluded.users, new_users=excluded.new_users, sessions=excluded.sessions, page_views=excluded.page_views, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_pages (tracker_site_id, month_start, page_path, page_title, page_views, users, entrances, exits, exit_rate, average_engagement_seconds, average_load_time_ms, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', page_path, max(page_title), sum(page_views), sum(users), sum(entrances), sum(exits), round(sum(exit_rate * page_views) / nullif(sum(page_views), 0), 2), round(sum(average_engagement_seconds * users) / nullif(sum(users), 0), 2), round(sum(average_load_time_ms * page_views) / nullif(sum(page_views), 0), 2), sum(conversions)
+    from daily_pages where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), page_path
+    on conflict(tracker_site_id, month_start, page_path) do update set page_title=excluded.page_title, page_views=excluded.page_views, users=excluded.users, entrances=excluded.entrances, exits=excluded.exits, exit_rate=excluded.exit_rate, average_engagement_seconds=excluded.average_engagement_seconds, average_load_time_ms=excluded.average_load_time_ms, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_source_pages (tracker_site_id, month_start, source, page_path, page_views, users)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', source, page_path, sum(page_views), sum(users)
+    from daily_source_pages where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), source, page_path
+    on conflict(tracker_site_id, month_start, source, page_path) do update set page_views=excluded.page_views, users=excluded.users`, dailyCutoff)
+  add(`insert into monthly_button_clicks (tracker_site_id, month_start, page_path, button_label, button_id, destination, contact_intent, is_contact_lead, clicks, sessions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', page_path, button_label, button_id, destination, contact_intent, is_contact_lead, sum(clicks), sum(sessions)
+    from daily_button_clicks where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), page_path, button_label, button_id, destination, contact_intent, is_contact_lead
+    on conflict(tracker_site_id, month_start, page_path, button_label, button_id, destination, contact_intent, is_contact_lead) do update set clicks=excluded.clicks, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into monthly_contacts (tracker_site_id, month_start, contact_type, page_path, contacts)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', contact_type, page_path, sum(contacts)
+    from daily_contacts where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), contact_type, page_path
+    on conflict(tracker_site_id, month_start, contact_type, page_path) do update set contacts=excluded.contacts`, dailyCutoff)
+  add(`insert into monthly_locations (tracker_site_id, month_start, country, region, city, page_views, users, sessions, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', country, region, city, sum(page_views), sum(users), sum(sessions), sum(conversions)
+    from daily_locations where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), country, region, city
+    on conflict(tracker_site_id, month_start, country, region, city) do update set page_views=excluded.page_views, users=excluded.users, sessions=excluded.sessions, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_devices (tracker_site_id, month_start, device_type, browser, sessions, users, new_users, page_views, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', device_type, browser, sum(sessions), sum(users), sum(new_users), sum(page_views), sum(conversions)
+    from daily_devices where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), device_type, browser
+    on conflict(tracker_site_id, month_start, device_type, browser) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_source_medium_results (tracker_site_id, month_start, source, medium, campaign, device_type, browser, page_path, sessions, page_views, users, new_users, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, form_submits, logins, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', source, medium, campaign, device_type, browser, page_path, sum(sessions), sum(page_views), sum(users), sum(new_users), sum(general_clicks), sum(contact_clicks), sum(whatsapp_clicks), sum(sign_ups), sum(form_submits), sum(logins), sum(conversions)
+    from daily_source_medium_results where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), source, medium, campaign, device_type, browser, page_path
+    on conflict(tracker_site_id, month_start, source, medium, campaign, device_type, browser, page_path) do update set sessions=excluded.sessions, page_views=excluded.page_views, users=excluded.users, new_users=excluded.new_users, general_clicks=excluded.general_clicks, contact_clicks=excluded.contact_clicks, whatsapp_clicks=excluded.whatsapp_clicks, sign_ups=excluded.sign_ups, form_submits=excluded.form_submits, logins=excluded.logins, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_conversion_events (tracker_site_id, month_start, source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage, conversions, sessions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage, sum(conversions), sum(sessions)
+    from daily_conversion_events where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage
+    on conflict(tracker_site_id, month_start, source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage) do update set conversions=excluded.conversions, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into monthly_page_scroll (tracker_site_id, month_start, page_path, device_type, depth_bracket, visitors)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', page_path, device_type, depth_bracket, sum(visitors)
+    from daily_page_scroll where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), page_path, device_type, depth_bracket
+    on conflict(tracker_site_id, month_start, page_path, device_type, depth_bracket) do update set visitors=excluded.visitors`, dailyCutoff)
+
+  // GA4: mesmas famílias de dados, com médias ponderadas quando a soma
+  // simples produziria distorção (duração média e bounce rate).
+  add(`insert into ga4_monthly_metrics (supabase_site_id, property_id, month_start, sessions, users, new_users, page_views, key_events, average_session_duration)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', sum(sessions), sum(users), sum(new_users), sum(page_views), sum(key_events), round(sum(average_session_duration * sessions) / nullif(sum(sessions), 0), 2)
+    from ga4_daily_metrics where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7)
+    on conflict(supabase_site_id, property_id, month_start) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, key_events=excluded.key_events, average_session_duration=excluded.average_session_duration`, dailyCutoff)
+  add(`insert into ga4_monthly_source_medium_results (supabase_site_id, property_id, month_start, source, medium, campaign, sessions, page_views, users, new_users, key_events, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, logins, conversions)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', source, medium, campaign, sum(sessions), sum(page_views), sum(users), sum(new_users), sum(key_events), sum(general_clicks), sum(contact_clicks), sum(whatsapp_clicks), sum(sign_ups), sum(logins), sum(conversions)
+    from ga4_daily_source_medium_results where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), source, medium, campaign
+    on conflict(supabase_site_id, property_id, month_start, source, medium, campaign) do update set sessions=excluded.sessions, page_views=excluded.page_views, users=excluded.users, new_users=excluded.new_users, key_events=excluded.key_events, general_clicks=excluded.general_clicks, contact_clicks=excluded.contact_clicks, whatsapp_clicks=excluded.whatsapp_clicks, sign_ups=excluded.sign_ups, logins=excluded.logins, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into ga4_monthly_pages (supabase_site_id, property_id, month_start, page_path, page_views, users, sessions, key_events, bounce_rate, average_session_duration)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', page_path, sum(page_views), sum(users), sum(sessions), sum(key_events), round(sum(bounce_rate * sessions) / nullif(sum(sessions), 0), 2), round(sum(average_session_duration * sessions) / nullif(sum(sessions), 0), 2)
+    from ga4_daily_pages where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), page_path
+    on conflict(supabase_site_id, property_id, month_start, page_path) do update set page_views=excluded.page_views, users=excluded.users, sessions=excluded.sessions, key_events=excluded.key_events, bounce_rate=excluded.bounce_rate, average_session_duration=excluded.average_session_duration`, dailyCutoff)
+  add(`insert into ga4_monthly_source_pages (supabase_site_id, property_id, month_start, source, landing_page, sessions, users)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', source, landing_page, sum(sessions), sum(users)
+    from ga4_daily_source_pages where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), source, landing_page
+    on conflict(supabase_site_id, property_id, month_start, source, landing_page) do update set sessions=excluded.sessions, users=excluded.users`, dailyCutoff)
+  add(`insert into ga4_monthly_devices (supabase_site_id, property_id, month_start, device_type, browser, sessions, users, new_users, page_views, key_events)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', device_type, browser, sum(sessions), sum(users), sum(new_users), sum(page_views), sum(key_events)
+    from ga4_daily_devices where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), device_type, browser
+    on conflict(supabase_site_id, property_id, month_start, device_type, browser) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, key_events=excluded.key_events`, dailyCutoff)
+  add(`insert into ga4_monthly_locations (supabase_site_id, property_id, month_start, country, region, city, sessions, users, page_views, key_events)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', country, region, city, sum(sessions), sum(users), sum(page_views), sum(key_events)
+    from ga4_daily_locations where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), country, region, city
+    on conflict(supabase_site_id, property_id, month_start, country, region, city) do update set sessions=excluded.sessions, users=excluded.users, page_views=excluded.page_views, key_events=excluded.key_events`, dailyCutoff)
+  add(`insert into ga4_monthly_contacts (supabase_site_id, property_id, month_start, contact_type, page_path, contacts, sessions)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', contact_type, page_path, sum(contacts), sum(sessions)
+    from ga4_daily_contacts where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), contact_type, page_path
+    on conflict(supabase_site_id, property_id, month_start, contact_type, page_path) do update set contacts=excluded.contacts, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into ga4_monthly_clicks (supabase_site_id, property_id, month_start, dimension_key, page_path, label, button_id, destination, intent, is_contact_lead, clicks, sessions)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', dimension_key, page_path, label, button_id, destination, intent, is_contact_lead, sum(clicks), sum(sessions)
+    from ga4_daily_clicks where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), dimension_key
+    on conflict(supabase_site_id, property_id, month_start, dimension_key) do update set page_path=excluded.page_path, label=excluded.label, button_id=excluded.button_id, destination=excluded.destination, intent=excluded.intent, is_contact_lead=excluded.is_contact_lead, clicks=excluded.clicks, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into ga4_monthly_conversion_events (supabase_site_id, property_id, month_start, conversion_type, conversion_name, conversion_stage, page_path, conversions, sessions)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', conversion_type, conversion_name, conversion_stage, page_path, sum(conversions), sum(sessions)
+    from ga4_daily_conversion_events where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), conversion_type, conversion_name, conversion_stage, page_path
+    on conflict(supabase_site_id, property_id, month_start, conversion_type, conversion_name, conversion_stage, page_path) do update set conversions=excluded.conversions, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into ga4_monthly_peak_hours (supabase_site_id, property_id, month_start, day_of_week, hour_of_day, sessions, page_views, key_events)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', day_of_week, hour_of_day, sum(sessions), sum(page_views), sum(key_events)
+    from ga4_daily_peak_hours where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), day_of_week, hour_of_day
+    on conflict(supabase_site_id, property_id, month_start, day_of_week, hour_of_day) do update set sessions=excluded.sessions, page_views=excluded.page_views, key_events=excluded.key_events`, dailyCutoff)
+
+  try {
+    await env.ANALIZI_EVENTS.batch(statements)
+    const validation = await env.ANALIZI_EVENTS.batch([
+      env.ANALIZI_EVENTS.prepare(`select count(*) as invalid from daily_metrics d where d.metric_date < ? and not exists (select 1 from monthly_metrics m where m.tracker_site_id=d.tracker_site_id and m.month_start=substr(d.metric_date, 1, 7) || '-01')`).bind(dailyCutoff),
+      env.ANALIZI_EVENTS.prepare(`select count(*) as invalid from ga4_daily_metrics d where d.metric_date < ? and not exists (select 1 from ga4_monthly_metrics m where m.supabase_site_id=d.supabase_site_id and m.property_id=d.property_id and m.month_start=substr(d.metric_date, 1, 7) || '-01')`).bind(dailyCutoff),
+    ]) as Array<{ results?: Array<{ invalid: number }> }>
+    const invalidRows = validation.reduce((sum, result) => sum + Number(result.results?.[0]?.invalid || 0), 0)
+    if (invalidRows > 0) throw new Error(`Validação mensal falhou para ${invalidRows} linhas diárias.`)
+
+    const dailyTables = ['daily_metrics', 'daily_sources', 'daily_pages', 'daily_source_pages', 'daily_button_clicks', 'daily_contacts', 'daily_locations', 'daily_devices', 'daily_source_medium_results', 'daily_conversion_events', 'daily_page_scroll']
+    const ga4DailyTables = ['ga4_daily_metrics', 'ga4_daily_source_medium_results', 'ga4_daily_pages', 'ga4_daily_source_pages', 'ga4_daily_devices', 'ga4_daily_locations', 'ga4_daily_contacts', 'ga4_daily_clicks', 'ga4_daily_conversion_events', 'ga4_daily_peak_hours']
+    await env.ANALIZI_EVENTS.batch([
+      ...dailyTables.map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where metric_date < ?`).bind(dailyCutoff)),
+      ...ga4DailyTables.map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where metric_date < ?`).bind(dailyCutoff)),
+      env.ANALIZI_EVENTS.prepare('delete from monthly_event_usage where usage_month < ?').bind(monthlyCutoff),
+      ...['monthly_metrics', 'monthly_sources', 'monthly_pages', 'monthly_source_pages', 'monthly_button_clicks', 'monthly_contacts', 'monthly_locations', 'monthly_devices', 'monthly_source_medium_results', 'monthly_conversion_events', 'monthly_page_scroll'].map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where month_start < ?`).bind(monthlyCutoff)),
+      ...['ga4_monthly_metrics', 'ga4_monthly_source_medium_results', 'ga4_monthly_pages', 'ga4_monthly_source_pages', 'ga4_monthly_devices', 'ga4_monthly_locations', 'ga4_monthly_contacts', 'ga4_monthly_clicks', 'ga4_monthly_conversion_events', 'ga4_monthly_peak_hours'].map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where month_start < ?`).bind(monthlyCutoff)),
+    ])
+    console.log('monthly_consolidation_success', JSON.stringify({ dailyCutoff, monthlyCutoff }))
+  } catch (error) {
+    console.error('monthly_consolidation_failed', error)
+  }
+}
+
 type Ga4Property = { id: string, name: string, accountName: string }
 type AuthenticatedUser = { id: string, token: string }
 
@@ -2461,11 +2590,15 @@ export default {
     return env.ASSETS.fetch(request)
   },
   async scheduled(event: { cron?: string }, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
-    const jobs: Promise<void>[] = [runDailyConsolidationAndCleanup(env)]
-    // O cron diário também sincroniza o GA4. O fechamento semanal roda no
-    // segundo cron e não repete a consulta ao GA4.
-    if (event.cron === '0 3 * * *') jobs.push(runScheduledGa4Sync(env))
-    if (event.cron !== '0 3 * * *') jobs.push(runScheduledWeeklyInsights(env))
+    const jobs: Promise<void>[] = []
+    const isDaily = event.cron === '0 3 * * *'
+    const isWeekly = event.cron === '15 3 * * 1'
+    if (isDaily) {
+      jobs.push(runDailyConsolidationAndCleanup(env), runScheduledGa4Sync(env))
+    }
+    if (isWeekly || !event.cron) {
+      jobs.push(runMonthlyConsolidationAndRetention(env), runScheduledWeeklyInsights(env))
+    }
     ctx.waitUntil(Promise.all(jobs))
   },
 }
