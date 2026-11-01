@@ -2,7 +2,7 @@
 
 ## Status
 
-Concluída em nível de análise do código atual. Nenhuma alteração de comportamento foi feita nesta fase.
+Diagnóstico estático do código atual concluído. A validação experimental de compatibilidade, linhas, tokens e concorrência permanece para a Fase 2. Nenhuma alteração de comportamento foi feita nesta fase.
 
 ## 1. Fluxo atual
 
@@ -51,6 +51,13 @@ O frontend espera o tipo `AnalyticsData`, que contém:
 - período e identificação da fonte.
 
 O contrato de saída deve ser preservado na migração. As tabelas persistidas podem ter estrutura diferente, desde que o Worker faça a mesma transformação.
+
+Campos presentes no tipo `AnalyticsData`, mas que não são preenchidos pelo endpoint GA4 atual e precisam de decisão explícita na migração:
+
+- `pageConversionResults`;
+- `peakHours`.
+
+Esses campos já são consumidos ou previstos pelo frontend e não podem desaparecer silenciosamente no novo backend.
 
 ## 4. Matriz de dados necessária
 
@@ -105,6 +112,7 @@ O contrato de saída deve ser preservado na migração. As tabelas persistidas p
 - Consolidados `daily_*`: sem limpeza configurada.
 - Rastreador: consultas limitadas a 730 dias.
 - Cron diário: `0 3 * * *` UTC, equivalente a 00:00 em São Paulo.
+- A tela de configurações possui um estado local `timezone` com valor padrão `America/Sao_Paulo`, mas esse valor não está sendo persistido no site.
 
 ### Alvo
 
@@ -112,6 +120,7 @@ O contrato de saída deve ser preservado na migração. As tabelas persistidas p
 - Mensal: do 7º ao 27º mês.
 - Acima de 27 meses: removido.
 - GA4 e rastreador: mesma política.
+- A timezone deverá ser persistida por site e usada para calcular D-1, D-2 e D-3.
 
 ## 6. Contrato de sincronização definido
 
@@ -122,6 +131,30 @@ O contrato de saída deve ser preservado na migração. As tabelas persistidas p
 - O reprocessamento deve substituir valores anteriores, nunca somar novamente.
 - A data máxima exibida é D-1.
 - Novas conexões precisam de backfill separado de até 6 meses.
+- O cálculo de data usa a timezone configurada no site, não o UTC do Worker.
+- O cron pode continuar sendo executado em um horário UTC único; cada site terá suas datas calculadas na própria timezone.
+- A implementação precisa criar ou conectar o campo persistido de timezone, pois o estado atual da tela não constitui configuração armazenada.
+
+### Identidade proposta para a persistência
+
+Cada registro consolidado do GA4 deverá ser identificável por:
+
+- `supabase_site_id`;
+- `property_id`;
+- período (`metric_date` ou mês);
+- dimensões do relatório;
+- versão do esquema, se necessária para evolução do contrato.
+
+Isso evita colisões quando uma propriedade for trocada ou reconectada ao mesmo site.
+
+### Regra de timezone
+
+O site será a fonte da timezone operacional usada para calcular D-1, D-2 e D-3. Como a dimensão `date` do GA4 representa a timezone da propriedade GA4, a Fase 2 deverá validar uma destas estratégias:
+
+- exigir que a timezone do site e da propriedade sejam iguais; ou
+- converter explicitamente os intervalos e as datas retornadas para a timezone do site.
+
+Não devemos comparar datas UTC do Worker diretamente com a dimensão `date` do GA4 sem essa validação.
 
 ## 7. Pontos que precisam de validação na Fase 2
 
@@ -131,7 +164,11 @@ O contrato de saída deve ser preservado na migração. As tabelas persistidas p
 - Quantas linhas cada combinação retorna.
 - Consumo real de tokens e concorrência por propriedade.
 - Necessidade de paginação em relatórios de alta cardinalidade.
+- Como preencher `pageConversionResults` e `peakHours` para GA4 sem quebrar o contrato atual.
+- Qual será a chave completa de persistência: site, propriedade GA4, período e dimensões do relatório.
+- Como tratar a troca de propriedade GA4 ou reconexão do mesmo site.
+- Como validar a data do GA4 quando a timezone da propriedade diferir da timezone configurada no site.
 
 ## 8. Critério de saída da Fase 1
 
-A Fase 1 está concluída quando existe uma matriz clara entre relatórios, dimensões, métricas e consumidores, com contrato de saída preservado e regras de retenção/sincronização definidas. A implementação dos report builders e a medição da quota pertencem à Fase 2.
+A Fase 1 está concluída em nível de diagnóstico estático quando existe uma matriz clara entre relatórios, dimensões, métricas e consumidores, com contrato de saída preservado e regras de retenção/sincronização definidas. A validação experimental, a implementação dos report builders e a medição da quota pertencem à Fase 2.

@@ -12,6 +12,7 @@ Fazer com que o Analizi consulte o GA4 somente por cron, persista os dados no D1
 - Exclusão após 27 meses.
 - Granularidade menor que mensal bloqueada acima de 6 meses.
 - Reprocessamento GA4 de D-1, D-2 e D-3 com `upsert`.
+- Datas do GA4 calculadas usando a timezone persistida no site.
 - Mesma política para GA4 e rastreador.
 
 ## Etapas
