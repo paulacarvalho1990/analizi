@@ -2487,7 +2487,7 @@ async function runScheduledGa4Sync(env: Env): Promise<void> {
   }
 }
 
-async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) {
+async function ga4AnalyticsFromApi(request: Request, env: Env, query: URLSearchParams) {
   if (!ga4Configured(env)) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
   const user = await authenticatedUser(request, env)
   if (!user) return json({ error: 'Sessão inválida.' }, 401)
@@ -2579,6 +2579,152 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
     })
     return json({ totals, previousTotals, daily: dailyRows, sources: sourceTotals, pages: pages.map(row => ({ path: row.dimensions[0] || '/', views: row.metrics[0], title: row.dimensions[0] || '/', attentionSeconds: Math.round(row.metrics[3]), exitRate: Math.round(row.metrics[4] * 1000) / 10 })), sourcePages: sourcePages.map(row => ({ source: row.dimensions[0] || 'Direto', path: row.dimensions[1] || '/', views: row.metrics[0], users: row.metrics[1] })), sourceMediumResults: sourceRows, devices: devices.map(row => ({ device: row.dimensions[0] || 'desktop', browser: row.dimensions[1] || 'Outro', views: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], conversions: row.metrics[4] })), locations: locations.map(row => ({ country: row.dimensions[0], region: row.dimensions[1], city: row.dimensions[2], views: row.metrics[0], users: row.metrics[1], sessions: row.metrics[3], conversions: row.metrics[4] })), contactDetails, clickDetails: [...clickDetails, ...formClicks], conversionEvents: conversionEvents.filter(row => row.metrics[0] > 0).map(row => ({ date: ga4Date(row.dimensions[0]), type: eventType(row.dimensions[1]), name: row.dimensions[1] || 'Evento-chave GA4', stage: 'confirmada', path: row.dimensions[2] || '/', conversions: row.metrics[0], sessions: row.metrics[1] })), pageConversionResults: Array.from(pageConversionMap.values()).filter(row => row.sessions > 0 || row.contactSessions > 0), peakHours, filterPages: pages.map(row => ({ path: row.dimensions[0] || '/' })), filterSources: sourceRows.map(row => ({ source: row.source })), filterMediums: sourceRows.map(row => ({ medium: row.medium })), filterCampaigns: sourceRows.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.dimensions[0] || 'desktop' })), filterBrowsers: devices.map(row => ({ browser: row.dimensions[1] || 'Outro' })), periodDays: dailyRows.length, sourceKind: 'ga4' })
   } catch (error) { return json({ error: error instanceof Error ? error.message : 'Não foi possível consultar o GA4.' }, 502) }
+}
+
+function ga4StoredRangeQuery(dailyTable: string, monthlyTable: string, columns: string[], siteId: string, propertyId: string, start: string, end: string, today: string) {
+  const dailyCutoff = shiftMonths(today, -5)
+  const monthlyEnd = monthStart(end < dailyCutoff ? end : shiftDate(dailyCutoff, -1))
+  const parts: string[] = []
+  const params: unknown[] = []
+  if (start < dailyCutoff) {
+    parts.push(`select ${columns.join(', ')}, month_start as period_date from ${monthlyTable} where supabase_site_id = ? and property_id = ? and month_start >= ? and month_start <= ?`)
+    params.push(siteId, propertyId, monthStart(start), monthlyEnd)
+  }
+  if (end >= dailyCutoff) {
+    parts.push(`select ${columns.join(', ')}, metric_date as period_date from ${dailyTable} where supabase_site_id = ? and property_id = ? and metric_date >= ? and metric_date <= ?`)
+    params.push(siteId, propertyId, start > dailyCutoff ? start : dailyCutoff, end)
+  }
+  return { sql: parts.join(' union all '), params }
+}
+
+function ga4Number(row: Record<string, unknown>, key: string) { return Number(row[key] || 0) }
+function ga4Text(row: Record<string, unknown>, key: string, fallback = '') { return typeof row[key] === 'string' && row[key] ? row[key] as string : fallback }
+function ga4FilterRows(rows: Array<Record<string, unknown>>, filters: Record<string, string>, fields: Record<string, string>) {
+  return rows.filter(row => Object.entries(fields).every(([filter, column]) => !filters[filter] || ga4Text(row, column).toLowerCase() === filters[filter].toLowerCase()))
+}
+
+function ga4Aggregate(rows: Array<Record<string, unknown>>, keys: string[], sums: string[]) {
+  const map = new Map<string, Record<string, unknown>>()
+  for (const row of rows) {
+    const key = keys.map(column => ga4Text(row, column)).join('\u001f')
+    const current = map.get(key) || Object.fromEntries(keys.map(column => [column, row[column]]))
+    for (const column of sums) current[column] = ga4Number(current, column) + ga4Number(row, column)
+    map.set(key, current)
+  }
+  return Array.from(map.values())
+}
+
+async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const site = await ownedSite(compactText(query.get('siteId'), 64), user, env)
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  const connectionResult = await env.ANALIZI_EVENTS.batch([
+    env.ANALIZI_EVENTS.prepare('select property_id from ga4_connections where supabase_site_id = ?').bind(site.id)
+  ]) as Array<{ results?: Array<{ property_id: string }> }>
+  const connection = connectionResult[0]?.results?.[0]
+  if (!connection) return json({ error: 'Nenhuma propriedade GA4 está conectada a este site.' }, 404)
+
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  const end = validDate(query.get('end')) && query.get('end')! < today ? query.get('end')! : shiftDate(today, -1)
+  const start = validDate(query.get('start')) && query.get('start')! <= end ? query.get('start')! : shiftDate(end, -6)
+  const filters = {
+    page: compactText(query.get('page'), 1024),
+    source: compactText(query.get('source'), 120),
+    medium: compactText(query.get('medium'), 120),
+    campaign: compactText(query.get('campaign'), 240),
+    device: compactText(query.get('device'), 32),
+    browser: compactText(query.get('browser'), 80),
+  }
+  try {
+    const periodDays = Math.max(1, Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1)
+    const previousStart = shiftDate(start, -periodDays)
+    const previousEnd = shiftDate(start, -1)
+    const tableQueries = [
+      ga4StoredRangeQuery('ga4_daily_metrics', 'ga4_monthly_metrics', ['sessions', 'users', 'new_users', 'page_views', 'key_events', 'average_session_duration'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_source_medium_results', 'ga4_monthly_source_medium_results', ['source', 'medium', 'campaign', 'sessions', 'page_views', 'users', 'new_users', 'key_events', 'general_clicks', 'contact_clicks', 'whatsapp_clicks', 'sign_ups', 'logins', 'conversions'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_pages', 'ga4_monthly_pages', ['page_path', 'page_views', 'users', 'sessions', 'key_events', 'bounce_rate', 'average_session_duration'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_source_pages', 'ga4_monthly_source_pages', ['source', 'landing_page', 'sessions', 'users'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_devices', 'ga4_monthly_devices', ['device_type', 'browser', 'sessions', 'users', 'new_users', 'page_views', 'key_events'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_locations', 'ga4_monthly_locations', ['country', 'region', 'city', 'sessions', 'users', 'page_views', 'key_events'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_contacts', 'ga4_monthly_contacts', ['contact_type', 'page_path', 'contacts', 'sessions'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_clicks', 'ga4_monthly_clicks', ['dimension_key', 'page_path', 'label', 'button_id', 'destination', 'intent', 'is_contact_lead', 'clicks', 'sessions'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_conversion_events', 'ga4_monthly_conversion_events', ['conversion_type', 'conversion_name', 'conversion_stage', 'page_path', 'conversions', 'sessions'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_peak_hours', 'ga4_monthly_peak_hours', ['day_of_week', 'hour_of_day', 'sessions', 'page_views', 'key_events'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_metrics', 'ga4_monthly_metrics', ['sessions', 'users', 'new_users', 'page_views', 'key_events', 'average_session_duration'], site.id, connection.property_id, previousStart, previousEnd, today),
+    ]
+    const result = await env.ANALIZI_EVENTS.batch(tableQueries.map(item => env.ANALIZI_EVENTS.prepare(item.sql).bind(...item.params))) as Array<{ results?: Array<Record<string, unknown>> }>
+    const rows = result.map(item => item.results || [])
+    const metricRows = rows[0]
+    const sourceRows = ga4FilterRows(rows[1], filters, { source: 'source', medium: 'medium', campaign: 'campaign' })
+    const pageRows = ga4FilterRows(rows[2], filters, { page: 'page_path' })
+    const sourcePageRows = ga4FilterRows(rows[3], filters, { page: 'landing_page', source: 'source' })
+    const deviceRows = ga4FilterRows(rows[4], filters, { device: 'device_type', browser: 'browser' })
+    const locationRows = rows[5]
+    const contactRows = ga4FilterRows(rows[6], filters, { page: 'page_path' })
+    const clickRows = ga4FilterRows(rows[7], filters, { page: 'page_path' })
+    const conversionRows = ga4FilterRows(rows[8], filters, { page: 'page_path' })
+    const peakRows = rows[9]
+    const previousMetricRows = rows[10]
+
+    const daily = metricRows
+      .map(row => ({ date: ga4Text(row, 'period_date'), pageViews: ga4Number(row, 'page_views'), users: ga4Number(row, 'users'), newUsers: ga4Number(row, 'new_users'), sessions: ga4Number(row, 'sessions'), contacts: ga4Number(row, 'key_events'), attentionSeconds: ga4Number(row, 'average_session_duration') }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    const totals = daily.reduce((sum, row) => ({ pageViews: sum.pageViews + row.pageViews, users: sum.users + row.users, newUsers: sum.newUsers + row.newUsers, sessions: sum.sessions + row.sessions, contacts: sum.contacts + row.contacts, contactSessions: sum.contactSessions + row.contacts, attentionSeconds: sum.attentionSeconds + row.attentionSeconds * row.sessions }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
+    totals.attentionSeconds = totals.sessions ? Math.round(totals.attentionSeconds / totals.sessions) : 0
+    const sourceMediumResults = ga4Aggregate(sourceRows, ['source', 'medium', 'campaign'], ['sessions', 'page_views', 'users', 'new_users', 'key_events', 'general_clicks', 'contact_clicks', 'whatsapp_clicks', 'sign_ups', 'logins', 'conversions']).map(row => ({ source: ga4Text(row, 'source', 'Direto'), medium: ga4Text(row, 'medium', 'direto'), campaign: ga4Text(row, 'campaign'), page: '', device: '', browser: '', pageViews: ga4Number(row, 'page_views'), users: ga4Number(row, 'users'), newUsers: ga4Number(row, 'new_users'), sessions: ga4Number(row, 'sessions'), conversions: ga4Number(row, 'conversions'), generalClicks: ga4Number(row, 'general_clicks'), contactClicks: ga4Number(row, 'contact_clicks'), whatsappClicks: ga4Number(row, 'whatsapp_clicks'), signUps: ga4Number(row, 'sign_ups'), logins: ga4Number(row, 'logins') }))
+    const sources = Array.from(sourceMediumResults.reduce((map, row) => map.set(row.source, (map.get(row.source) || 0) + row.sessions), new Map<string, number>())).map(([name, value]) => ({ name, value }))
+    const pageAggregates = new Map<string, { page_views: number, users: number, sessions: number, key_events: number, attention_weight: number, bounce_weight: number }>()
+    pageRows.forEach(row => {
+      const path = ga4Text(row, 'page_path', '/')
+      const current = pageAggregates.get(path) || { page_views: 0, users: 0, sessions: 0, key_events: 0, attention_weight: 0, bounce_weight: 0 }
+      const sessions = ga4Number(row, 'sessions')
+      current.page_views += ga4Number(row, 'page_views')
+      current.users += ga4Number(row, 'users')
+      current.sessions += sessions
+      current.key_events += ga4Number(row, 'key_events')
+      current.attention_weight += ga4Number(row, 'average_session_duration') * sessions
+      current.bounce_weight += ga4Number(row, 'bounce_rate') * sessions
+      pageAggregates.set(path, current)
+    })
+    const pages = Array.from(pageAggregates.entries()).map(([path, row]) => ({ path, views: row.page_views, title: path, attentionSeconds: row.sessions ? Math.round(row.attention_weight / row.sessions) : 0, exitRate: row.sessions ? Math.round((row.bounce_weight / row.sessions) * 10) / 10 : 0 }))
+    const sourcePages = ga4Aggregate(sourcePageRows, ['source', 'landing_page'], ['sessions', 'users']).map(row => ({ source: ga4Text(row, 'source', 'Direto'), path: ga4Text(row, 'landing_page', '/'), views: ga4Number(row, 'sessions'), users: ga4Number(row, 'users') }))
+    const devices = ga4Aggregate(deviceRows, ['device_type', 'browser'], ['page_views', 'users', 'new_users', 'sessions', 'key_events']).map(row => ({ device: ga4Text(row, 'device_type', 'desktop'), browser: ga4Text(row, 'browser', 'Outro'), views: ga4Number(row, 'page_views'), users: ga4Number(row, 'users'), newUsers: ga4Number(row, 'new_users'), sessions: ga4Number(row, 'sessions'), conversions: ga4Number(row, 'key_events') }))
+    const locations = ga4Aggregate(locationRows, ['country', 'region', 'city'], ['page_views', 'users', 'sessions', 'key_events']).map(row => ({ country: ga4Text(row, 'country'), region: ga4Text(row, 'region'), city: ga4Text(row, 'city'), views: ga4Number(row, 'page_views'), users: ga4Number(row, 'users'), sessions: ga4Number(row, 'sessions'), conversions: ga4Number(row, 'key_events') }))
+    const contactDetails = ga4Aggregate(contactRows, ['period_date', 'contact_type', 'page_path'], ['contacts', 'sessions']).map(row => ({ date: ga4Text(row, 'period_date'), type: ga4Text(row, 'contact_type'), path: ga4Text(row, 'page_path', '/'), contacts: ga4Number(row, 'contacts') }))
+    const clickDetails = ga4Aggregate(clickRows, ['period_date', 'dimension_key'], ['clicks', 'sessions']).map(row => ({ date: ga4Text(row, 'period_date'), path: ga4Text(row, 'page_path', '/'), label: ga4Text(row, 'label', 'Link externo'), buttonId: ga4Text(row, 'button_id') || undefined, destination: ga4Text(row, 'destination') || undefined, intent: ga4Text(row, 'intent', 'link_externo'), isContactLead: ga4Number(row, 'is_contact_lead'), clicks: ga4Number(row, 'clicks'), sessions: ga4Number(row, 'sessions') }))
+    const conversionEvents = ga4Aggregate(conversionRows, ['period_date', 'conversion_type', 'conversion_name', 'conversion_stage', 'page_path'], ['conversions', 'sessions']).map(row => ({ date: ga4Text(row, 'period_date'), type: ga4Text(row, 'conversion_type'), name: ga4Text(row, 'conversion_name'), stage: ga4Text(row, 'conversion_stage', 'confirmada'), path: ga4Text(row, 'page_path', '/'), conversions: ga4Number(row, 'conversions'), sessions: ga4Number(row, 'sessions') }))
+    const peakHours = ga4Aggregate(peakRows, ['day_of_week', 'hour_of_day'], ['sessions', 'page_views', 'key_events']).map(row => ({ dayOfWeek: ga4Number(row, 'day_of_week'), hourOfDay: ga4Number(row, 'hour_of_day'), sessions: ga4Number(row, 'sessions'), views: ga4Number(row, 'page_views'), contacts: ga4Number(row, 'key_events') }))
+    const previousTotals = previousMetricRows.reduce<{ pageViews: number, users: number, newUsers: number, sessions: number, contacts: number, contactSessions: number, attentionSeconds: number }>((sum, row) => ({ pageViews: sum.pageViews + ga4Number(row, 'page_views'), users: sum.users + ga4Number(row, 'users'), newUsers: sum.newUsers + ga4Number(row, 'new_users'), sessions: sum.sessions + ga4Number(row, 'sessions'), contacts: sum.contacts + ga4Number(row, 'key_events'), contactSessions: sum.contactSessions + ga4Number(row, 'key_events'), attentionSeconds: sum.attentionSeconds + ga4Number(row, 'average_session_duration') * ga4Number(row, 'sessions') }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
+    previousTotals.attentionSeconds = previousTotals.sessions ? Math.round(previousTotals.attentionSeconds / previousTotals.sessions) : 0
+    const pageConversionMap = new Map<string, { path: string, sessions: number, whatsappClicks: number, signUps: number, contactSessions: number }>()
+    pages.forEach(row => pageConversionMap.set(row.path, { path: row.path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }))
+    pageRows.forEach(row => {
+      const path = ga4Text(row, 'page_path', '/')
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      current.sessions += ga4Number(row, 'sessions')
+      pageConversionMap.set(path, current)
+    })
+    contactRows.forEach(row => {
+      const path = ga4Text(row, 'page_path', '/')
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      if (ga4Text(row, 'contact_type') === 'contact_session') current.contactSessions += ga4Number(row, 'sessions')
+      if (ga4Text(row, 'contact_type') === 'form_submit') current.signUps += ga4Number(row, 'contacts')
+      pageConversionMap.set(path, current)
+    })
+    clickRows.forEach(row => {
+      if (ga4Text(row, 'intent') !== 'whatsapp') return
+      const path = ga4Text(row, 'page_path', '/')
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      current.whatsappClicks += ga4Number(row, 'clicks')
+      pageConversionMap.set(path, current)
+    })
+    const dailyCutoff = shiftMonths(today, -5)
+    return json({ totals, previousTotals, daily, sources, pages, sourcePages, sourceMediumResults, devices, locations, contactDetails, clickDetails, conversionEvents, pageConversionResults: Array.from(pageConversionMap.values()).filter(row => row.sessions > 0 || row.contactSessions > 0), peakHours, filterPages: pages.map(row => ({ path: row.path })), filterSources: sourceMediumResults.map(row => ({ source: row.source })), filterMediums: sourceMediumResults.map(row => ({ medium: row.medium })), filterCampaigns: sourceMediumResults.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.device })), filterBrowsers: devices.map(row => ({ browser: row.browser })), periodDays: daily.length, sourceKind: 'ga4', dataSource: 'd1', granularity: start < dailyCutoff ? (end >= dailyCutoff ? 'mixed' : 'monthly') : 'daily' })
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Não foi possível consultar os dados persistidos do GA4.' }, 500)
+  }
 }
 
 export default {
