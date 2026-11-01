@@ -1998,6 +1998,7 @@ interface AnalyticsFilter {
 function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights') return 'insights'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
 function dateString(date: Date) { return date.toISOString().slice(0, 10) }
 function shiftDays(base: string, offset: number) { const d = new Date(`${base}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + offset); return dateString(d) }
+function shiftMonths(base: string, offset: number) { const d = new Date(`${base.slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + offset); return dateString(d) }
 function comparison(current?: number, previous?: number) { const now = Number(current || 0); const before = Number(previous || 0); if (!before) return { variation: now ? 'novo no período' : 'sem dados', good: true }; const percent = Math.round(Math.abs(((now - before) / before) * 100)); return { variation: `${percent}%`, good: now >= before } }
 function readAnalyticsFilter(): AnalyticsFilter {
   const params = new URLSearchParams(window.location.search);
@@ -2008,11 +2009,13 @@ function readAnalyticsFilter(): AnalyticsFilter {
   let start = valid(params.get('start')) ? params.get('start')! : shiftDays(end, -6);
   if (start > end) start = end;
   if (start < shiftDays(end, -729)) start = shiftDays(end, -729);
-  const group = params.get('group');
+  const requestedGroup = params.get('group');
+  const group = requestedGroup === 'week' || requestedGroup === 'month' || requestedGroup === 'quarter' || requestedGroup === 'semester' || requestedGroup === 'year' ? requestedGroup : 'day';
+  const effectiveGroup = start < shiftMonths(yesterday, -5) && (group === 'day' || group === 'week') ? 'month' : group;
   return {
     start,
     end,
-    group: group === 'week' || group === 'month' || group === 'quarter' || group === 'semester' || group === 'year' ? group : 'day',
+    group: effectiveGroup,
     page: params.get('page') || '',
     source: params.get('source') || '',
     medium: params.get('medium') || '',
@@ -2101,11 +2104,13 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
     const safeEnd = next.end > maxAvailableDate ? maxAvailableDate : next.end;
     let safeStart = next.start > safeEnd ? safeEnd : next.start;
     if (safeStart < shiftDays(safeEnd, -729)) safeStart = shiftDays(safeEnd, -729);
+    const historicalCutoff = shiftMonths(maxAvailableDate, -5);
+    const safeGroup = safeStart < historicalCutoff && (next.group === 'day' || next.group === 'week') ? 'month' : next.group;
 
     const url = new URL(window.location.href);
     url.searchParams.set('start', safeStart);
     url.searchParams.set('end', safeEnd);
-    url.searchParams.set('group', next.group);
+    url.searchParams.set('group', safeGroup);
     if (next.page) url.searchParams.set('page', next.page);
     else url.searchParams.delete('page');
     if (next.source) url.searchParams.set('source', next.source);
@@ -2129,6 +2134,7 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
   };
 
   const currentDays = Math.floor((Date.parse(`${filter.end}T00:00:00Z`) - Date.parse(`${filter.start}T00:00:00Z`)) / 86_400_000) + 1;
+  const historicalRange = filter.start < shiftMonths(maxAvailableDate, -5);
 
   const uniqueSources = Array.from(new Set((analytics?.filterSources ?? []).map(item => normalizeOriginName(item.source))));
   const uniqueMediums = Array.from(new Set((analytics?.filterMediums ?? []).map(item => item.medium).filter(Boolean)));
@@ -2212,8 +2218,8 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
         <div className="filter-item-field">
           <span className="filter-field-label">Agrupar:</span>
           <select value={filter.group} onChange={(event) => apply({ ...filter, group: event.target.value as AnalyticsFilter['group'] })}>
-            <option value="day">Dia</option>
-            <option value="week">Semana</option>
+            <option value="day" disabled={historicalRange}>Dia</option>
+            <option value="week" disabled={historicalRange}>Semana</option>
             <option value="month">Mês</option>
             <option value="quarter">Trimestre</option>
             <option value="semester">Semestre</option>
@@ -2291,6 +2297,11 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
           <span> · Acima de 6 meses, o GA4 é apresentado por mês. Usuários nesse período representam usuários-dia somados, não pessoas únicas no mês.</span>
         </div>
       )}
+      {historicalRange && (
+        <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', fontSize: 12, lineHeight: 1.45 }}>
+          Períodos acima de seis meses usam dados mensais. As opções Dia e Semana ficam bloqueadas para evitar uma análise com granularidade que não está disponível.
+        </div>
+      )}
     </div>
   );
 }
@@ -2314,16 +2325,17 @@ function ConnectionStatus() {
   const { currentSite } = useBusiness();
   const [state, setState] = useState<'loading' | 'none' | 'configured' | 'pending' | 'warning_24h' | 'inactive_24h' | 'ready'>('loading');
   const [updatedAt, setUpdatedAt] = useState('');
+  const [ga4SyncIssue, setGa4SyncIssue] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     const load = async () => {
       if (!currentSite?.id) {
-        if (isMounted) setState('none');
+        if (isMounted) { setState('none'); setGa4SyncIssue(false); }
         return;
       }
       if (!supabase) {
-        if (isMounted) setState('ready');
+        if (isMounted) { setState('ready'); setGa4SyncIssue(false); }
         return;
       }
 
@@ -2354,10 +2366,10 @@ function ConnectionStatus() {
 
         if (ga4Mode) {
           if (!item) {
-            if (isMounted) setState('none');
+            if (isMounted) { setState('none'); setGa4SyncIssue(false); }
             return;
           }
-          let lastSync: string | null = null;
+          let lastSync: string | null = item.last_synced_at || null;
           let syncError: string | null = item.last_error || null;
           try {
             const { data: { session } } = await supabase.auth.getSession();
@@ -2374,14 +2386,25 @@ function ConnectionStatus() {
           }
           const connectedAt = item.connected_at ? new Date(item.connected_at).getTime() : Date.now();
           const hoursSinceConnection = (Date.now() - connectedAt) / (1000 * 60 * 60);
+          const hoursSinceLastSync = lastSync ? (Date.now() - new Date(lastSync).getTime()) / (1000 * 60 * 60) : Infinity;
+          const hasStaleSync = Boolean(lastSync && hoursSinceLastSync >= 48);
+          if (syncError || hasStaleSync) {
+            if (isMounted) {
+              if (lastSync) setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lastSync)));
+              setGa4SyncIssue(true);
+              setState('warning_24h');
+            }
+            return;
+          }
           if (lastSync && hoursSinceConnection >= 24) {
             if (isMounted) {
               setUpdatedAt(new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(lastSync)));
+              setGa4SyncIssue(false);
               setState('ready');
             }
             return;
           }
-          if (isMounted) setState(hoursSinceConnection >= 24 || syncError ? 'warning_24h' : 'pending');
+          if (isMounted) { setGa4SyncIssue(false); setState(hoursSinceConnection >= 24 ? 'warning_24h' : 'pending'); }
           return;
         }
 
@@ -2453,7 +2476,7 @@ function ConnectionStatus() {
           }
         }
       } catch {
-        if (isMounted) setState('none');
+        if (isMounted) { setState('none'); setGa4SyncIssue(false); }
       }
     };
 
@@ -2473,8 +2496,10 @@ function ConnectionStatus() {
   if (state === 'warning_24h') {
     return (
       <article className="connection-status danger">
-        <b>{currentSite?.analytics_source === 'ga4' ? 'DADOS DO GA4 AINDA NÃO CAPTURADOS.' : 'NENHUM EVENTO DETECTADO APÓS 24 HORAS.'}</b>
-        <p>{currentSite?.analytics_source === 'ga4' ? 'A conexão foi autorizada, mas o cron ainda não confirmou dados persistidos. A primeira captura ocorre no próximo ciclo diário e a consulta fica disponível no dia seguinte.' : 'Seu site foi configurado há mais de 24 horas, mas ainda não recebemos visitas. Verifique se o código do rastreador foi publicado corretamente.'}</p>
+        <b>{currentSite?.analytics_source === 'ga4' ? (ga4SyncIssue ? 'A SINCRONIZAÇÃO DO GA4 PRECISA DE ATENÇÃO.' : 'DADOS DO GA4 AINDA NÃO CAPTURADOS.') : 'NENHUM EVENTO DETECTADO APÓS 24 HORAS.'}</b>
+        <p>{currentSite?.analytics_source === 'ga4'
+          ? (ga4SyncIssue ? `A última sincronização ${updatedAt ? `registrada em ${updatedAt} ` : ''}falhou ou está desatualizada. Verifique o erro do cron antes de considerar os dados atuais.` : 'A conexão foi autorizada, mas o cron ainda não confirmou dados persistidos. A primeira captura ocorre no próximo ciclo diário e a consulta fica disponível no dia seguinte.')
+          : 'Seu site foi configurado há mais de 24 horas, mas ainda não recebemos visitas. Verifique se o código do rastreador foi publicado corretamente.'}</p>
       </article>
     );
   }

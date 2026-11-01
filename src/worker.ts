@@ -1861,7 +1861,9 @@ async function runMonthlyConsolidationAndRetention(env: Env): Promise<void> {
   const dailyCutoff = shiftMonths(today, -5)
   const monthlyCutoff = shiftMonths(today, -26)
   const statements: D1Statement[] = []
+  const monthlyRebuildStatements: D1Statement[] = []
   const add = (sql: string, ...values: unknown[]) => statements.push(env.ANALIZI_EVENTS.prepare(sql).bind(...values))
+  const rebuildAdd = (sql: string, ...values: unknown[]) => monthlyRebuildStatements.push(env.ANALIZI_EVENTS.prepare(sql).bind(...values))
 
   // Rastreador: consolidação mensal pondera médias por sessões/usuários e soma
   // contagens, preservando a semântica das tabelas diárias.
@@ -1953,8 +1955,55 @@ async function runMonthlyConsolidationAndRetention(env: Env): Promise<void> {
     from ga4_daily_peak_hours where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), day_of_week, hour_of_day
     on conflict(supabase_site_id, property_id, month_start, day_of_week, hour_of_day) do update set sessions=excluded.sessions, page_views=excluded.page_views, key_events=excluded.key_events`, dailyCutoff)
 
+  // Rebuild only months that still have daily source rows. This removes
+  // dimensions that disappeared after a reprocess without deleting older
+  // monthly history whose daily source rows already expired.
+  const monthlyRebuildSpecs: Array<[string, string[]]> = [
+    ['monthly_metrics', ['tracker_site_id']],
+    ['monthly_sources', ['tracker_site_id']],
+    ['monthly_pages', ['tracker_site_id']],
+    ['monthly_source_pages', ['tracker_site_id']],
+    ['monthly_button_clicks', ['tracker_site_id']],
+    ['monthly_contacts', ['tracker_site_id']],
+    ['monthly_locations', ['tracker_site_id']],
+    ['monthly_devices', ['tracker_site_id']],
+    ['monthly_source_medium_results', ['tracker_site_id']],
+    ['monthly_conversion_events', ['tracker_site_id']],
+    ['monthly_page_scroll', ['tracker_site_id']],
+  ]
+  for (const [monthlyTable, ownerKeys] of monthlyRebuildSpecs) {
+    rebuildAdd(`delete from ${monthlyTable}
+      where exists (
+        select 1 from daily_metrics d
+        where ${ownerKeys.map(key => `d.${key} = ${monthlyTable}.${key}`).join(' and ')}
+          and substr(d.metric_date, 1, 7) || '-01' = ${monthlyTable}.month_start
+          and d.metric_date < ?
+      )`, dailyCutoff)
+  }
+  const ga4MonthlyRebuildSpecs: Array<[string, string[]]> = [
+    ['ga4_monthly_metrics', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_source_medium_results', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_pages', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_source_pages', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_devices', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_locations', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_contacts', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_clicks', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_conversion_events', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_peak_hours', ['supabase_site_id', 'property_id']],
+  ]
+  for (const [monthlyTable, ownerKeys] of ga4MonthlyRebuildSpecs) {
+    rebuildAdd(`delete from ${monthlyTable}
+      where exists (
+        select 1 from ga4_daily_metrics d
+        where ${ownerKeys.map(key => `d.${key} = ${monthlyTable}.${key}`).join(' and ')}
+          and substr(d.metric_date, 1, 7) || '-01' = ${monthlyTable}.month_start
+          and d.metric_date < ?
+      )`, dailyCutoff)
+  }
+
   try {
-    await env.ANALIZI_EVENTS.batch(statements)
+    await env.ANALIZI_EVENTS.batch([...monthlyRebuildStatements, ...statements])
     const validationSpecs = [
       ['daily_metrics', 'monthly_metrics', ['tracker_site_id']],
       ['daily_sources', 'monthly_sources', ['tracker_site_id', 'source', 'medium', 'campaign']],
@@ -2340,11 +2389,28 @@ async function ga4DailySyncReports(propertyId: string, accessToken: string, star
 async function persistGa4DailyReports(env: Env, connection: Ga4SyncConnection, start: string, end: string, reports: Ga4DailySyncReports) {
   const statements: D1Statement[] = []
   const add = (sql: string, values: unknown[]) => statements.push(env.ANALIZI_EVENTS.prepare(sql).bind(...values))
+  const dailyTables = [
+    'ga4_daily_metrics',
+    'ga4_daily_source_medium_results',
+    'ga4_daily_pages',
+    'ga4_daily_source_pages',
+    'ga4_daily_devices',
+    'ga4_daily_locations',
+    'ga4_daily_contacts',
+    'ga4_daily_clicks',
+    'ga4_daily_conversion_events',
+    'ga4_daily_peak_hours',
+  ]
   const dates = []
   for (let date = start; date <= end; date = shiftDate(date, 1)) dates.push(date)
   const rowsOn = (report: Ga4ReportResult, date: string) => report.rows.filter(row => ga4DateValue(row.dimensions[0] || '') === date)
 
   for (const date of dates) {
+    // Cada relatório representa um snapshot do dia. Limpar antes do upsert
+    // evita manter dimensões que desapareceram no reprocessamento.
+    for (const table of dailyTables) {
+      add(`delete from ${table} where supabase_site_id = ? and property_id = ? and metric_date = ?`, [connection.supabase_site_id, connection.property_id, date])
+    }
     for (const row of rowsOn(reports.dailyRange, date)) {
       add(`insert into ga4_daily_metrics (supabase_site_id, property_id, metric_date, sessions, users, new_users, page_views, key_events, average_session_duration)
         values (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -2629,6 +2695,11 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
   const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
   const end = validDate(query.get('end')) && query.get('end')! < today ? query.get('end')! : shiftDate(today, -1)
   const start = validDate(query.get('start')) && query.get('start')! <= end ? query.get('start')! : shiftDate(end, -6)
+  const group = query.get('group') || 'day'
+  const dailyCutoff = shiftMonths(today, -5)
+  if (start < dailyCutoff && (group === 'day' || group === 'week')) {
+    return json({ error: 'Períodos acima de seis meses só podem ser analisados com granularidade mensal ou superior.' }, 400)
+  }
   const filters = {
     page: compactText(query.get('page'), 1024),
     source: compactText(query.get('source'), 120),
@@ -2720,7 +2791,6 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
       current.whatsappClicks += ga4Number(row, 'clicks')
       pageConversionMap.set(path, current)
     })
-    const dailyCutoff = shiftMonths(today, -5)
     return json({ totals, previousTotals, daily, sources, pages, sourcePages, sourceMediumResults, devices, locations, contactDetails, clickDetails, conversionEvents, pageConversionResults: Array.from(pageConversionMap.values()).filter(row => row.sessions > 0 || row.contactSessions > 0), peakHours, filterPages: pages.map(row => ({ path: row.path })), filterSources: sourceMediumResults.map(row => ({ source: row.source })), filterMediums: sourceMediumResults.map(row => ({ medium: row.medium })), filterCampaigns: sourceMediumResults.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.device })), filterBrowsers: devices.map(row => ({ browser: row.browser })), periodDays: daily.length, sourceKind: 'ga4', dataSource: 'd1', granularity: start < dailyCutoff ? (end >= dailyCutoff ? 'mixed' : 'monthly') : 'daily', lastSyncedAt: connection.last_synced_at || null, lastSyncError: connection.last_error || null })
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Não foi possível consultar os dados persistidos do GA4.' }, 500)
