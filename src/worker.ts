@@ -1955,10 +1955,33 @@ async function runMonthlyConsolidationAndRetention(env: Env): Promise<void> {
 
   try {
     await env.ANALIZI_EVENTS.batch(statements)
-    const validation = await env.ANALIZI_EVENTS.batch([
-      env.ANALIZI_EVENTS.prepare(`select count(*) as invalid from daily_metrics d where d.metric_date < ? and not exists (select 1 from monthly_metrics m where m.tracker_site_id=d.tracker_site_id and m.month_start=substr(d.metric_date, 1, 7) || '-01')`).bind(dailyCutoff),
-      env.ANALIZI_EVENTS.prepare(`select count(*) as invalid from ga4_daily_metrics d where d.metric_date < ? and not exists (select 1 from ga4_monthly_metrics m where m.supabase_site_id=d.supabase_site_id and m.property_id=d.property_id and m.month_start=substr(d.metric_date, 1, 7) || '-01')`).bind(dailyCutoff),
-    ]) as Array<{ results?: Array<{ invalid: number }> }>
+    const validationSpecs = [
+      ['daily_metrics', 'monthly_metrics', ['tracker_site_id']],
+      ['daily_sources', 'monthly_sources', ['tracker_site_id', 'source', 'medium', 'campaign']],
+      ['daily_pages', 'monthly_pages', ['tracker_site_id', 'page_path']],
+      ['daily_source_pages', 'monthly_source_pages', ['tracker_site_id', 'source', 'page_path']],
+      ['daily_button_clicks', 'monthly_button_clicks', ['tracker_site_id', 'page_path', 'button_label', 'button_id', 'destination', 'contact_intent', 'is_contact_lead']],
+      ['daily_contacts', 'monthly_contacts', ['tracker_site_id', 'contact_type', 'page_path']],
+      ['daily_locations', 'monthly_locations', ['tracker_site_id', 'country', 'region', 'city']],
+      ['daily_devices', 'monthly_devices', ['tracker_site_id', 'device_type', 'browser']],
+      ['daily_source_medium_results', 'monthly_source_medium_results', ['tracker_site_id', 'source', 'medium', 'campaign', 'device_type', 'browser', 'page_path']],
+      ['daily_conversion_events', 'monthly_conversion_events', ['tracker_site_id', 'source', 'medium', 'campaign', 'device_type', 'browser', 'page_path', 'conversion_type', 'conversion_name', 'conversion_stage']],
+      ['daily_page_scroll', 'monthly_page_scroll', ['tracker_site_id', 'page_path', 'device_type', 'depth_bracket']],
+      ['ga4_daily_metrics', 'ga4_monthly_metrics', ['supabase_site_id', 'property_id']],
+      ['ga4_daily_source_medium_results', 'ga4_monthly_source_medium_results', ['supabase_site_id', 'property_id', 'source', 'medium', 'campaign']],
+      ['ga4_daily_pages', 'ga4_monthly_pages', ['supabase_site_id', 'property_id', 'page_path']],
+      ['ga4_daily_source_pages', 'ga4_monthly_source_pages', ['supabase_site_id', 'property_id', 'source', 'landing_page']],
+      ['ga4_daily_devices', 'ga4_monthly_devices', ['supabase_site_id', 'property_id', 'device_type', 'browser']],
+      ['ga4_daily_locations', 'ga4_monthly_locations', ['supabase_site_id', 'property_id', 'country', 'region', 'city']],
+      ['ga4_daily_contacts', 'ga4_monthly_contacts', ['supabase_site_id', 'property_id', 'contact_type', 'page_path']],
+      ['ga4_daily_clicks', 'ga4_monthly_clicks', ['supabase_site_id', 'property_id', 'dimension_key']],
+      ['ga4_daily_conversion_events', 'ga4_monthly_conversion_events', ['supabase_site_id', 'property_id', 'conversion_type', 'conversion_name', 'conversion_stage', 'page_path']],
+      ['ga4_daily_peak_hours', 'ga4_monthly_peak_hours', ['supabase_site_id', 'property_id', 'day_of_week', 'hour_of_day']],
+    ] as Array<[string, string, string[]]>
+    const validation = await env.ANALIZI_EVENTS.batch(validationSpecs.map(([dailyTable, monthlyTable, keys]) => {
+      const keyMatch = keys.map(key => `m.${key}=d.${key}`).join(' and ')
+      return env.ANALIZI_EVENTS.prepare(`select count(*) as invalid from ${dailyTable} d where d.metric_date < ? and not exists (select 1 from ${monthlyTable} m where ${keyMatch} and m.month_start=substr(d.metric_date, 1, 7) || '-01')`).bind(dailyCutoff)
+    })) as Array<{ results?: Array<{ invalid: number }> }>
     const invalidRows = validation.reduce((sum, result) => sum + Number(result.results?.[0]?.invalid || 0), 0)
     if (invalidRows > 0) throw new Error(`Validação mensal falhou para ${invalidRows} linhas diárias.`)
 
@@ -1967,7 +1990,7 @@ async function runMonthlyConsolidationAndRetention(env: Env): Promise<void> {
     await env.ANALIZI_EVENTS.batch([
       ...dailyTables.map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where metric_date < ?`).bind(dailyCutoff)),
       ...ga4DailyTables.map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where metric_date < ?`).bind(dailyCutoff)),
-      env.ANALIZI_EVENTS.prepare('delete from monthly_event_usage where usage_month < ?').bind(monthlyCutoff),
+      env.ANALIZI_EVENTS.prepare('delete from monthly_event_usage where usage_month < ?').bind(monthlyCutoff.slice(0, 7)),
       ...['monthly_metrics', 'monthly_sources', 'monthly_pages', 'monthly_source_pages', 'monthly_button_clicks', 'monthly_contacts', 'monthly_locations', 'monthly_devices', 'monthly_source_medium_results', 'monthly_conversion_events', 'monthly_page_scroll'].map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where month_start < ?`).bind(monthlyCutoff)),
       ...['ga4_monthly_metrics', 'ga4_monthly_source_medium_results', 'ga4_monthly_pages', 'ga4_monthly_source_pages', 'ga4_monthly_devices', 'ga4_monthly_locations', 'ga4_monthly_contacts', 'ga4_monthly_clicks', 'ga4_monthly_conversion_events', 'ga4_monthly_peak_hours'].map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where month_start < ?`).bind(monthlyCutoff)),
     ])
