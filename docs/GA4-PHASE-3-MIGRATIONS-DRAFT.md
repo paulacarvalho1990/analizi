@@ -2,7 +2,7 @@
 
 ## Status
 
-Rascunho para revisão. Este arquivo não é aplicado pelo Wrangler e não está em `cloudflare/d1/migrations`.
+Desenho revisado e convertido em migrations reais numeradas `0020`–`0023`. A aplicação ao D1 ainda não foi executada.
 
 ## Decisões incorporadas
 
@@ -459,8 +459,15 @@ O hash será usado apenas em `ga4_*_clicks`. As dimensões originais continuam a
 4. Confirmar a retenção uniforme: diário por 6 meses e mensal até 27 meses para todas as famílias.
 5. Confirmar o uso de `dimension_key` apenas para cliques.
 6. Confirmar o fluxo de sincronização `running → upsert → validação → success`.
-7. Depois da aprovação, separar este rascunho em migrations SQL numeradas no diretório aplicável.
+7. Aplicar os arquivos gerados somente depois da validação local do Wrangler.
 
-## Não aplicado
+## Arquivos gerados
 
-Nenhum SQL deste documento foi aplicado ao D1. A próxima ação, após a revisão, será transformar os blocos aprovados em arquivos reais de migration e validar a sintaxe em staging.
+- `cloudflare/d1/migrations/0020_ga4_sync_control.sql`
+- `cloudflare/d1/migrations/0021_ga4_core_consolidates.sql`
+- `cloudflare/d1/migrations/0022_ga4_dimensions.sql`
+- `cloudflare/d1/migrations/0023_ga4_details.sql`
+
+## Aplicação pendente
+
+Nenhuma migration foi aplicada ao D1 remoto. O build passou; a tentativa de validação local via Wrangler ficou sem saída e foi interrompida, portanto a aplicação deve ser repetida com o ambiente do Wrangler disponível antes do staging.
