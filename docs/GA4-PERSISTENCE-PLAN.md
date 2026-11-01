@@ -35,14 +35,15 @@ Reduzir chamadas ao GA4 sem perder as informações necessárias ao produto.
 - Medir linhas, duração e quota.
 - Escolher a menor configuração segura.
 
-### 3. Persistência diária
+### 3. Persistência GA4 e schema de consolidação
 
-Criar o armazenamento diário específico do GA4 e o controle de sincronização.
+Criar a estrutura persistida do GA4 para suportar o histórico diário e mensal, sem alterar ainda o fluxo de ingestão das telas.
 
-- Criar migrações.
-- Definir chaves únicas.
-- Implementar `upsert`.
-- Registrar status e falhas por site.
+- Criar tabelas físicas separadas para dados diários e mensais de métricas, aquisição, páginas, dispositivos, localizações, contatos, cliques, eventos de conversão e horários de pico.
+- Criar o controle de execuções e períodos de sincronização por site e propriedade.
+- Definir chaves únicas para permitir reprocessamento idempotente; em cliques, usar `dimension_key` derivada por hash das dimensões textuais.
+- Aplicar as migrations `0020`–`0023` e validar o schema no staging.
+- Deixar o `upsert` de dados, o cron e a atualização dos status de sincronização para as fases de execução.
 
 ### 4. Cron e reprocessamento
 
