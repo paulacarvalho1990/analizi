@@ -120,7 +120,7 @@ Esses campos já são consumidos ou previstos pelo frontend e agora possuem estr
 - Mensal: do 7º ao 27º mês.
 - Acima de 27 meses: removido.
 - GA4 e rastreador: mesma política.
-- A timezone deverá ser persistida por site e usada para calcular D-1, D-2 e D-3.
+- A implementação atual usa `America/Sao_Paulo` como timezone fixa; a configuração por site fica como evolução posterior.
 
 ## 6. Contrato de sincronização definido
 
@@ -131,9 +131,9 @@ Esses campos já são consumidos ou previstos pelo frontend e agora possuem estr
 - O reprocessamento deve substituir valores anteriores, nunca somar novamente.
 - A data máxima exibida é D-1.
 - Novas conexões precisam de backfill separado de até 6 meses.
-- O cálculo de data usa a timezone configurada no site, não o UTC do Worker.
-- O cron pode continuar sendo executado em um horário UTC único; cada site terá suas datas calculadas na própria timezone.
-- A implementação precisa criar ou conectar o campo persistido de timezone, pois o estado atual da tela não constitui configuração armazenada.
+- O cálculo de data usa `America/Sao_Paulo`, não o UTC do Worker.
+- O cron pode continuar sendo executado em um horário UTC único; enquanto a timezone por site não existir, todos os sites usam `America/Sao_Paulo`.
+- A configuração por site ainda não está persistida e não faz parte desta correção; até essa evolução, a timezone fixa é explícita e centralizada.
 
 ### Identidade proposta para a persistência
 
@@ -149,12 +149,7 @@ Isso evita colisões quando uma propriedade for trocada ou reconectada ao mesmo 
 
 ### Regra de timezone
 
-O site será a fonte da timezone operacional usada para calcular D-1, D-2 e D-3. Como a dimensão `date` do GA4 representa a timezone da propriedade GA4, a Fase 2 deverá validar uma destas estratégias:
-
-- exigir que a timezone do site e da propriedade sejam iguais; ou
-- converter explicitamente os intervalos e as datas retornadas para a timezone do site.
-
-Não devemos comparar datas UTC do Worker diretamente com a dimensão `date` do GA4 sem essa validação.
+Até existir uma configuração persistida por site, o sistema usa `America/Sao_Paulo` para calcular D-1, D-2 e D-3. Como a dimensão `date` do GA4 representa a timezone da propriedade GA4, a propriedade deverá usar a mesma timezone para manter os dias alinhados.
 
 ## 7. Pontos que precisam de validação na Fase 2
 
@@ -167,7 +162,7 @@ Não devemos comparar datas UTC do Worker diretamente com a dimensão `date` do 
 - Como preencher `pageConversionResults` e `peakHours` para GA4 sem quebrar o contrato atual.
 - Qual será a chave completa de persistência: site, propriedade GA4, período e dimensões do relatório.
 - Como tratar a troca de propriedade GA4 ou reconexão do mesmo site.
-- Como validar a data do GA4 quando a timezone da propriedade diferir da timezone configurada no site.
+- Como validar a data do GA4 quando a timezone da propriedade diferir de `America/Sao_Paulo`.
 
 ## 8. Critério de saída da Fase 1
 

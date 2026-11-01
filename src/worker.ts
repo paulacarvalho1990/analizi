@@ -2040,13 +2040,11 @@ async function ga4AccessToken(connection: { refresh_token_ciphertext: string, re
 }
 
 type Ga4DimensionFilter = {
-  andGroup: {
-    expressions: Array<{
-      filter: {
-        fieldName: string
-        stringFilter: { matchType: 'EXACT', value: string, caseSensitive: false }
-      }
-    }>
+  andGroup?: { expressions: Ga4DimensionFilter[] }
+  orGroup?: { expressions: Ga4DimensionFilter[] }
+  filter?: {
+    fieldName: string
+    stringFilter: { matchType: 'EXACT', value: string, caseSensitive: false }
   }
 }
 
@@ -2071,6 +2069,11 @@ function ga4Filters(query: URLSearchParams, pageField = 'pagePathPlusQueryString
     return value ? [{ filter: { fieldName, stringFilter: { matchType: 'EXACT' as const, value, caseSensitive: false as const } } }] : []
   })
   return expressions.length ? { andGroup: { expressions } } : undefined
+}
+
+function ga4EventFilter(baseFilter: Ga4DimensionFilter | undefined, eventNames: string[]): Ga4DimensionFilter {
+  const eventFilter: Ga4DimensionFilter = { orGroup: { expressions: eventNames.map(value => ({ filter: { fieldName: 'eventName', stringFilter: { matchType: 'EXACT', value, caseSensitive: false } } })) } }
+  return baseFilter ? { andGroup: { expressions: [baseFilter, eventFilter] } } : eventFilter
 }
 
 async function ga4Report(propertyId: string, accessToken: string, label: string, start: string, end: string, dimensions: string[], metrics: string[], dimensionFilter?: Ga4DimensionFilter): Promise<Ga4ReportResult> {
@@ -2103,28 +2106,7 @@ async function ga4Report(propertyId: string, accessToken: string, label: string,
   return { rows, rowCount, propertyQuota }
 }
 
-function validTimeZone(value: unknown): value is string {
-  if (typeof value !== 'string' || !value.trim()) return false
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: value }).format()
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function siteTimeZone(siteId: string, env: Env) {
-  const fallback = 'America/Sao_Paulo'
-  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return fallback
-  const apiKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?id=eq.${encodeURIComponent(siteId)}&select=timezone&limit=1`, { headers: { apikey: apiKey, authorization: `Bearer ${apiKey}` } })
-  if (!response.ok) {
-    console.warn('ga4_site_timezone_fallback', JSON.stringify({ status: response.status }))
-    return fallback
-  }
-  const rows = await response.json() as Array<{ timezone?: string | null }>
-  return validTimeZone(rows[0]?.timezone) ? rows[0]!.timezone! : fallback
-}
+const ANALYTICS_TIMEZONE = 'America/Sao_Paulo'
 
 async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) {
   if (!ga4Configured(env)) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
@@ -2135,8 +2117,7 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
   const result = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select property_id, refresh_token_ciphertext, refresh_token_iv from ga4_connections where supabase_site_id = ?').bind(site.id)]) as Array<{ results?: Array<{ property_id: string, refresh_token_ciphertext: string, refresh_token_iv: string }> }>
   const connection = result[0]?.results?.[0]
   if (!connection) return json({ error: 'Nenhuma propriedade GA4 está conectada a este site.' }, 404)
-  const timeZone = await siteTimeZone(site.id, env)
-  const today = isoDateInTimeZone(new Date(), timeZone)
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
   const end = validDate(query.get('end')) && query.get('end')! < today ? query.get('end')! : shiftDate(today, -1)
   const start = validDate(query.get('start')) && query.get('start')! <= end ? query.get('start')! : shiftDate(end, -6)
   const previousStart = shiftDate(start, -Math.max(1, Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1))
@@ -2145,7 +2126,8 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
   try {
     const accessToken = await ga4AccessToken(connection, env)
     const metricNames = ['screenPageViews', 'activeUsers', 'newUsers', 'sessions', 'keyEvents', 'averageSessionDuration']
-    const [dailyRange, sourcesResult, pagesResult, sourcePagesResult, devicesResult, locationsResult, conversionEventsResult, eventDetailsResult, peakHoursResult] = await Promise.all([
+    const contactEventFilter = ga4EventFilter(dimensionFilter, ['whatsapp_contact', 'whatsapp_click', 'sign_up', 'form_submit'])
+    const [dailyRange, sourcesResult, pagesResult, sourcePagesResult, devicesResult, locationsResult, conversionEventsResult, eventDetailsResult, peakHoursResult, pageContactSessionsResult] = await Promise.all([
       ga4Report(connection.property_id, accessToken, 'daily-current-and-previous', previousStart, end, ['date'], metricNames, dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'sources', start, end, ['sessionSource', 'sessionMedium', 'sessionCampaignName'], metricNames.slice(0, 5), dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'pages', start, end, ['pagePathPlusQueryString'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration', 'bounceRate', 'sessions'], dimensionFilter),
@@ -2154,7 +2136,8 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
       ga4Report(connection.property_id, accessToken, 'locations', start, end, ['country', 'region', 'city'], metricNames.slice(0, 5), dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'conversion-events', start, end, ['date', 'eventName', 'pagePathPlusQueryString'], ['keyEvents', 'sessions'], dimensionFilter),
       ga4Report(connection.property_id, accessToken, 'event-details', start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions'], dimensionFilter),
-      ga4Report(connection.property_id, accessToken, 'peak-hours', start, end, ['dayOfWeek', 'hour'], ['sessions', 'screenPageViews', 'keyEvents'], dimensionFilter)
+      ga4Report(connection.property_id, accessToken, 'peak-hours', start, end, ['dayOfWeek', 'hour'], ['sessions', 'screenPageViews', 'keyEvents'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'page-contact-sessions', start, end, ['date', 'pagePathPlusQueryString'], ['sessions'], contactEventFilter)
     ])
     const ga4Date = (value: string) => /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : value
     const daily = dailyRange.rows.filter(row => ga4Date(row.dimensions[0]) >= start && ga4Date(row.dimensions[0]) <= end)
@@ -2167,6 +2150,7 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
     const conversionEvents = conversionEventsResult.rows
     const eventDetails = eventDetailsResult.rows
     const peakHours = peakHoursResult.rows.map(row => ({ dayOfWeek: Number(row.dimensions[0] || 0), hourOfDay: Number(row.dimensions[1] || 0), sessions: row.metrics[0] || 0, views: row.metrics[1] || 0, contacts: row.metrics[2] || 0 }))
+    const pageContactSessions = pageContactSessionsResult.rows
     const dailyRows = daily.map(row => ({ date: `${row.dimensions[0].slice(0, 4)}-${row.dimensions[0].slice(4, 6)}-${row.dimensions[0].slice(6, 8)}`, pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], contacts: row.metrics[4], attentionSeconds: row.metrics[5] }))
     const totals = dailyRows.reduce((sum, row) => ({ pageViews: sum.pageViews + row.pageViews, users: sum.users + row.users, newUsers: sum.newUsers + row.newUsers, sessions: sum.sessions + row.sessions, contacts: sum.contacts + row.contacts, contactSessions: sum.contactSessions + row.contacts, attentionSeconds: sum.attentionSeconds + row.attentionSeconds * row.sessions }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
     totals.attentionSeconds = totals.sessions ? Math.round(totals.attentionSeconds / totals.sessions) : 0
@@ -2199,18 +2183,18 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
       const path = row.dimensions[0] || '/'
       pageConversionMap.set(path, { path, sessions: row.metrics[5] || 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 })
     })
-    conversionEvents.forEach(row => {
-      const path = row.dimensions[2] || '/'
+    pageContactSessions.forEach(row => {
+      const path = row.dimensions[1] || '/'
       const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
       current.contactSessions += row.metrics[0] || 0
       pageConversionMap.set(path, current)
     })
     eventDetails.forEach(row => {
       const eventName = row.dimensions[1] || ''
-      if (eventName !== 'whatsapp_contact' && eventName !== 'sign_up') return
+      if (eventName !== 'whatsapp_contact' && eventName !== 'whatsapp_click' && eventName !== 'sign_up') return
       const path = row.dimensions[2] || '/'
       const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
-      if (eventName === 'whatsapp_contact') current.whatsappClicks += row.metrics[0] || 0
+      if (eventName === 'whatsapp_contact' || eventName === 'whatsapp_click') current.whatsappClicks += row.metrics[0] || 0
       if (eventName === 'sign_up') current.signUps += row.metrics[0] || 0
       pageConversionMap.set(path, current)
     })

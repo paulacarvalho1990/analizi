@@ -8,7 +8,7 @@ Implementação inicial concluída e validada com build local. A medição em um
 
 ### Redução de chamadas
 
-O endpoint atual mantém nove chamadas `runReport` por consulta, mas elimina a duplicação entre os relatórios diário atual e diário anterior. A nova composição inclui `peakHours`, que não existia no endpoint GA4.
+O endpoint atual mantém dez chamadas `runReport` por consulta, mas elimina a duplicação entre os relatórios diário atual e diário anterior. A nova composição inclui `peakHours` e sessões de contato por página, que não existiam no endpoint GA4.
 
 Os relatórios de métricas do período atual e do período anterior foram unidos em uma única consulta diária contínua, cobrindo `previousStart` até `end`.
 
@@ -34,8 +34,9 @@ Os relatórios de conversão e cliques não foram unidos nesta etapa. A combina�
 
 ### Campos anteriormente ausentes
 
-- `pageConversionResults` é derivado dos relatórios de páginas, conversões e eventos, sem uma consulta adicional.
+- `pageConversionResults` é derivado dos relatórios de páginas, eventos e sessões de contato por página.
 - `peakHours` é preenchido por um relatório com `dayOfWeek`, `hour`, `sessions`, `screenPageViews` e `keyEvents`.
+- `page-contact-sessions` calcula sessões com eventos de contato (`whatsapp_contact`, `whatsapp_click`, `sign_up` e `form_submit`) por página.
 
 ### Medição adicionada
 
@@ -59,7 +60,7 @@ O limite D-1 usa a timezone persistida no site. Enquanto o campo `timezone` aind
 
 ## Resultado esperado
 
-O ganho imediato é a eliminação de uma consulta duplicada entre o período atual e o anterior. A quantidade final permanece em nove relatórios porque `peakHours` agora é entregue corretamente. O ganho real de quota ainda precisa ser medido, porque o custo do GA4 depende de linhas, dimensões, período, filtros e cardinalidade.
+O ganho imediato é a eliminação de uma consulta duplicada entre o período atual e o anterior. A quantidade final é dez relatórios porque foram adicionadas consultas funcionais para `peakHours` e sessões de contato por página. O ganho real de quota ainda precisa ser medido, porque o custo do GA4 depende de linhas, dimensões, período, filtros e cardinalidade.
 
 ## Validação executada
 
@@ -70,9 +71,10 @@ O ganho imediato é a eliminação de uma consulta duplicada entre o período at
 - Separação entre período atual e anterior preservada.
 - Datas `YYYYMMDD` normalizadas antes das comparações.
 - Paginação implementada para relatórios com mais de 10.000 linhas.
-- Cálculo de D-1 alterado para usar a timezone do site quando disponível.
+- Cálculo de D-1 alterado para usar a timezone fixa `America/Sao_Paulo`.
 - `pageConversionResults` preenchido para GA4.
 - `peakHours` preenchido para GA4.
+- Sessões de contato por página calculadas com métrica `sessions`, sem tratar `keyEvents` como sessões.
 
 ## Validação pendente
 
@@ -82,7 +84,7 @@ O ganho imediato é a eliminação de uma consulta duplicada entre o período at
 - Confirmar compatibilidade de todas as dimensões e métricas.
 - Testar períodos longos próximos do limite de 730 dias.
 - Decidir se algum relatório adicional pode ser combinado sem aumentar o custo.
-- Persistir e expor a configuração `timezone` no cadastro do site.
+- Persistir e expor uma configuração `timezone` por site como evolução posterior.
 
 ## Próximo passo
 
