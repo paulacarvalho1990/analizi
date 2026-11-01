@@ -110,6 +110,7 @@ function PageChart({ pages }: { pages: AnalyticsData['pages'] }) {
 }
 
 function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
+  const usesMonthlyGranularity = analytics?.sourceKind === 'ga4' && analytics.granularity && analytics.granularity !== 'daily';
   const rows = (analytics?.daily ?? []).map(item => ({
     ...item,
     label: item.date.slice(5).split('-').reverse().join('/'),
@@ -130,7 +131,7 @@ function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
                 <div className="metric-tooltip-title">Visualizações no Período</div>
                 <div className="metric-tooltip-section">
                   <b>O que representa</b>
-                  <p>Volume dia a dia de páginas visualizadas pelos visitantes no intervalo de datas selecionado.</p>
+                  <p>{usesMonthlyGranularity ? 'Volume de páginas visualizadas no intervalo selecionado, consolidado por mês quando o histórico excede seis meses.' : 'Volume dia a dia de páginas visualizadas pelos visitantes no intervalo de datas selecionado.'}</p>
                 </div>
                 <div className="metric-tooltip-section">
                   <b>Por que é importante</b>
@@ -143,7 +144,7 @@ function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
               </div>
             </div>
           </div>
-          <p className="chart-header-caption">Fluxo diário de acessos para identificar dias de maior movimento e tendência de crescimento</p>
+          <p className="chart-header-caption">{usesMonthlyGranularity ? 'Evolução dos acessos no período, com consolidação mensal quando necessário' : 'Fluxo diário de acessos para identificar dias de maior movimento e tendência de crescimento'}</p>
         </div>
       </div>
       <div className="chart">
@@ -492,10 +493,14 @@ function Dashboard() {
   const visibleDays = filteredDaily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE);
   const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—';
   const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO';
+  const usesMonthlyGranularity = analytics?.sourceKind === 'ga4' && analytics.granularity && analytics.granularity !== 'daily';
+  const periodDescription = usesMonthlyGranularity
+    ? (analytics?.granularity === 'monthly' ? 'histórico mensal no período selecionado' : 'histórico diário e mensal no período selecionado')
+    : `últimos ${analytics?.periodDays ?? selectedDays()} dias`;
 
   return (
     <>
-      <PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} />
+      <PageHeader title="Visão geral" subtitle={`Veja como seu site foi no ${periodDescription}.`} />
       <AnalyticsFilters analytics={analytics} />
       <div className="period">
         <span className="source-badge"><span className="source-badge-dot" />{badge}</span>
@@ -514,9 +519,9 @@ function Dashboard() {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <Calendar size={17} style={{ color: '#3b82f6' }} />
-                <h3 style={{ margin: 0 }}>Métricas por dia</h3>
+                <h3 style={{ margin: 0 }}>{usesMonthlyGranularity ? 'Métricas por período' : 'Métricas por dia'}</h3>
               </div>
-              <p>Histórico diário de acessos, visitantes e contatos</p>
+              <p>{usesMonthlyGranularity ? 'Acessos, visitantes e contatos conforme a granularidade disponível' : 'Histórico diário de acessos, visitantes e contatos'}</p>
             </div>
             <div className="heatmap-segmented-control">
               <button
@@ -524,7 +529,7 @@ function Dashboard() {
                 className={dailyTab === 'all' ? 'active' : ''}
                 onClick={() => { setDailyTab('all'); setDailyPage(0); }}
               >
-                Todos os dias
+                {usesMonthlyGranularity ? 'Todos os períodos' : 'Todos os dias'}
               </button>
               <button
                 type="button"
