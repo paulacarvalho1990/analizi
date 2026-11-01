@@ -54,13 +54,13 @@ Importar o GA4 diariamente e corrigir os dias recentes.
 - Aplicar retry e backoff.
 - Registrar consumo e resultado das consultas.
 
-### 5. Carga inicial
+### 5. Carga histórica sob demanda — postergada
 
-Preencher o histórico de uma nova conexão sem sobrecarregar a API.
+Não executar carga histórica no momento da conexão. A primeira captura ocorrerá somente no próximo cron diário, e os dados estarão disponíveis para consulta no dia seguinte.
 
-- Importar até 6 meses.
-- Processar em blocos retomáveis.
-- Separar backfill do cron diário.
+- Ao conectar, apenas testar a autorização, salvar a conexão e confirmar sucesso.
+- O cron diário será responsável por capturar D-1, D-2 e D-3.
+- Manter um eventual backfill de até 6 meses como capacidade futura, separado do cron diário e condicionado a uma decisão explícita.
 
 ### 6. Consolidação mensal e retenção
 
