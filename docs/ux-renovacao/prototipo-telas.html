@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Analizi — Protótipo das telas de relatório</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root,[data-theme="light"]{
+  --blue:#3B82F6;--violet:#7C5CF0;--orange:#FF8A3D;--pink:#FF3CAC;--navy:#0B1F4B;
+  --bg:#F7F8FA;--surface:#FFFFFF;--fg:#111827;--muted:#6B7280;--faint:#9CA3AF;--border:#E7E9EE;--track:#F1F3F7;
+  --primary:#D61F83;--good:#15803D;--good-bg:#E8F6EE;--bad:#B4235E;--bad-bg:#FDEAF3;--warn:#B45309;--warn-bg:#FFF3E6;
+  --side:#25272d;--side-2:#343740;--side-line:#454953;--soft-blue:#EEF4FF;--soft-pink:#FFF1F8;
+  --shadow:0 1px 2px #1118270a,0 8px 24px -16px #11182726;
+}
+[data-theme="dark"]{
+  --bg:#1E2025;--surface:#292C33;--fg:#F9FAFB;--muted:#A3AEC2;--faint:#7D8798;--border:#3D414A;--track:#33363e;
+  --primary:#FF3CAC;--good:#4ADE80;--good-bg:#1f3b2b;--bad:#FF8CC6;--bad-bg:#45213a;--warn:#FDBA74;--warn-bg:#3d2a20;
+  --soft-blue:#24314d;--soft-pink:#402036;--shadow:none;
+}
+*{box-sizing:border-box}
+html{color-scheme:light}[data-theme="dark"]{color-scheme:dark}
+body{margin:0;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--pink);outline-offset:2px;border-radius:6px}
+.ico{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.num{font-variant-numeric:tabular-nums}
+
+/* shell */
+.shell{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+.side{background:var(--side);color:#e8eaf0;padding:24px 14px 16px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.brand{display:flex;align-items:center;gap:9px;font-weight:800;font-size:24px;letter-spacing:-1.1px;color:#fff;margin:0 12px 24px}
+.brand svg{width:28px;height:24px}
+.ws{display:flex;align-items:center;gap:10px;background:var(--side-2);border-radius:10px;padding:10px 12px;margin:0 4px 20px}
+.ws i{width:8px;height:8px;border-radius:50%;background:var(--orange);flex:none}
+.ws b{display:block;font-size:13px}.ws small{display:block;font-size:11px;color:#a9aeb9}
+.ws svg{margin-left:auto;opacity:.7}
+.nav button{display:flex;align-items:center;gap:11px;width:100%;padding:10px 12px;border-radius:9px;color:#d6d9e0;font-weight:600;font-size:13.5px;margin-bottom:2px;background:none;border:0;cursor:pointer;text-align:left}
+.nav button:hover{background:#30333b}
+.nav button.on{background:linear-gradient(100deg,#6e2750,#9a3a44);color:#fff}
+.nav .tag{margin-left:auto;font-size:10.5px;font-weight:800;border-radius:999px;padding:2px 7px;background:linear-gradient(100deg,var(--primary),var(--orange));color:#fff}
+.side-bottom{margin-top:auto;border-top:1px solid var(--side-line);padding-top:12px}
+
+.main{min-width:0;padding:28px 40px 64px;max-width:1360px;width:100%}
+.ph{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.ph h1{margin:0;font-size:28px;letter-spacing:-.04em;font-weight:600;display:flex;align-items:center;gap:10px}
+.ph h1 .ico{width:24px;height:24px;color:var(--primary)}
+.ph p{margin:4px 0 0;color:var(--muted);max-width:70ch}
+.status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:6px 12px;white-space:nowrap}
+.status i{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px #22c55e33}
+.status b{color:var(--fg);font-weight:600}
+
+/* filtros */
+.fbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:20px 0 6px}
+.seg{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:3px}
+.seg button{border:0;background:none;padding:6px 11px;border-radius:7px;font-weight:600;font-size:12.5px;color:var(--muted);cursor:pointer}
+.seg button.on{background:var(--fg);color:var(--bg)}
+.range{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:600}
+.range .ico{width:15px;height:15px;color:var(--muted)}
+.fbtn{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:7px 12px;font-weight:600;font-size:12.5px;cursor:pointer}
+.fbtn .ico{width:15px;height:15px}
+.fbtn em{font-style:normal;background:var(--soft-pink);color:var(--primary);border-radius:999px;padding:0 7px;font-size:11px}
+.cmpnote{font-size:12px;color:var(--muted);margin-left:auto}
+.adv{display:none;grid-template-columns:repeat(7,1fr);gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:8px}
+.adv.open{display:grid}
+.adv label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:600;color:var(--muted)}
+.adv select{border:1px solid var(--border);background:var(--bg);border-radius:8px;padding:6px 8px;font-size:12.5px;color:var(--fg)}
+
+/* layout */
+.grid{display:grid;gap:16px;margin-top:16px}
+.g2{grid-template-columns:1.6fr 1fr}.g2e{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g5{grid-template-columns:repeat(5,1fr)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;box-shadow:var(--shadow);min-width:0}
+.ch{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.ch h3{margin:0;font-size:15px;font-weight:600;letter-spacing:-.02em}
+.ch p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.cap{margin:12px 0 0;font-size:12.5px;color:var(--muted);display:flex;gap:7px;align-items:flex-start;border-top:1px dashed var(--border);padding-top:10px}
+.cap .ico{width:15px;height:15px;margin-top:2px;color:var(--primary)}
+.cap b{color:var(--fg);font-weight:600}
+.link{color:var(--primary);font-weight:700;font-size:12.5px;display:inline-flex;align-items:center;gap:4px;background:none;border:0;cursor:pointer;padding:0;white-space:nowrap}
+.link .ico{width:14px;height:14px}
+.tabs{display:flex;background:var(--track);border-radius:9px;padding:3px;gap:2px}
+.tabs button{border:0;background:none;padding:5px 10px;border-radius:7px;font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;white-space:nowrap}
+.tabs button.on{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px #0001}
+
+/* KPI */
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:15px 16px 12px;box-shadow:var(--shadow);display:flex;flex-direction:column;min-width:0}
+.kpi .kl{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--muted);font-weight:600}
+.kpi .kv{display:flex;align-items:baseline;gap:8px;margin-top:4px;flex-wrap:wrap}
+.kpi .kv b{font-size:27px;font-weight:800;letter-spacing:-.045em;line-height:1.15}
+.kpi .kv b.txt{font-size:19px;letter-spacing:-.03em}
+.kpi .kd{font-size:12px;color:var(--muted);margin-top:auto;padding-top:6px}
+.kpi svg.sp{width:100%;height:30px;margin-top:6px}
+.kpi.muted .kv b{color:var(--faint)}
+.delta{display:inline-flex;align-items:center;gap:2px;font-size:11.5px;font-weight:800;border-radius:999px;padding:1px 7px;color:var(--good);background:var(--good-bg);white-space:nowrap}
+.delta.bad{color:var(--bad);background:var(--bad-bg)}
+.delta.flat{color:var(--muted);background:var(--track)}
+
+/* ajuda */
+.help{position:relative;display:inline-flex}
+.help>button{border:0;background:none;padding:0;cursor:help;display:inline-flex;color:var(--faint)}
+.help>button .ico{width:13px;height:13px}
+.help .pop{position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);width:230px;background:#25272d;color:#eef0f4;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:500;line-height:1.45;box-shadow:0 14px 30px -10px #0008;opacity:0;pointer-events:none;transition:opacity .12s;z-index:30;text-align:left}
+.help .pop b{display:block;color:#fff;margin-bottom:2px}
+.help:hover .pop,.help:focus-within .pop{opacity:1}
+
+/* jornada */
+.journey{position:relative;margin-top:16px;border-radius:20px;overflow:hidden;color:#fff;padding:22px 28px 0;
+  background:radial-gradient(circle at 95% 115%,#8e2a58 0%,transparent 38%),radial-gradient(circle at 0% -25%,#1d3d86 0%,transparent 42%),linear-gradient(145deg,#26282e 0%,#1e2025 100%)}
+.jh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+.jh h2{margin:0;font-size:16px;font-weight:700;letter-spacing:-.02em}
+.jh span{font-size:12px;color:#b8bdc8}
+.stages{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:14px}
+.stage .lbl{font-size:12.5px;color:#c9cdd6;font-weight:600;display:flex;align-items:center;gap:6px}
+.stage .help>button{color:#c9cdd6}
+.stage .n{font-size:42px;font-weight:800;letter-spacing:-.05em;line-height:1.05;margin:3px 0 4px}
+.stage .n small{font-size:14px;font-weight:600;color:#c9cdd6;margin-left:5px;letter-spacing:0}
+.stage .sub{font-size:12.5px;color:#dfe2e8;margin-top:8px;display:flex;gap:14px;flex-wrap:wrap}
+.stage .sub b{color:#fff}
+.stage:nth-child(2){padding-left:10px}.stage:nth-child(3){text-align:right}
+.stage:nth-child(3) .lbl,.stage:nth-child(3) .sub{justify-content:flex-end}
+.journey .delta{background:#5ee7aa1f;color:#5ee7aa}
+.band{display:block;width:calc(100% + 56px);height:110px;margin:8px -28px 0}
+.jf{display:flex;justify-content:space-between;gap:16px;padding:12px 0 16px;font-size:12.5px;color:#ffd1e8;flex-wrap:wrap}
+.jf b{color:#fff}
+
+/* charts */
+svg.ch-svg{width:100%;height:auto;display:block;margin-top:10px;overflow:visible}
+.ch-svg .gl{stroke:var(--border)}
+.ch-svg text{fill:var(--muted);font-size:11px;font-family:Inter}
+.ch-svg .prev{fill:none;stroke:var(--faint);stroke-width:1.6;stroke-dasharray:4 5}
+.ch-svg .hp .dot{opacity:0}
+.ch-svg .hp .tt{opacity:0;pointer-events:none}
+.ch-svg .hp:hover .dot,.ch-svg .hp:hover .tt,.ch-svg .hp:focus .dot,.ch-svg .hp:focus .tt{opacity:1}
+.ch-svg .hp:focus{outline:none}
+.ch-svg .tt rect{fill:#25272d}
+.ch-svg .tt .t1{fill:#fff;font-weight:700;font-size:11.5px}
+.ch-svg .tt .t2{fill:#b8bdc8;font-size:10.5px}
+.ch-svg .peak text{fill:#fff;font-weight:700;font-size:11px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap;align-items:center}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:14px;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--blue),var(--pink))}
+.legend i.d{background:none;border-top:2px dashed var(--faint);height:0}
+.legend i.sq{width:10px;height:10px;border-radius:3px}
+
+/* barras horizontais */
+.hb{display:grid;gap:10px;margin-top:14px}
+.hb .r{display:grid;grid-template-columns:1fr auto;gap:5px 10px;align-items:baseline;font-size:13px}
+.hb .r .trk{grid-column:1/3;height:8px}
+.hb .r .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hb .r .nm small{display:block;color:var(--muted);font-size:11px}
+.trk{height:10px;background:var(--track);border-radius:99px;overflow:hidden;position:relative}
+.trk i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--pink),var(--orange))}
+.trk i.blue{background:linear-gradient(90deg,var(--blue),var(--violet))}
+.hb .r b{text-align:right;font-variant-numeric:tabular-nums}
+
+/* tabelas */
+.tw{overflow-x:auto;margin-top:12px}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+.t th{font-size:11.5px;color:var(--muted);font-weight:600;text-align:left;padding:0 10px 8px 0;border-bottom:1px solid var(--border);white-space:nowrap}
+.t td{padding:10px 10px 10px 0;border-bottom:1px solid var(--border);vertical-align:middle}
+.t tr:last-child td{border-bottom:0}
+.t .r{text-align:right}
+.t th.r{text-align:right}
+.t .pg b{display:block;font-weight:600}
+.t .pg small,.t small.m{color:var(--muted);font-size:11.5px}
+.t code{font-family:inherit;font-size:11.5px;background:var(--track);border-radius:6px;padding:1px 6px;color:var(--muted)}
+.cell-bar{display:flex;align-items:center;gap:8px;min-width:140px}
+.cell-bar b{min-width:42px;text-align:right;font-variant-numeric:tabular-nums}
+.cell-bar .trk{flex:1;height:7px}
+.chip{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap}
+.chip.g{background:var(--good-bg);color:var(--good)}.chip.w{background:var(--warn-bg);color:var(--warn)}.chip.b{background:var(--bad-bg);color:var(--bad)}.chip.n{background:var(--track);color:var(--muted)}
+.more{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--muted)}
+
+/* donut */
+.dn{display:flex;align-items:center;gap:20px;margin-top:14px}
+.dn .dw{position:relative;width:120px;height:120px;flex:none}
+.dn .dw svg{width:100%;height:100%;transform:rotate(-90deg)}
+.dn .dw .c{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.dn .dw .c b{font-size:24px;font-weight:800;letter-spacing:-.05em;line-height:1}
+.dn .dw .c span{font-size:11px;color:var(--muted)}
+.lg{list-style:none;padding:0;margin:0;flex:1;min-width:0}
+.lg li{display:grid;grid-template-columns:10px 1fr auto;gap:2px 9px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}
+.lg li:last-child{border:0}
+.lg li i{width:10px;height:10px;border-radius:3px}
+.lg li b{font-variant-numeric:tabular-nums}
+.lg li small{grid-column:2/4;color:var(--muted);font-size:11.5px;margin-top:-3px}
+
+/* stack bar */
+.stack{display:flex;height:14px;border-radius:99px;overflow:hidden;gap:2px;margin-top:12px}
+.stack i{display:block;height:100%}
+
+/* hub tiles */
+.tile{display:flex;flex-direction:column}
+.tile .ch h3{display:flex;align-items:center;gap:8px}
+.tile .ch h3 .ico{color:var(--primary);width:16px;height:16px}
+.tile .foot{margin-top:auto;padding-top:12px}
+
+/* heat grid */
+.hg{display:grid;grid-template-columns:30px repeat(24,minmax(0,1fr));gap:3px;margin-top:14px;font-size:10.5px;color:var(--muted)}
+.hg span{display:flex;align-items:center}
+.hg .c{height:16px;border-radius:4px;background:var(--track);position:relative}
+.hg .c:hover{outline:2px solid var(--fg);z-index:2}
+.hg .hh{justify-content:center}
+.hscale{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin-top:10px}
+.hscale i{width:120px;height:8px;border-radius:99px;background:linear-gradient(90deg,var(--track),#FFD2B3,#FF8A3D,#FF3CAC)}
+
+/* mapa */
+.tmap{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;max-width:300px}
+.tmap div{aspect-ratio:1;border-radius:7px;display:grid;place-content:center;font-size:10.5px;font-weight:700;background:var(--track);color:var(--muted)}
+.mapwrap{display:grid;grid-template-columns:300px 1fr;gap:24px;align-items:center;margin-top:14px}
+
+/* split orgânico/pago */
+.split{display:flex;height:44px;border-radius:12px;overflow:hidden;margin-top:14px}
+.split div{display:flex;align-items:center;padding:0 14px;color:#fff;font-weight:700;font-size:13px;white-space:nowrap}
+.split2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.split2 > div{border-radius:10px;background:var(--track);padding:10px 12px;font-size:12.5px}
+.split2 b{display:block;font-size:18px;letter-spacing:-.03em}
+
+/* heatmap page */
+.hm{display:grid;grid-template-columns:1fr 300px;gap:16px;margin-top:16px}
+.hmc{max-height:860px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;display:grid;grid-template-columns:62px 1fr;gap:12px}
+.scroll-rail{position:relative;border-radius:10px;overflow:hidden}
+.scroll-rail i{position:absolute;left:0;right:0}
+.scroll-rail span{position:absolute;left:0;right:0;text-align:center;font-size:11px;font-weight:800;color:#fff;transform:translateY(-50%)}
+.phonepg{position:relative;background:var(--bg);border:1px solid var(--border);border-radius:14px;overflow:hidden;max-width:420px;margin:0 auto;width:100%}
+.blk{position:absolute;left:10px;right:10px;border-radius:8px;border:1px dashed var(--border);display:flex;align-items:flex-start;padding:8px 10px;font-size:11px;color:var(--muted);font-weight:600}
+.blk.solid{background:var(--surface);border-style:solid}
+.blob{position:absolute;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;mix-blend-mode:normal}
+.pin{position:absolute;transform:translate(-50%,-50%);background:#25272d;color:#fff;font-size:10.5px;font-weight:800;border-radius:999px;padding:2px 7px;border:2px solid #fff}
+.fold{position:absolute;left:0;right:0;border-top:2px dashed var(--primary);font-size:10.5px;color:var(--primary);font-weight:700;padding:2px 8px;text-align:right}
+
+/* insights */
+.isum{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+.isum div{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:10px}
+.isum div b{font-size:22px;letter-spacing:-.04em}
+.isum div span{font-size:12.5px;color:var(--muted);line-height:1.3}
+.ins{display:grid;grid-template-columns:5px 1fr;gap:0;background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-top:14px;box-shadow:var(--shadow)}
+.ins>i{display:block}
+.ins .body{padding:18px 22px}
+.ins .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ins h3{margin:8px 0 12px;font-size:17px;letter-spacing:-.025em}
+.ins .cols{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:12px}
+.ins .cols>div{background:var(--bg);border-radius:12px;padding:12px 14px;font-size:13px}
+.ins .cols h4{margin:0 0 4px;font-size:11.5px;color:var(--muted);font-weight:700}
+.ins .ev{display:flex;align-items:flex-end;gap:12px;margin-top:8px}
+.ins .ev b{font-size:22px;letter-spacing:-.04em}
+.ins .act{display:flex;gap:10px;margin-top:12px;align-items:center}
+.btn{border:0;border-radius:10px;padding:8px 14px;font-weight:700;font-size:12.5px;cursor:pointer;background:var(--primary);color:#fff;display:inline-flex;align-items:center;gap:6px}
+.btn.ghost{background:none;border:1px solid var(--border);color:var(--fg)}
+.btn .ico{width:15px;height:15px}
+
+.sec-t{font-size:13px;font-weight:700;color:var(--muted);margin:28px 0 0;display:flex;align-items:center;gap:10px}
+.sec-t::after{content:"";flex:1;border-top:1px solid var(--border)}
+
+.theme-fab{position:fixed;right:18px;bottom:18px;z-index:40;display:flex;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:4px;box-shadow:0 10px 30px -12px #0005}
+.theme-fab button{border:0;background:none;padding:6px 12px;border-radius:999px;font-weight:700;font-size:12px;color:var(--muted);cursor:pointer}
+.theme-fab button.on{background:var(--side);color:#fff}
+
+@media (max-width:1180px){.g5{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(2,1fr)}.g2,.g2e,.hm{grid-template-columns:1fr}.adv{grid-template-columns:repeat(4,1fr)}}
+@media (max-width:820px){.shell{grid-template-columns:1fr}.side{position:static;height:auto}.side .nav{display:flex;overflow-x:auto;gap:4px}.side .nav button{white-space:nowrap;width:auto}.side-bottom,.ws{display:none}.main{padding:20px 16px 80px}.g5,.g3,.g4{grid-template-columns:1fr 1fr}.stages{grid-template-columns:1fr;gap:14px}.stage,.stage:nth-child(2),.stage:nth-child(3){padding:0;text-align:left}.stage:nth-child(3) .lbl,.stage:nth-child(3) .sub{justify-content:flex-start}.band,.jf{display:none}.journey{padding-bottom:20px}.ins .cols,.isum,.mapwrap{grid-template-columns:1fr}.adv{grid-template-columns:1fr 1fr}.hmc{grid-template-columns:44px 1fr}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M8 17V11M13 17V7M18 17v-4"/></symbol>
+  <symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6 6 0 0 1 3.5 5.5"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 21c-4 0-7-2.7-7-6.5 0-3 2-5 3.5-6.5.3 1.6 1.2 2.8 2.5 3.2C11 7.5 12.5 5 15 3c-.3 3 1.2 4.6 2.6 6.3A7.3 7.3 0 0 1 19 14.5C19 18.3 16 21 12 21z"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18M6 12h12M10 19h4"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M21 12a8.5 8.5 0 0 1-12.5 7.5L3 21l1.5-5.5A8.5 8.5 0 1 1 21 12z"/></symbol>
+  <symbol id="logo" viewBox="0 0 28 24"><rect x="0" y="15" width="4.5" height="9" rx="2" fill="#3B82F6"/><rect x="7" y="9" width="4.5" height="15" rx="2" fill="#FF8A3D"/><path d="M15 23 L21 2 L27 23" stroke="#FF3CAC" stroke-width="4.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><svg><use href="#logo"/></svg>Analizi</div>
+    <div class="ws"><i></i><div><b>Clínica Horizonte</b><small>clinicahorizonte.com.br</small></div><svg class="ico"><use href="#i-down"/></svg></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-bottom nav">
+      <button id="tg"><svg class="ico"><use href="#i-moon"/></svg>Tema escuro</button>
+      <button><svg class="ico"><use href="#i-gear"/></svg>Configurações</button>
+      <button><svg class="ico"><use href="#i-out"/></svg>Sair</button>
+    </div>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+
+
+<script>
+const D = {"totals": {"pageViews": 3580, "users": 2101, "sessions": 2859, "contacts": 136, "newUsers": 1491, "whatsappContacts": 108, "signUps": 28, "formSubmits": 9, "logins": 0, "attentionSeconds": 102, "contactSessions": 136}, "previousTotals": {"pageViews": 3078, "users": 1806, "sessions": 2458, "contacts": 116, "newUsers": 1282, "whatsappContacts": 92, "signUps": 24, "formSubmits": 7, "logins": 0, "attentionSeconds": 94, "contactSessions": 116}, "sources": [{"name": "google / organic", "value": 1480}, {"name": "(direct) / (none)", "value": 830}, {"name": "instagram / social", "value": 510}, {"name": "google / cpc", "value": 300}, {"name": "facebook / social", "value": 140}, {"name": "bing / organic", "value": 60}], "pages": [{"path": "/", "title": "Página inicial", "views": 1240, "attentionSeconds": 128, "exitRate": 22, "loadTimeMs": 2575}, {"path": "/especialidades", "title": "Especialidades", "views": 760, "attentionSeconds": 93, "exitRate": 18, "loadTimeMs": 1542}, {"path": "/agendamento", "title": "Agende sua consulta", "views": 540, "attentionSeconds": 66, "exitRate": 14, "loadTimeMs": 1596}, {"path": "/sobre", "title": "Sobre a clínica", "views": 350, "attentionSeconds": 78, "exitRate": 27, "loadTimeMs": 2323}, {"path": "/contato", "title": "Contato", "views": 250, "attentionSeconds": 54, "exitRate": 31, "loadTimeMs": 1617}, {"path": "/blog/clareamento", "title": "Clareamento: mitos e verdades", "views": 190, "attentionSeconds": 212, "exitRate": 64, "loadTimeMs": 2117}, {"path": "/convenios", "title": "Convênios aceitos", "views": 150, "attentionSeconds": 41, "exitRate": 35, "loadTimeMs": 1917}], "daily": [{"date": "2026-10-17", "pageViews": 73, "users": 52, "sessions": 58, "contacts": 2}, {"date": "2026-10-18", "pageViews": 94, "users": 67, "sessions": 75, "contacts": 2}, {"date": "2026-10-19", "pageViews": 121, "users": 87, "sessions": 97, "contacts": 4}, {"date": "2026-10-20", "pageViews": 119, "users": 85, "sessions": 95, "contacts": 5}, {"date": "2026-10-21", "pageViews": 108, "users": 77, "sessions": 86, "contacts": 4}, {"date": "2026-10-22", "pageViews": 146, "users": 105, "sessions": 117, "contacts": 4}, {"date": "2026-10-23", "pageViews": 152, "users": 109, "sessions": 122, "contacts": 8}, {"date": "2026-10-24", "pageViews": 69, "users": 49, "sessions": 54, "contacts": 2}, {"date": "2026-10-25", "pageViews": 93, "users": 66, "sessions": 73, "contacts": 5}, {"date": "2026-10-26", "pageViews": 122, "users": 87, "sessions": 97, "contacts": 5}, {"date": "2026-10-27", "pageViews": 157, "users": 113, "sessions": 126, "contacts": 4}, {"date": "2026-10-28", "pageViews": 139, "users": 100, "sessions": 112, "contacts": 5}, {"date": "2026-10-29", "pageViews": 150, "users": 108, "sessions": 120, "contacts": 4}, {"date": "2026-10-30", "pageViews": 147, "users": 105, "sessions": 117, "contacts": 8}, {"date": "2026-10-31", "pageViews": 70, "users": 50, "sessions": 56, "contacts": 3}, {"date": "2026-11-01", "pageViews": 93, "users": 66, "sessions": 73, "contacts": 3}, {"date": "2026-11-02", "pageViews": 121, "users": 87, "sessions": 97, "contacts": 3}, {"date": "2026-11-03", "pageViews": 119, "users": 85, "sessions": 95, "contacts": 4}, {"date": "2026-11-04", "pageViews": 132, "users": 95, "sessions": 106, "contacts": 5}, {"date": "2026-11-05", "pageViews": 158, "users": 113, "sessions": 126, "contacts": 7}, {"date": "2026-11-06", "pageViews": 153, "users": 110, "sessions": 123, "contacts": 5}, {"date": "2026-11-07", "pageViews": 84, "users": 60, "sessions": 67, "contacts": 4}, {"date": "2026-11-08", "pageViews": 83, "users": 59, "sessions": 66, "contacts": 3}, {"date": "2026-11-09", "pageViews": 120, "users": 86, "sessions": 96, "contacts": 7}, {"date": "2026-11-10", "pageViews": 147, "users": 105, "sessions": 117, "contacts": 5}, {"date": "2026-11-11", "pageViews": 144, "users": 103, "sessions": 115, "contacts": 4}, {"date": "2026-11-12", "pageViews": 163, "users": 117, "sessions": 131, "contacts": 8}, {"date": "2026-11-13", "pageViews": 139, "users": 100, "sessions": 112, "contacts": 6}, {"date": "2026-11-14", "pageViews": 67, "users": 48, "sessions": 53, "contacts": 3}, {"date": "2026-11-15", "pageViews": 97, "users": 69, "sessions": 77, "contacts": 4}], "sourcePages": [{"source": "google", "path": "/", "views": 558, "users": 446}, {"source": "google", "path": "/especialidades", "views": 342, "users": 273}, {"source": "google", "path": "/agendamento", "views": 243, "users": 194}, {"source": "google", "path": "/sobre", "views": 157, "users": 126}, {"source": "google", "path": "/contato", "views": 112, "users": 90}, {"source": "(direct)", "path": "/", "views": 310, "users": 248}, {"source": "(direct)", "path": "/especialidades", "views": 190, "users": 152}, {"source": "(direct)", "path": "/agendamento", "views": 135, "users": 108}, {"source": "(direct)", "path": "/sobre", "views": 87, "users": 70}, {"source": "(direct)", "path": "/contato", "views": 62, "users": 50}, {"source": "instagram", "path": "/", "views": 223, "users": 178}, {"source": "instagram", "path": "/especialidades", "views": 136, "users": 109}, {"source": "instagram", "path": "/agendamento", "views": 97, "users": 77}, {"source": "instagram", "path": "/sobre", "views": 63, "users": 50}, {"source": "instagram", "path": "/contato", "views": 45, "users": 36}], "locations": [{"country": "BR", "region": "São Paulo", "city": "São Paulo", "views": 1820, "users": 1300, "sessions": 1450, "conversions": 88}, {"country": "BR", "region": "São Paulo", "city": "Guarulhos", "views": 260, "users": 190, "sessions": 210, "conversions": 9}, {"country": "BR", "region": "São Paulo", "city": "Osasco", "views": 180, "users": 140, "sessions": 150, "conversions": 7}, {"country": "BR", "region": "Rio de Janeiro", "city": "Rio de Janeiro", "views": 140, "users": 110, "sessions": 120, "conversions": 3}, {"country": "BR", "region": "Minas Gerais", "city": "Belo Horizonte", "views": 90, "users": 70, "sessions": 80, "conversions": 2}, {"country": "BR", "region": "Paraná", "city": "Curitiba", "views": 60, "users": 50, "sessions": 55, "conversions": 1}, {"country": "PT", "region": "Lisboa", "city": "Lisboa", "views": 22, "users": 18, "sessions": 20, "conversions": 0}], "devices": [{"device": "mobile", "browser": "Chrome", "sessions": 1350, "users": 1215, "newUsers": 877, "views": 1889, "conversions": 62}, {"device": "mobile", "browser": "Safari", "sessions": 720, "users": 648, "newUsers": 468, "views": 1007, "conversions": 31}, {"device": "desktop", "browser": "Chrome", "sessions": 560, "users": 504, "newUsers": 364, "views": 784, "conversions": 14}, {"device": "desktop", "browser": "Edge", "sessions": 120, "users": 108, "newUsers": 78, "views": 168, "conversions": 3}, {"device": "tablet", "browser": "Safari", "sessions": 60, "users": 54, "newUsers": 39, "views": 84, "conversions": 1}], "sourceMediumResults": [{"source": "google", "medium": "organic", "campaign": "(not set)", "sessions": 1300, "pageViews": 1819, "views": 1819, "users": 1170, "newUsers": 780, "generalClicks": 210, "contactClicks": 50, "whatsappClicks": 48, "conversions": 50, "signUps": 2, "logins": 0}, {"source": "(direct)", "medium": "(none)", "campaign": "(not set)", "sessions": 740, "pageViews": 1036, "views": 1036, "users": 666, "newUsers": 444, "generalClicks": 90, "contactClicks": 24, "whatsappClicks": 22, "conversions": 24, "signUps": 2, "logins": 0}, {"source": "instagram", "medium": "social", "campaign": "(not set)", "sessions": 450, "pageViews": 630, "views": 630, "users": 405, "newUsers": 270, "generalClicks": 70, "contactClicks": 16, "whatsappClicks": 14, "conversions": 16, "signUps": 2, "logins": 0}, {"source": "google", "medium": "cpc", "campaign": "clareamento-nov", "sessions": 280, "pageViews": 392, "views": 392, "users": 252, "newUsers": 168, "generalClicks": 40, "contactClicks": 18, "whatsappClicks": 16, "conversions": 18, "signUps": 2, "logins": 0}, {"source": "facebook", "medium": "social", "campaign": "(not set)", "sessions": 120, "pageViews": 168, "views": 168, "users": 108, "newUsers": 72, "generalClicks": 15, "contactClicks": 5, "whatsappClicks": 3, "conversions": 5, "signUps": 2, "logins": 0}, {"source": "instagram", "medium": "paid", "campaign": "implante-promo", "sessions": 90, "pageViews": 125, "views": 125, "users": 81, "newUsers": 54, "generalClicks": 12, "contactClicks": 7, "whatsappClicks": 5, "conversions": 7, "signUps": 2, "logins": 0}], "pageConversionResults": [{"path": "/", "sessions": 992, "whatsappClicks": 40, "signUps": 4, "contactSessions": 44}, {"path": "/especialidades", "sessions": 608, "whatsappClicks": 22, "signUps": 3, "contactSessions": 25}, {"path": "/agendamento", "sessions": 432, "whatsappClicks": 30, "signUps": 6, "contactSessions": 36}, {"path": "/sobre", "sessions": 280, "whatsappClicks": 5, "signUps": 0, "contactSessions": 5}, {"path": "/contato", "sessions": 200, "whatsappClicks": 14, "signUps": 2, "contactSessions": 16}, {"path": "/blog/clareamento", "sessions": 152, "whatsappClicks": 3, "signUps": 0, "contactSessions": 3}, {"path": "/convenios", "sessions": 120, "whatsappClicks": 4, "signUps": 1, "contactSessions": 5}], "conversionEvents": [{"date": "2026-11-02", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 2, "sessions": 97}, {"date": "2026-11-02", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 97}, {"date": "2026-11-03", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 3, "sessions": 95}, {"date": "2026-11-03", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 95}, {"date": "2026-11-04", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 4, "sessions": 106}, {"date": "2026-11-04", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 106}, {"date": "2026-11-05", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 6, "sessions": 126}, {"date": "2026-11-05", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 126}, {"date": "2026-11-06", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 4, "sessions": 123}, {"date": "2026-11-06", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 123}, {"date": "2026-11-07", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 3, "sessions": 67}, {"date": "2026-11-07", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 67}, {"date": "2026-11-08", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 2, "sessions": 66}, {"date": "2026-11-08", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 66}, {"date": "2026-11-09", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 6, "sessions": 96}, {"date": "2026-11-09", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 96}, {"date": "2026-11-10", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 4, "sessions": 117}, {"date": "2026-11-10", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 117}, {"date": "2026-11-11", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 3, "sessions": 115}, {"date": "2026-11-11", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 115}, {"date": "2026-11-12", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 7, "sessions": 131}, {"date": "2026-11-12", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 131}, {"date": "2026-11-13", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 5, "sessions": 112}, {"date": "2026-11-13", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 112}, {"date": "2026-11-14", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 2, "sessions": 53}, {"date": "2026-11-14", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 53}, {"date": "2026-11-15", "type": "whatsapp", "name": "Clique no WhatsApp", "stage": "confirmada", "path": "/agendamento", "conversions": 3, "sessions": 77}, {"date": "2026-11-15", "type": "sign_up", "name": "Formulário de agendamento", "stage": "intencao", "path": "/agendamento", "conversions": 1, "sessions": 77}], "contactDetails": [{"date": "2026-11-02", "type": "whatsapp", "path": "/", "contacts": 3}, {"date": "2026-11-03", "type": "whatsapp", "path": "/", "contacts": 4}, {"date": "2026-11-04", "type": "whatsapp", "path": "/", "contacts": 5}, {"date": "2026-11-05", "type": "whatsapp", "path": "/", "contacts": 7}, {"date": "2026-11-06", "type": "whatsapp", "path": "/", "contacts": 5}, {"date": "2026-11-07", "type": "whatsapp", "path": "/", "contacts": 4}, {"date": "2026-11-08", "type": "whatsapp", "path": "/", "contacts": 3}, {"date": "2026-11-09", "type": "whatsapp", "path": "/", "contacts": 7}, {"date": "2026-11-10", "type": "whatsapp", "path": "/", "contacts": 5}, {"date": "2026-11-11", "type": "whatsapp", "path": "/", "contacts": 4}, {"date": "2026-11-12", "type": "whatsapp", "path": "/", "contacts": 8}, {"date": "2026-11-13", "type": "whatsapp", "path": "/", "contacts": 6}, {"date": "2026-11-14", "type": "whatsapp", "path": "/", "contacts": 3}, {"date": "2026-11-15", "type": "whatsapp", "path": "/", "contacts": 4}], "clickDetails": [{"date": "2026-11-02", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 5, "sessions": 4}, {"date": "2026-11-02", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-02", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-03", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 6, "sessions": 5}, {"date": "2026-11-03", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-03", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-04", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 7, "sessions": 6}, {"date": "2026-11-04", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-04", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-05", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 9, "sessions": 8}, {"date": "2026-11-05", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-05", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-06", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 7, "sessions": 6}, {"date": "2026-11-06", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-06", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-07", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 6, "sessions": 5}, {"date": "2026-11-07", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-07", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-08", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 5, "sessions": 4}, {"date": "2026-11-08", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-08", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-09", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 9, "sessions": 8}, {"date": "2026-11-09", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-09", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-10", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 7, "sessions": 6}, {"date": "2026-11-10", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-10", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-11", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 6, "sessions": 5}, {"date": "2026-11-11", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-11", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-12", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 10, "sessions": 9}, {"date": "2026-11-12", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-12", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-13", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 8, "sessions": 7}, {"date": "2026-11-13", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-13", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-14", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 5, "sessions": 4}, {"date": "2026-11-14", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-14", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}, {"date": "2026-11-15", "path": "/", "label": "Falar no WhatsApp", "destination": "https://wa.me/5511999999999", "intent": "whatsapp", "isContactLead": 1, "clicks": 6, "sessions": 5}, {"date": "2026-11-15", "path": "/especialidades", "label": "Ver tratamentos", "destination": "/especialidades", "intent": "navigation", "isContactLead": 0, "clicks": 6, "sessions": 5}, {"date": "2026-11-15", "path": "/contato", "label": "Como chegar", "destination": "https://maps.google.com", "intent": "outbound", "isContactLead": 0, "clicks": 2, "sessions": 2}], "filterPages": [{"path": "/"}, {"path": "/especialidades"}, {"path": "/agendamento"}, {"path": "/sobre"}, {"path": "/contato"}, {"path": "/blog/clareamento"}, {"path": "/convenios"}], "filterSources": [{"source": "google"}, {"source": "(direct)"}, {"source": "instagram"}, {"source": "facebook"}], "filterMediums": [{"medium": "organic"}, {"medium": "(none)"}, {"medium": "social"}, {"medium": "cpc"}], "filterCampaigns": [{"campaign": "clareamento-nov"}], "filterDevices": [{"device": "mobile"}, {"device": "desktop"}, {"device": "tablet"}], "filterBrowsers": [{"browser": "Chrome"}, {"browser": "Safari"}, {"browser": "Edge"}], "peakHours": [{"dayOfWeek": 0, "hourOfDay": 0, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 1, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 2, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 3, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 4, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 5, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 6, "sessions": 1, "views": 1, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 7, "sessions": 6, "views": 8, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 8, "sessions": 12, "views": 16, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 9, "sessions": 22, "views": 30, "contacts": 1}, {"dayOfWeek": 0, "hourOfDay": 10, "sessions": 23, "views": 32, "contacts": 1}, {"dayOfWeek": 0, "hourOfDay": 11, "sessions": 16, "views": 22, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 12, "sessions": 13, "views": 18, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 13, "sessions": 17, "views": 23, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 14, "sessions": 15, "views": 21, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 15, "sessions": 21, "views": 29, "contacts": 1}, {"dayOfWeek": 0, "hourOfDay": 16, "sessions": 16, "views": 22, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 17, "sessions": 14, "views": 19, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 18, "sessions": 12, "views": 16, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 19, "sessions": 15, "views": 21, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 20, "sessions": 9, "views": 12, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 21, "sessions": 6, "views": 8, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 22, "sessions": 3, "views": 4, "contacts": 0}, {"dayOfWeek": 0, "hourOfDay": 23, "sessions": 2, "views": 2, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 0, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 1, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 2, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 3, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 4, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 5, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 6, "sessions": 4, "views": 5, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 7, "sessions": 14, "views": 19, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 8, "sessions": 28, "views": 39, "contacts": 1}, {"dayOfWeek": 1, "hourOfDay": 9, "sessions": 55, "views": 77, "contacts": 2}, {"dayOfWeek": 1, "hourOfDay": 10, "sessions": 63, "views": 88, "contacts": 3}, {"dayOfWeek": 1, "hourOfDay": 11, "sessions": 38, "views": 53, "contacts": 1}, {"dayOfWeek": 1, "hourOfDay": 12, "sessions": 30, "views": 42, "contacts": 1}, {"dayOfWeek": 1, "hourOfDay": 13, "sessions": 36, "views": 50, "contacts": 1}, {"dayOfWeek": 1, "hourOfDay": 14, "sessions": 45, "views": 62, "contacts": 2}, {"dayOfWeek": 1, "hourOfDay": 15, "sessions": 56, "views": 78, "contacts": 2}, {"dayOfWeek": 1, "hourOfDay": 16, "sessions": 54, "views": 75, "contacts": 2}, {"dayOfWeek": 1, "hourOfDay": 17, "sessions": 41, "views": 57, "contacts": 2}, {"dayOfWeek": 1, "hourOfDay": 18, "sessions": 31, "views": 43, "contacts": 1}, {"dayOfWeek": 1, "hourOfDay": 19, "sessions": 34, "views": 47, "contacts": 1}, {"dayOfWeek": 1, "hourOfDay": 20, "sessions": 29, "views": 40, "contacts": 1}, {"dayOfWeek": 1, "hourOfDay": 21, "sessions": 21, "views": 29, "contacts": 1}, {"dayOfWeek": 1, "hourOfDay": 22, "sessions": 12, "views": 16, "contacts": 0}, {"dayOfWeek": 1, "hourOfDay": 23, "sessions": 5, "views": 7, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 0, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 1, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 2, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 3, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 4, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 5, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 6, "sessions": 6, "views": 8, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 7, "sessions": 17, "views": 23, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 8, "sessions": 29, "views": 40, "contacts": 1}, {"dayOfWeek": 2, "hourOfDay": 9, "sessions": 44, "views": 61, "contacts": 2}, {"dayOfWeek": 2, "hourOfDay": 10, "sessions": 41, "views": 57, "contacts": 2}, {"dayOfWeek": 2, "hourOfDay": 11, "sessions": 49, "views": 68, "contacts": 2}, {"dayOfWeek": 2, "hourOfDay": 12, "sessions": 28, "views": 39, "contacts": 1}, {"dayOfWeek": 2, "hourOfDay": 13, "sessions": 32, "views": 44, "contacts": 1}, {"dayOfWeek": 2, "hourOfDay": 14, "sessions": 44, "views": 61, "contacts": 2}, {"dayOfWeek": 2, "hourOfDay": 15, "sessions": 47, "views": 65, "contacts": 2}, {"dayOfWeek": 2, "hourOfDay": 16, "sessions": 47, "views": 65, "contacts": 2}, {"dayOfWeek": 2, "hourOfDay": 17, "sessions": 36, "views": 50, "contacts": 1}, {"dayOfWeek": 2, "hourOfDay": 18, "sessions": 31, "views": 43, "contacts": 1}, {"dayOfWeek": 2, "hourOfDay": 19, "sessions": 30, "views": 42, "contacts": 1}, {"dayOfWeek": 2, "hourOfDay": 20, "sessions": 24, "views": 33, "contacts": 1}, {"dayOfWeek": 2, "hourOfDay": 21, "sessions": 19, "views": 26, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 22, "sessions": 7, "views": 9, "contacts": 0}, {"dayOfWeek": 2, "hourOfDay": 23, "sessions": 6, "views": 8, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 0, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 1, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 2, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 3, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 4, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 5, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 6, "sessions": 6, "views": 8, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 7, "sessions": 19, "views": 26, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 8, "sessions": 30, "views": 42, "contacts": 1}, {"dayOfWeek": 3, "hourOfDay": 9, "sessions": 46, "views": 64, "contacts": 2}, {"dayOfWeek": 3, "hourOfDay": 10, "sessions": 41, "views": 57, "contacts": 2}, {"dayOfWeek": 3, "hourOfDay": 11, "sessions": 37, "views": 51, "contacts": 1}, {"dayOfWeek": 3, "hourOfDay": 12, "sessions": 33, "views": 46, "contacts": 1}, {"dayOfWeek": 3, "hourOfDay": 13, "sessions": 36, "views": 50, "contacts": 1}, {"dayOfWeek": 3, "hourOfDay": 14, "sessions": 60, "views": 84, "contacts": 3}, {"dayOfWeek": 3, "hourOfDay": 15, "sessions": 47, "views": 65, "contacts": 2}, {"dayOfWeek": 3, "hourOfDay": 16, "sessions": 39, "views": 54, "contacts": 1}, {"dayOfWeek": 3, "hourOfDay": 17, "sessions": 57, "views": 79, "contacts": 2}, {"dayOfWeek": 3, "hourOfDay": 18, "sessions": 42, "views": 58, "contacts": 2}, {"dayOfWeek": 3, "hourOfDay": 19, "sessions": 29, "views": 40, "contacts": 1}, {"dayOfWeek": 3, "hourOfDay": 20, "sessions": 31, "views": 43, "contacts": 1}, {"dayOfWeek": 3, "hourOfDay": 21, "sessions": 15, "views": 21, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 22, "sessions": 10, "views": 14, "contacts": 0}, {"dayOfWeek": 3, "hourOfDay": 23, "sessions": 6, "views": 8, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 0, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 1, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 2, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 3, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 4, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 5, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 6, "sessions": 5, "views": 7, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 7, "sessions": 17, "views": 23, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 8, "sessions": 28, "views": 39, "contacts": 1}, {"dayOfWeek": 4, "hourOfDay": 9, "sessions": 40, "views": 56, "contacts": 2}, {"dayOfWeek": 4, "hourOfDay": 10, "sessions": 60, "views": 84, "contacts": 3}, {"dayOfWeek": 4, "hourOfDay": 11, "sessions": 58, "views": 81, "contacts": 2}, {"dayOfWeek": 4, "hourOfDay": 12, "sessions": 42, "views": 58, "contacts": 2}, {"dayOfWeek": 4, "hourOfDay": 13, "sessions": 47, "views": 65, "contacts": 2}, {"dayOfWeek": 4, "hourOfDay": 14, "sessions": 60, "views": 84, "contacts": 3}, {"dayOfWeek": 4, "hourOfDay": 15, "sessions": 64, "views": 89, "contacts": 3}, {"dayOfWeek": 4, "hourOfDay": 16, "sessions": 44, "views": 61, "contacts": 2}, {"dayOfWeek": 4, "hourOfDay": 17, "sessions": 47, "views": 65, "contacts": 2}, {"dayOfWeek": 4, "hourOfDay": 18, "sessions": 38, "views": 53, "contacts": 1}, {"dayOfWeek": 4, "hourOfDay": 19, "sessions": 27, "views": 37, "contacts": 1}, {"dayOfWeek": 4, "hourOfDay": 20, "sessions": 23, "views": 32, "contacts": 1}, {"dayOfWeek": 4, "hourOfDay": 21, "sessions": 18, "views": 25, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 22, "sessions": 9, "views": 12, "contacts": 0}, {"dayOfWeek": 4, "hourOfDay": 23, "sessions": 5, "views": 7, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 0, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 1, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 2, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 3, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 4, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 5, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 6, "sessions": 4, "views": 5, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 7, "sessions": 13, "views": 18, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 8, "sessions": 26, "views": 36, "contacts": 1}, {"dayOfWeek": 5, "hourOfDay": 9, "sessions": 39, "views": 54, "contacts": 1}, {"dayOfWeek": 5, "hourOfDay": 10, "sessions": 55, "views": 77, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 11, "sessions": 56, "views": 78, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 12, "sessions": 42, "views": 58, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 13, "sessions": 41, "views": 57, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 14, "sessions": 55, "views": 77, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 15, "sessions": 65, "views": 91, "contacts": 3}, {"dayOfWeek": 5, "hourOfDay": 16, "sessions": 41, "views": 57, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 17, "sessions": 50, "views": 70, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 18, "sessions": 50, "views": 70, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 19, "sessions": 41, "views": 57, "contacts": 2}, {"dayOfWeek": 5, "hourOfDay": 20, "sessions": 35, "views": 49, "contacts": 1}, {"dayOfWeek": 5, "hourOfDay": 21, "sessions": 20, "views": 28, "contacts": 1}, {"dayOfWeek": 5, "hourOfDay": 22, "sessions": 8, "views": 11, "contacts": 0}, {"dayOfWeek": 5, "hourOfDay": 23, "sessions": 5, "views": 7, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 0, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 1, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 2, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 3, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 4, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 5, "sessions": 0, "views": 0, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 6, "sessions": 2, "views": 2, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 7, "sessions": 5, "views": 7, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 8, "sessions": 9, "views": 12, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 9, "sessions": 14, "views": 19, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 10, "sessions": 24, "views": 33, "contacts": 1}, {"dayOfWeek": 6, "hourOfDay": 11, "sessions": 20, "views": 28, "contacts": 1}, {"dayOfWeek": 6, "hourOfDay": 12, "sessions": 11, "views": 15, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 13, "sessions": 18, "views": 25, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 14, "sessions": 24, "views": 33, "contacts": 1}, {"dayOfWeek": 6, "hourOfDay": 15, "sessions": 23, "views": 32, "contacts": 1}, {"dayOfWeek": 6, "hourOfDay": 16, "sessions": 18, "views": 25, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 17, "sessions": 18, "views": 25, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 18, "sessions": 13, "views": 18, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 19, "sessions": 10, "views": 14, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 20, "sessions": 14, "views": 19, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 21, "sessions": 8, "views": 11, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 22, "sessions": 4, "views": 5, "contacts": 0}, {"dayOfWeek": 6, "hourOfDay": 23, "sessions": 2, "views": 2, "contacts": 0}], "periodDays": 30};
+const H = {"pagePath": "/", "deviceType": "mobile", "availablePages": ["/", "/especialidades", "/agendamento"], "totalVisitors": 980, "layout": {"viewportWidth": 390, "viewportHeight": 844, "pageHeight": 2600, "updatedAt": "2026-11-15T10:00:00Z", "blocks": [{"type": "header", "top": 0, "left": 0, "width": 390, "height": 70, "label": "Menu"}, {"type": "hero", "top": 70, "left": 0, "width": 390, "height": 520, "label": "Sorrisos que transformam"}, {"type": "button", "top": 480, "left": 40, "width": 310, "height": 56, "label": "Agendar pelo WhatsApp"}, {"type": "section", "top": 620, "left": 0, "width": 390, "height": 600, "label": "Especialidades"}, {"type": "section", "top": 1240, "left": 0, "width": 390, "height": 500, "label": "Depoimentos"}, {"type": "form", "top": 1760, "left": 0, "width": 390, "height": 520, "label": "Agende sua consulta"}, {"type": "footer", "top": 2300, "left": 0, "width": 390, "height": 300, "label": "Rodapé"}]}, "clicks": [{"x_pct": 50, "y_px": 505, "tag": "a", "label": "Agendar pelo WhatsApp", "count": 320}, {"x_pct": 85, "y_px": 35, "tag": "button", "label": "Menu", "count": 140}, {"x_pct": 30, "y_px": 820, "tag": "a", "label": "Implantes", "count": 90}, {"x_pct": 70, "y_px": 820, "tag": "a", "label": "Clareamento", "count": 110}, {"x_pct": 50, "y_px": 2200, "tag": "button", "label": "Enviar", "count": 40}], "scrollRetention": {"25": {"visitors": 901, "percentage": 92}, "50": {"visitors": 627, "percentage": 64}, "75": {"visitors": 372, "percentage": 38}, "100": {"visitors": 166, "percentage": 17}}};
+const T = D.totals, P = D.previousTotals;
+const fmt = n => Math.round(n).toLocaleString('pt-BR');
+const pct = (a,b) => Math.round((a-b)/b*100);
+const dd = s => s.slice(8,10)+'/'+s.slice(5,7);
+const wd = s => ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][new Date(s+'T12:00:00Z').getUTCDay()];
+const dur = s => `${Math.floor(s/60)}min ${String(s%60).padStart(2,'0')}s`;
+const ico = (id,st='') => `<svg class="ico" ${st}><use href="#${id}"/></svg>`;
+const help = (t,b) => `<span class="help"><button aria-label="O que é ${t}?">${ico('i-info')}</button><span class="pop" role="tooltip"><b>${t}</b>${b}</span></span>`;
+const delta = (v,inv=false,suf='%') => { if(v===null) return `<span class="delta flat">sem comparação</span>`; const good = inv? v<=0 : v>=0; return `<span class="delta ${good?'':'bad'}">${v>=0?'↗':'↘'} ${Math.abs(v)}${suf}</span>` };
+const daily = D.daily;
+// período anterior (simulado de forma determinística a partir do total anterior)
+const prevDaily = daily.map((d,i)=>({pageViews:Math.round(d.pageViews*(P.pageViews/T.pageViews)*(1+0.12*Math.sin(i*1.7))),users:Math.round(d.users*(P.users/T.users)),contacts:Math.max(0,Math.round(d.contacts*(P.contacts/T.contacts)*(1+0.2*Math.cos(i))))}));
+
+/* ---------------- gráficos ---------------- */
+function smooth(p){let d=`M${p[0][0].toFixed(1)},${p[0][1].toFixed(1)}`;for(let i=0;i<p.length-1;i++){const a=p[Math.max(i-1,0)],b=p[i],c=p[i+1],e=p[Math.min(i+2,p.length-1)];const c1=[b[0]+(c[0]-a[0])/6,b[1]+(c[1]-a[1])/6],c2=[c[0]-(e[0]-b[0])/6,c[1]-(e[1]-b[1])/6];d+=` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${c[0].toFixed(1)},${c[1].toFixed(1)}`}return d}
+let uid=0;
+function area(vals, prev, labels, unit, h=230, color=['#3B82F6','#7C5CF0','#FF3CAC']){
+  const id='a'+(uid++), W=760, X0=40, X1=W-10, YT=18, YB=h-30;
+  const mx = Math.max(...vals, ...(prev||[])) * 1.12; const step=(X1-X0)/(vals.length-1);
+  const y=v=>YB-(v/mx)*(YB-YT); const pts=vals.map((v,i)=>[X0+i*step,y(v)]);
+  const ticks=[0,.33,.66,1].map(f=>Math.round(mx*f/10)*10);
+  const pk=vals.indexOf(Math.max(...vals)); const [px,py]=pts[pk];
+  let s=`<svg viewBox="0 0 ${W} ${h}" class="ch-svg" role="img" aria-label="Gráfico de ${unit} por dia"><defs><linearGradient id="${id}f" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color[0]}" stop-opacity=".25"/><stop offset="1" stop-color="${color[0]}" stop-opacity="0"/></linearGradient><linearGradient id="${id}l" x1="0" x2="1"><stop offset="0" stop-color="${color[0]}"/><stop offset=".55" stop-color="${color[1]}"/><stop offset="1" stop-color="${color[2]}"/></linearGradient><linearGradient id="${id}p" x1="0" x2="1"><stop offset="0" stop-color="#D61F83"/><stop offset="1" stop-color="#FF8A3D"/></linearGradient></defs>`;
+  ticks.forEach(t=>s+=`<line class="gl" x1="${X0}" x2="${X1}" y1="${y(t)}" y2="${y(t)}"/><text x="${X0-8}" y="${y(t)+4}" text-anchor="end">${t}</text>`);
+  if(prev) s+=`<path class="prev" d="${smooth(prev.map((v,i)=>[X0+i*step,y(v)]))}"/>`;
+  const line=smooth(pts); s+=`<path d="${line} L${X1},${YB} L${X0},${YB} Z" fill="url(#${id}f)"/><path d="${line}" fill="none" stroke="url(#${id}l)" stroke-width="3" stroke-linecap="round"/>`;
+  labels.forEach((l,i)=>{ if((i%Math.ceil(labels.length/8)===0&&i<labels.length-3)||i===labels.length-1) s+=`<text x="${X0+i*step}" y="${h-8}" text-anchor="middle">${l}</text>`});
+  const tx=Math.min(Math.max(px,90),W-90);
+  s+=`<g class="peak"><circle cx="${px}" cy="${py}" r="6" fill="#FF3CAC" stroke="var(--surface)" stroke-width="3"/><g transform="translate(${px+10>W-130?px-140:px+10},${py-24})"><rect width="128" height="22" rx="11" fill="url(#${id}p)"/><text x="64" y="15" text-anchor="middle">Pico: ${labels[pk]} · ${vals[pk]}</text></g></g>`;
+  pts.forEach(([x,yy],i)=>{const tx=Math.min(Math.max(x,82),W-82);s+=`<g class="hp" tabindex="0"><rect x="${x-step/2}" y="${YT}" width="${step}" height="${YB-YT}" fill="transparent"/><circle class="dot" cx="${x}" cy="${yy}" r="4.5" fill="var(--surface)" stroke="#7C5CF0" stroke-width="2.5"/><g class="tt" transform="translate(${tx},${Math.max(yy-12,50)})"><rect x="-76" y="-40" width="152" height="36" rx="8"/><text class="t1" x="0" y="-25" text-anchor="middle">${labels[i]}: ${vals[i]} ${unit}</text><text class="t2" x="0" y="-11" text-anchor="middle">${prev?`período anterior: ${prev[i]}`:''}</text></g></g>`});
+  return s+'</svg>';
+}
+function spark(vals,color='#3B82F6'){const W=120,H=30,mx=Math.max(...vals),mn=Math.min(...vals);const p=vals.map((v,i)=>[i*W/(vals.length-1),H-2-(v-mn)/(mx-mn||1)*(H-6)]);return `<svg class="sp" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${smooth(p)}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`}
+function donut(segs,center,label,size=120){let off=0;const tot=segs.reduce((a,s)=>a+s.v,0);let c=`<circle cx="21" cy="21" r="16" fill="none" stroke="var(--track)" stroke-width="6"/>`;segs.forEach(s=>{const len=s.v/tot*100;c+=`<circle cx="21" cy="21" r="16" fill="none" stroke="${s.c}" stroke-width="6" pathLength="100" stroke-dasharray="${Math.max(len-1.2,.5)} 100" stroke-dashoffset="${-off}"/>`;off+=len});return `<div class="dw" style="width:${size}px;height:${size}px"><svg viewBox="0 0 42 42">${c}</svg><div class="c"><b>${center}</b><span>${label}</span></div></div>`}
+function hbars(rows,cls=''){const mx=Math.max(...rows.map(r=>r.v));return `<div class="hb">${rows.map(r=>`<div class="r"><span class="nm" title="${r.n}">${r.n}${r.s?` <small style="display:inline">· ${r.s}</small>`:''}</span><b>${r.d??fmt(r.v)}</b><span class="trk"><i class="${cls}" style="width:${r.v/mx*100}%"></i></span></div>`).join('')}</div>`}
+function cellBar(v,mx,cls='blue',lbl){return `<div class="cell-bar"><b>${lbl??fmt(v)}</b><span class="trk"><i class="${cls}" style="width:${v/mx*100}%"></i></span></div>`}
+function kpi({l,v,d,inv,desc,h,sp,spc,txt,muted}){return `<div class="kpi ${muted?'muted':''}"><div class="kl">${l}${h?help(l,h):''}</div><div class="kv"><b class="${txt?'txt':''} num">${v}</b>${d!==undefined?delta(d,inv):''}</div>${sp?spark(sp,spc):''}<div class="kd">${desc}</div></div>`}
+function card(title,sub,body,extra='',cap=''){return `<article class="card"><div class="ch"><div><h3>${title}</h3>${sub?`<p>${sub}</p>`:''}</div>${extra}</div>${body}${cap?`<p class="cap">${ico('i-eye')}<span>${cap}</span></p>`:''}</article>`}
+function tabs(arr,on=0){return `<div class="tabs" role="tablist">${arr.map((t,i)=>`<button role="tab" class="${i===on?'on':''}" aria-selected="${i===on}">${t}</button>`).join('')}</div>`}
+function heatColor(f){if(f<=0)return 'var(--track)';const st=[[255,234,220],[255,190,140],[255,138,61],[255,60,172]];const x=Math.min(f,1)*(st.length-1),i=Math.floor(Math.min(x,st.length-2)),t=x-i;const c=st[i].map((a,k)=>Math.round(a+(st[i+1][k]-a)*t));return `rgb(${c})`}
+
+/* ---------------- dados derivados ---------------- */
+const labels = daily.map(d=>dd(d.date));
+const views = daily.map(d=>d.pageViews), users=daily.map(d=>d.users), contacts=daily.map(d=>d.contacts);
+const friendly = s => ({'google / organic':'Google (pesquisa)','(direct) / (none)':'Digitaram o endereço','instagram / social':'Instagram','google / cpc':'Google Ads','facebook / social':'Facebook','bing / organic':'Bing (pesquisa)','instagram / paid':'Instagram Ads'}[s]||s);
+const SMR = D.sourceMediumResults.map(r=>({...r,key:`${r.source} / ${r.medium}`,rate:r.whatsappClicks/r.sessions*100}));
+const paid = SMR.filter(r=>['cpc','paid'].includes(r.medium)), org = SMR.filter(r=>!['cpc','paid'].includes(r.medium));
+const sum=(a,k)=>a.reduce((x,r)=>x+r[k],0);
+const pages = D.pages.map(p=>{const c=D.pageConversionResults.find(x=>x.path===p.path)||{};return {...p,contactsP:(c.contactSessions||0),whats:c.whatsappClicks||0,signs:c.signUps||0,sess:c.sessions||0}});
+const devAgg = ['mobile','desktop','tablet'].map(k=>{const r=D.devices.filter(d=>d.device===k);return {k,sessions:sum(r,'sessions'),views:sum(r,'views'),users:sum(r,'users'),newUsers:sum(r,'newUsers'),conv:sum(r,'conversions')}});
+const devName={mobile:'Celular',desktop:'Computador',tablet:'Tablet'};
+const totDevS=sum(devAgg,'sessions');
+const peak=D.peakHours; const pkMax=Math.max(...peak.map(p=>p.sessions));
+const contactRate=(T.contacts/T.sessions*100).toFixed(1).replace('.',',');
+const convPeople=(T.contacts/T.users*100).toFixed(1).replace('.',',');
+const exitAvg='23,9%';
+const bestHour=(()=>{const b=[...peak].sort((a,b)=>b.sessions-a.sessions)[0];return {d:['domingo','segunda','terça','quarta','quinta','sexta','sábado'][b.dayOfWeek],h:b.hourOfDay}})();
+
+/* ---------------- cabeçalho e filtros ---------------- */
+const NAV=[['dashboard','Início','i-chart'],['acquisition','Aquisição & Campanhas','i-compass'],['audience','Público','i-users'],['pages','Páginas','i-file'],['results','Resultados','i-target'],['heatmap','Heatmap e Rolagem','i-flame'],['insights','Insights','i-bulb']];
+function header(icon,title,sub,filters=true){return `<div class="ph"><div><h1>${ico(icon)}${title}</h1><p>${sub}</p></div><div class="status"><i></i>Rastreador ativo · dados até <b>15/11/2026</b></div></div>${filters?filterBar():''}`}
+function filterBar(){return `<div class="fbar"><div class="seg" role="group" aria-label="Período">${['7D','14D','30D','90D','1A'].map(p=>`<button class="${p==='30D'?'on':''}">${p}</button>`).join('')}</div><div class="range">${ico('i-cal')}17/10/2026 – 15/11/2026</div><button class="fbtn" onclick="this.parentNode.nextElementSibling.classList.toggle('open')" aria-expanded="false">${ico('i-filter')}Filtros <em>0</em></button><span class="cmpnote">comparado aos 30 dias anteriores</span></div>
+<div class="adv">${[['Agrupar por',['Dia','Semana','Mês']],['Página',['Todas as páginas',...D.pages.map(p=>p.title)]],['Aparelho',['Todos','Celular','Computador','Tablet']],['Navegador',['Todos','Chrome','Safari','Edge']],['Origem',['Todas','Google','Direto','Instagram','Facebook']],['Mídia',['Todas','Orgânico','Pago','Social']],['Campanha',['Todas','clareamento-nov','implante-promo']]].map(([l,o])=>`<label>${l}<select>${o.map(x=>`<option>${x}</option>`).join('')}</select></label>`).join('')}</div>`}
+
+/* ---------------- INÍCIO (hub) ---------------- */
+function journey(){
+  const hs=[150,150*(1-.239),Math.max(10,150*T.contacts/T.users)];const c=75;const top=hs.map(h=>c-h/2),bot=hs.map(h=>c+h/2);
+  const band=`M0,${top[0]} C250,${top[0]} 250,${top[1]} 500,${top[1]} C750,${top[1]} 750,${top[2]} 1000,${top[2]} L1000,${bot[2]} C750,${bot[2]} 750,${bot[1]} 500,${bot[1]} C250,${bot[1]} 250,${bot[0]} 0,${bot[0]} Z`;
+  return `<section class="journey" aria-label="Jornada dos visitantes"><div class="jh"><h2>O caminho de quem visitou seu site</h2><span>17/10 a 15/11 · 30 dias</span></div>
+  <div class="stages">
+   <div class="stage"><div class="lbl">Chegaram${help('Usuários','Pessoas diferentes que abriram o seu site. Quem voltou várias vezes conta uma vez só.')}</div><div class="n num">${fmt(T.users)}<small>pessoas</small></div>${delta(pct(T.users,P.users))}<div class="sub"><span><b>${fmt(T.newUsers)}</b> vieram pela primeira vez ${delta(pct(T.newUsers,P.newUsers))}</span></div></div>
+   <div class="stage"><div class="lbl">Se interessaram</div><div class="n num">${fmt(T.pageViews)}<small>páginas vistas</small></div>${delta(pct(T.pageViews,P.pageViews))}<div class="sub"><span><b>${dur(T.attentionSeconds)}</b> de atenção ${help('Tempo de atenção','Tempo médio em que a pessoa ficou com o site aberto e visível na tela.')} ${delta(pct(T.attentionSeconds,P.attentionSeconds))}</span></div></div>
+   <div class="stage"><div class="lbl">Entraram em contato${help('Contatos iniciados','Cliques em WhatsApp, telefone ou formulários de cadastro.')}</div><div class="n num">${fmt(T.contacts)}<small>contatos</small></div>${delta(pct(T.contacts,P.contacts))}<div class="sub"><span><b>${T.whatsappContacts}</b> WhatsApp · <b>${T.signUps}</b> cadastros</span></div></div>
+  </div>
+  <svg viewBox="0 0 1000 150" preserveAspectRatio="none" class="band" aria-hidden="true"><defs><linearGradient id="gb" x1="0" x2="1"><stop offset="0" stop-color="#3B82F6"/><stop offset=".52" stop-color="#FF3CAC"/><stop offset="1" stop-color="#FF8A3D"/></linearGradient></defs><path d="${band}" fill="url(#gb)"/><path d="${band}" fill="none" stroke="#fff" stroke-opacity=".18"/></svg>
+  <div class="jf"><span>↘ <b>${exitAvg}</b> saíram sem interagir com o site ${help('Taxa de saída','De cada 100 visitas, quantas terminaram sem a pessoa interagir ou abrir outra página. Quanto menor, melhor.')}</span><span><b>${convPeople}%</b> das pessoas viraram contato</span></div></section>`;
+}
+function dailyTable(){const rows=[...daily].reverse();const mx=Math.max(...views);return `<div class="tw" style="max-height:268px;overflow:auto"><table class="t"><thead><tr><th>Data</th><th>Visualizações</th><th class="r">Usuários</th><th class="r">Contatos</th></tr></thead><tbody>${rows.map(d=>`<tr><td><b>${dd(d.date)}</b> <small class="m">${wd(d.date)}</small></td><td>${cellBar(d.pageViews,mx)}</td><td class="r num">${d.users}</td><td class="r"><span class="chip ${d.contacts>=7?'g':'n'}">${d.contacts}</span></td></tr>`).join('')}</tbody></table></div>`}
+function peakGrid(full=false){const order=[1,2,3,4,5,6,0];let s=`<div class="hg"><span></span>${Array.from({length:24},(_,h)=>`<span class="hh">${h%3===0?h+'h':''}</span>`).join('')}`;order.forEach(dw=>{s+=`<span>${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dw]}</span>`;for(let h=0;h<24;h++){const c=peak.find(p=>p.dayOfWeek===dw&&p.hourOfDay===h);s+=`<i class="c" style="background:${heatColor(c.sessions/pkMax)}" title="${['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'][dw]} ${h}h: ${c.sessions} acessos · ${c.contacts} contatos"></i>`}});return s+`</div><div class="hscale"><span>menos acessos</span><i></i><span>mais acessos</span></div>`}
+function Dashboard(){
+  const topSrc=D.sources.slice(0,4).map(s=>({n:friendly(s.name),v:s.value}));
+  const topPg=pages.slice(0,3);
+  return header('i-chart','Visão geral','Como seu site foi nos últimos 30 dias, em um só lugar.')+journey()+
+  `<div class="grid g5" style="margin-top:16px">
+    ${kpi({l:'Visualizações de páginas',v:fmt(T.pageViews),d:pct(T.pageViews,P.pageViews),desc:'páginas abertas pelos visitantes',sp:views})}
+    ${kpi({l:'Usuários',v:fmt(T.users),d:pct(T.users,P.users),desc:'pessoas diferentes no site',sp:users})}
+    ${kpi({l:'Novos usuários',v:fmt(T.newUsers),d:pct(T.newUsers,P.newUsers),desc:`${Math.round(T.newUsers/T.users*100)}% vieram pela primeira vez`,sp:users.map(u=>u*.7)})}
+    ${kpi({l:'Tempo de atenção',v:dur(T.attentionSeconds),d:pct(T.attentionSeconds,P.attentionSeconds),desc:'média por visitante ativo',h:'Tempo médio em que a pessoa ficou com o site aberto e visível na tela.'})}
+    ${kpi({l:'Contatos iniciados',v:fmt(T.contacts),d:pct(T.contacts,P.contacts),desc:'cliques para falar ou se cadastrar',sp:contacts,spc:'#FF3CAC'})}
+  </div>
+  <div class="grid g2">
+    ${card('Visualizações ao longo do período','Cada ponto é um dia · passe o mouse para ver os detalhes',
+      `<div id="vw-chart">${area(views,prevDaily.map(p=>p.pageViews),labels,'visualizações')}</div><div id="vw-table" hidden>${dailyTable()}</div>`,
+      `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div class="legend"><span><i></i>Este período</span><span><i class="d"></i>Período anterior</span></div>${tabs(['Gráfico','Tabela dia a dia'])}</div>`,
+      `Quintas e sextas são os dias mais fortes. Os fins de semana têm cerca de <b>40% menos</b> acessos.`)}
+    <article class="card"><div class="ch"><div><h3>Horários de maior movimento</h3><p>Dias da semana × horas do dia</p></div></div>${peakGrid()}<p class="cap">${ico('i-clock')}<span>O pico é <b>${bestHour.d} às ${bestHour.h}h</b>. Bom horário para responder o WhatsApp rápido e programar anúncios.</span></p></article>
+  </div>
+  <p class="sec-t">Resumo das outras seções</p>
+  <div class="grid g4">
+    <article class="card tile"><div class="ch"><h3>${ico('i-compass')}Como chegaram</h3></div>${hbars(topSrc)}<div class="foot"><button class="link" data-go="acquisition">Aquisição & Campanhas ${ico('i-arrow')}</button></div></article>
+    <article class="card tile"><div class="ch"><h3>${ico('i-users')}Quem são</h3></div>
+      <div class="stack">${devAgg.map((d,i)=>`<i style="width:${d.sessions/totDevS*100}%;background:${['#3B82F6','#7C5CF0','#FF8A3D'][i]}"></i>`).join('')}</div>
+      <ul class="lg" style="margin-top:8px">${devAgg.map((d,i)=>`<li><i style="background:${['#3B82F6','#7C5CF0','#FF8A3D'][i]}"></i>${devName[d.k]}<b>${Math.round(d.sessions/totDevS*100)}%</b></li>`).join('')}<li><i style="background:var(--primary)"></i>São Paulo (SP)<b>88%</b></li></ul>
+      <div class="foot"><button class="link" data-go="audience">Público ${ico('i-arrow')}</button></div></article>
+    <article class="card tile"><div class="ch"><h3>${ico('i-file')}Páginas que mais atraem</h3></div>${hbars(topPg.map(p=>({n:p.title,v:p.views})),'blue')}<div class="foot"><button class="link" data-go="pages">Páginas ${ico('i-arrow')}</button></div></article>
+    <article class="card tile"><div class="ch"><h3>${ico('i-target')}Contatos</h3></div><div class="dn" style="gap:14px">${donut([{v:T.whatsappContacts,c:'#FF3CAC'},{v:T.signUps,c:'#FF8A3D'}],T.contacts,'contatos',92)}<ul class="lg"><li><i style="background:#FF3CAC"></i>WhatsApp<b>${T.whatsappContacts}</b></li><li><i style="background:#FF8A3D"></i>Cadastros<b>${T.signUps}</b></li><li><i style="background:var(--track)"></i>Taxa<b>${contactRate}%</b></li></ul></div><div class="foot"><button class="link" data-go="results">Resultados ${ico('i-arrow')}</button></div></article>
+  </div>`;
+}
+
+/* ---------------- AQUISIÇÃO ---------------- */
+function scatter(rows){const W=520,Hh=260,X0=40,X1=W-20,YT=16,YB=Hh-34;const mxS=Math.max(...rows.map(r=>r.sessions))*1.1,mxR=Math.max(...rows.map(r=>r.rate))*1.25;const x=v=>X0+v/mxS*(X1-X0),y=v=>YB-v/mxR*(YB-YT);const avg=sum(rows,'whatsappClicks')/sum(rows,'sessions')*100;
+ let s=`<svg viewBox="0 0 ${W} ${Hh}" class="ch-svg" role="img" aria-label="Volume de visitas versus taxa de conversão por canal"><line class="gl" x1="${X0}" x2="${X1}" y1="${YB}" y2="${YB}"/><line x1="${X0}" x2="${X1}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--faint)" stroke-dasharray="4 4"/><text x="${X1}" y="${y(avg)-6}" text-anchor="end">média ${avg.toFixed(1).replace('.',',')}%</text><text x="${(X0+X1)/2}" y="${Hh-6}" text-anchor="middle">mais visitas →</text><text x="12" y="${(YT+YB)/2}" transform="rotate(-90 12 ${(YT+YB)/2})" text-anchor="middle">converte mais →</text>`;
+ rows.forEach(r=>{const isP=['cpc','paid'].includes(r.medium);const R=7+Math.sqrt(r.whatsappClicks)*2.2;s+=`<g><circle cx="${x(r.sessions)}" cy="${y(r.rate)}" r="${R}" fill="${isP?'#FF3CAC':'#3B82F6'}" fill-opacity=".22" stroke="${isP?'#FF3CAC':'#3B82F6'}" stroke-width="2"/><text x="${x(r.sessions)+R+5}" y="${y(r.rate)+4}" style="fill:var(--fg);font-weight:600">${friendly(r.key)} · ${r.rate.toFixed(1).replace('.',',')}%</text></g>`});
+ return s+'</svg>'}
+function Acquisition(){
+  const oS=sum(org,'sessions'),pS=sum(paid,'sessions'),oC=sum(org,'whatsappClicks'),pC=sum(paid,'whatsappClicks');
+  const best=[...SMR].filter(r=>r.campaign!=='(not set)').sort((a,b)=>b.rate-a.rate)[0];
+  const mxS=Math.max(...SMR.map(r=>r.sessions));
+  return header('i-compass','Aquisição & Campanhas','Como as pessoas encontram seu site e quais canais, anúncios e criativos trazem mais contatos.')+
+  `<div class="grid g2" style="margin-top:16px">
+   <article class="card"><div class="ch"><div><h3>Tráfego espontâneo × pago</h3><p>Visitas que chegaram sozinhas comparadas às que vieram de anúncios</p></div>${help('Espontâneo × pago','Espontâneo: pesquisa no Google, redes sociais sem anúncio e quem digitou o endereço. Pago: anúncios (Google Ads, Instagram Ads…).')}</div>
+     <div class="split"><div style="width:${oS/(oS+pS)*100}%;background:linear-gradient(100deg,#3B82F6,#7C5CF0)">Espontâneo ${Math.round(oS/(oS+pS)*100)}%</div><div style="flex:1;background:linear-gradient(100deg,#FF3CAC,#FF8A3D)">Pago ${Math.round(pS/(oS+pS)*100)}%</div></div>
+     <div class="split2"><div><span style="color:var(--muted)">Espontâneo</span><b class="num">${fmt(oS)} visitas</b>${oC} contatos · conversão <span class="chip n">${(oC/oS*100).toFixed(1).replace('.',',')}%</span></div><div><span style="color:var(--muted)">Pago (anúncios)</span><b class="num">${fmt(pS)} visitas</b>${pC} contatos · conversão <span class="chip g">${(pC/pS*100).toFixed(1).replace('.',',')}%</span></div></div>
+     <p class="cap">${ico('i-eye')}<span>Os anúncios trazem só ${Math.round(pS/(oS+pS)*100)}% das visitas, mas convertem <b>${((pC/pS)/(oC/oS)).toFixed(1).replace('.',',')}× mais</b> que o tráfego espontâneo.</span></p></article>
+   <div class="grid" style="margin-top:0;grid-template-columns:1fr 1fr">
+     ${kpi({l:'Origem principal',v:'Google',txt:1,desc:`pesquisa orgânica · ${Math.round(D.sources[0].value/sum(D.sources,'value')*100)}% dos acessos`})}
+     ${kpi({l:'Melhor campanha',v:best.campaign,txt:1,desc:`${friendly(best.key)} · ${best.whatsappClicks} contatos (${best.rate.toFixed(1).replace('.',',')}%)`})}
+     ${kpi({l:'Canais ativos',v:SMR.length,desc:'origens diferentes no período'})}
+     ${kpi({l:'Contatos de anúncios',v:pC,desc:`${Math.round(pC/(oC+pC)*100)}% de todos os contatos`})}
+   </div>
+  </div>
+  <div class="grid g2e">
+    ${card('Origens dos acessos','Quantos acessos vieram de cada canal',hbars(D.sources.map(s=>({n:friendly(s.name),s:s.name,v:s.value}))),'',`O Google (pesquisa + anúncios) responde por <b>${Math.round((D.sources[0].value+D.sources[3].value)/sum(D.sources,'value')*100)}%</b> de todos os acessos.`)}
+    ${card('Qual canal converte melhor','De cada 100 visitas de cada canal, quantas viraram contato no WhatsApp',`<div class="hb">${[...SMR].sort((a,b)=>b.rate-a.rate).map(r=>{const isP=['cpc','paid'].includes(r.medium);return `<div class="r"><span class="nm">${friendly(r.key)} <span class="chip ${isP?'b':'n'}" style="margin-left:4px">${isP?'anúncio':'espontâneo'}</span> <small style="display:inline">· ${fmt(r.sessions)} visitas</small></span><b>${r.rate.toFixed(1).replace('.',',')}%</b><span class="trk"><i class="${isP?'':'blue'}" style="width:${r.rate/6.5*100}%"></i></span></div>`}).join('')}</div><div class="legend" style="margin-top:12px"><span style="border-top:2px dashed var(--faint);width:14px"></span>média geral: ${(sum(SMR,'whatsappClicks')/sum(SMR,'sessions')*100).toFixed(1).replace('.',',')}%</div>`,'',`<b>Google Ads</b> e <b>Instagram Ads</b> trazem menos gente, mas gente mais decidida: convertem bem acima da média.`)}
+  </div>
+  <div class="grid">${card('Desempenho por canal e criativo','Sessões, cliques e contatos por parâmetro de aquisição',
+   `<div class="tw"><table class="t"><thead><tr><th>Canal</th><th>Campanha</th><th>Sessões</th><th class="r">Usuários</th><th class="r">Cliques gerais</th><th class="r">WhatsApp</th><th class="r">Conversão</th></tr></thead><tbody>${SMR.map(r=>`<tr><td class="pg"><b>${friendly(r.key)}</b><small>${r.key}</small></td><td>${r.campaign==='(not set)'?'<small class="m">sem campanha</small>':`<code>${r.campaign}</code>`}</td><td>${cellBar(r.sessions,mxS)}</td><td class="r num">${fmt(r.users)}</td><td class="r num">${r.generalClicks}</td><td class="r num"><b>${r.whatsappClicks}</b></td><td class="r"><span class="chip ${r.rate>=5?'g':r.rate>=3?'n':'w'}">${r.rate.toFixed(1).replace('.',',')}%</span></td></tr>`).join('')}</tbody></table></div>`,
+   tabs(['Origem / Mídia','Campanhas','Criativos','Termos']))}</div>`;
+}
+
+/* ---------------- PÚBLICO ---------------- */
+const TILES={RR:[2,0],AP:[4,0],AC:[0,1],AM:[1,1],PA:[3,1],MA:[4,1],CE:[5,1],RN:[6,1],RO:[1,2],MT:[2,2],TO:[3,2],PI:[4,2],PE:[5,2],PB:[6,2],MS:[2,3],GO:[3,3],DF:[4,3],BA:[5,3],AL:[6,3],SP:[3,4],MG:[4,4],ES:[5,4],SE:[6,4],PR:[3,5],RJ:[4,5],SC:[3,6],RS:[3,7]};
+function Audience(){
+  const st={SP:2260,RJ:140,MG:90,PR:60};const mx=2260;
+  let tm='<div class="tmap" role="img" aria-label="Mapa de acessos por estado">';for(let r=0;r<8;r++)for(let c=0;c<7;c++){const k=Object.keys(TILES).find(k=>TILES[k][0]===c&&TILES[k][1]===r);tm+=k?`<div title="${k}: ${st[k]||0} acessos" style="background:${st[k]?heatColor(.15+st[k]/mx*.85):'var(--track)'};color:${st[k]>200?'#fff':''}">${k}</div>`:'<span></span>'}tm+='</div>';
+  const tot=sum(D.locations,'views');
+  const srcN=['google','(direct)','instagram'],pgs=pages.slice(0,4);const SP=D.sourcePages;const mxsp=Math.max(...SP.map(x=>x.views));
+  const matrix=`<div class="tw"><table class="t"><thead><tr><th>Canal ↓ · Página →</th>${pgs.map(p=>`<th class="r">${p.title}</th>`).join('')}</tr></thead><tbody>${srcN.map(s=>`<tr><td><b>${friendly({google:'google / organic','(direct)':'(direct) / (none)',instagram:'instagram / social'}[s])}</b></td>${pgs.map(p=>{const v=SP.find(x=>x.source===s&&x.path===p.path).views;return `<td class="r num" style="background:${heatColor(v/mxsp*.9)};${v/mxsp>.5?'color:#fff;font-weight:700':''};border-radius:6px">${v}</td>`}).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const returning=T.users-T.newUsers;
+  return header('i-users','Seu público','Quem são, de onde vêm e como acessam o seu site.')+
+  `<div class="grid g5" style="margin-top:16px">
+    ${kpi({l:'Sessões',v:fmt(T.sessions),d:pct(T.sessions,P.sessions),desc:'visitas recebidas no período',h:'Cada vez que alguém abre o site conta uma sessão. Uma mesma pessoa pode ter várias.'})}
+    ${kpi({l:'Usuários',v:fmt(T.users),d:pct(T.users,P.users),desc:'pessoas diferentes'})}
+    ${kpi({l:'Novos usuários',v:fmt(T.newUsers),d:pct(T.newUsers,P.newUsers),desc:'primeira visita ao site'})}
+    ${kpi({l:'Origem principal',v:'Google',txt:1,desc:'41% do tráfego'})}
+    ${kpi({l:'Localização principal',v:'São Paulo',txt:1,desc:'SP · 1.820 visualizações'})}
+  </div>
+  <div class="grid g3">
+    ${card('Novos × recorrentes','Quem veio pela primeira vez e quem voltou',`<div class="dn">${donut([{v:T.newUsers,c:'#3B82F6'},{v:returning,c:'#FF3CAC'}],fmt(T.users),'pessoas')}<ul class="lg"><li><i style="background:#3B82F6"></i>Novos<b>${fmt(T.newUsers)}</b><small>${Math.round(T.newUsers/T.users*100)}% · primeira visita</small></li><li><i style="background:#FF3CAC"></i>Voltaram<b>${fmt(returning)}</b><small>${Math.round(returning/T.users*100)}% · já conheciam</small></li></ul></div>`,'',`A cada 10 pessoas, <b>3 já conheciam</b> o site. Isso indica lembrança da marca.`)}
+    ${card('Aparelhos','Por onde as pessoas acessam',`<div class="stack" style="height:18px;margin-top:16px">${devAgg.map((d,i)=>`<i style="width:${d.sessions/totDevS*100}%;background:${['#3B82F6','#7C5CF0','#FF8A3D'][i]}"></i>`).join('')}</div><ul class="lg" style="margin-top:10px">${devAgg.map((d,i)=>`<li><i style="background:${['#3B82F6','#7C5CF0','#FF8A3D'][i]}"></i>${devName[d.k]}<b>${Math.round(d.sessions/totDevS*100)}%</b><small>${fmt(d.sessions)} sessões · ${d.conv} contatos</small></li>`).join('')}</ul>`,'',`<b>3 em cada 4</b> visitas são pelo celular. Teste sempre o site no telefone.`)}
+    ${card('Origens dos acessos','Canais de onde seu público chegou',hbars(D.sources.slice(0,5).map(s=>({n:friendly(s.name),v:s.value}))))}
+  </div>
+  <div class="grid g2e">
+    ${card('Onde estão','Acessos por estado e cidade',`<div class="mapwrap">${tm}<div>${hbars(D.locations.slice(0,6).map(l=>({n:l.city,s:`${l.region}${l.country!=='BR'?' · '+l.country:''}`,v:l.views,d:`${fmt(l.views)}`})),'blue')}</div></div>`,tabs(['Cidades','Estados','Países']),`<b>${Math.round(D.locations.filter(l=>l.region==='São Paulo').reduce((a,l)=>a+l.views,0)/tot*100)}%</b> dos acessos vêm do estado de São Paulo, quase todos da capital e região.`)}
+    ${card('Origem por página','Por qual página cada canal entra no site',matrix,tabs(['Top 5 páginas','Todas']),`Quem vem do <b>Instagram</b> cai mais na página inicial. Vale apontar o link da bio direto para <b>Especialidades</b>.`)}
+  </div>
+  <div class="grid">${card('Dispositivos e navegadores','Detalhe por aparelho e navegador',`<div class="tw"><table class="t"><thead><tr><th>Aparelho</th><th>Navegador</th><th>Sessões</th><th class="r">Visualizações</th><th class="r">Usuários</th><th class="r">Novos</th><th class="r">Contatos</th></tr></thead><tbody>${D.devices.map(d=>`<tr><td><b style="display:flex;gap:6px;align-items:center">${ico(d.device==='desktop'?'i-monitor':'i-phone','style="width:15px;height:15px;color:var(--muted)"')}${devName[d.device]}</b></td><td>${d.browser}</td><td>${cellBar(d.sessions,1350)}</td><td class="r num">${fmt(d.views)}</td><td class="r num">${fmt(d.users)}</td><td class="r num">${fmt(d.newUsers)}</td><td class="r num"><b>${d.conversions}</b></td></tr>`).join('')}</tbody></table></div>`,tabs(['Aparelho + navegador','Só aparelho'],0))}</div>`;
+}
+
+/* ---------------- PÁGINAS ---------------- */
+function speedChip(ms){const s=(ms/1000).toFixed(1).replace('.',',')+'s';return `<span class="chip ${ms<1800?'g':ms<2500?'w':'b'}">${s}</span>`}
+function exitChip(e){return `<span class="chip ${e<20?'g':e<35?'n':'b'}">${e}%</span>`}
+function pageScatter(){const W=520,Hh=250,X0=40,X1=W-20,YT=14,YB=Hh-34;const x=v=>X0+(v-30)/200*(X1-X0-60),y=v=>YT+(v-8)/62*(YB-YT);
+ let s=`<svg viewBox="0 0 ${W} ${Hh}" class="ch-svg" role="img" aria-label="Tempo de atenção versus taxa de saída por página"><rect x="${x(90)}" y="${YT}" width="${X1-x(90)}" height="${y(25)-YT}" fill="#15803D" fill-opacity=".06" rx="8"/><text x="${X1-6}" y="${YT+14}" text-anchor="end" style="fill:var(--good);font-weight:700">prendem a atenção</text><rect x="${X0}" y="${y(25)}" width="${x(90)-X0}" height="${YB-y(25)}" fill="#FF3CAC" fill-opacity=".06" rx="8"/><text x="${X0+6}" y="${YB-8}" style="fill:var(--bad);font-weight:700">precisam de atenção</text><line class="gl" x1="${X0}" x2="${X1}" y1="${YB}" y2="${YB}"/><text x="${(X0+X1)/2}" y="${Hh-6}" text-anchor="middle">mais tempo de atenção →</text><text x="12" y="${(YT+YB)/2}" transform="rotate(-90 12 ${(YT+YB)/2})" text-anchor="middle">↓ mais gente sai</text>`;
+ pages.forEach(p=>{const R=5+Math.sqrt(p.views)/3.2;s+=`<circle cx="${x(p.attentionSeconds)}" cy="${y(p.exitRate)}" r="${R}" fill="#3B82F6" fill-opacity=".2" stroke="#3B82F6" stroke-width="2"/><text x="${p.attentionSeconds>180?x(p.attentionSeconds)-R-4:x(p.attentionSeconds)+R+4}" y="${y(p.exitRate)+({'/sobre':-6,'/convenios':10,'/contato':-4}[p.path]||4)}" text-anchor="${p.attentionSeconds>180?'end':'start'}" style="fill:var(--fg);font-weight:600">${p.title.split(':')[0]}</text>`});return s+'</svg>'}
+function Pages(){
+  const mx=Math.max(...pages.map(p=>p.views));const avgLoad=pages.reduce((a,p)=>a+p.loadTimeMs,0)/pages.length;
+  return header('i-file','Suas páginas','Quais páginas atraem, prendem e convertem os visitantes.')+
+  `<div class="grid g5" style="margin-top:16px">
+    ${kpi({l:'Páginas acompanhadas',v:pages.length,desc:'endereços com visitas no período'})}
+    ${kpi({l:'Visualizações de páginas',v:fmt(T.pageViews),d:pct(T.pageViews,P.pageViews),desc:'páginas abertas pelos visitantes',sp:views})}
+    ${kpi({l:'Página mais vista',v:'Página inicial',txt:1,desc:`${Math.round(pages[0].views/sum(pages,'views')*100)}% de todas as visualizações`})}
+    ${kpi({l:'Velocidade média',v:(avgLoad/1000).toFixed(1).replace('.',',')+'s',desc:'tempo para a página abrir',h:'Tempo que a página leva para aparecer na tela. Até 2,5s é considerado bom pelo Google.'})}
+    ${kpi({l:'Taxa média de saída',v:exitAvg,desc:'visitas que saíram sem interagir',inv:1,d:-2,h:'De cada 100 visitas, quantas terminaram sem interação. Quanto menor, melhor.'})}
+  </div>
+  <div class="grid">${card('Desempenho das páginas','Volume, atenção, velocidade e saída de cada página',
+   `<div class="tw"><table class="t"><thead><tr><th>Página</th><th>Visualizações</th><th class="r">Tempo de atenção</th><th class="r">Velocidade</th><th class="r">Taxa de saída</th><th class="r">Contatos</th></tr></thead><tbody>${pages.map(p=>`<tr><td class="pg"><b>${p.title}</b><code>${p.path}</code></td><td>${cellBar(p.views,mx)}</td><td class="r num">${dur(p.attentionSeconds)}</td><td class="r">${speedChip(p.loadTimeMs)}</td><td class="r">${exitChip(p.exitRate)}</td><td class="r num"><b>${p.contactsP}</b></td></tr>`).join('')}</tbody></table></div>
+   <div class="legend" style="margin-top:10px"><span><i class="sq" style="background:var(--good-bg);border:1px solid var(--good)"></i>bom</span><span><i class="sq" style="background:var(--warn-bg);border:1px solid var(--warn)"></i>atenção</span><span><i class="sq" style="background:var(--bad-bg);border:1px solid var(--bad)"></i>precisa melhorar</span></div>`,
+   tabs(['Mais acessadas','Mais rápidas','Maior atenção','Menor saída']))}</div>
+  <div class="grid g2e">
+    ${card('Atenção × saída','Cada bolha é uma página · tamanho = visualizações',pageScatter(),'',`O post <b>Clareamento: mitos e verdades</b> prende a leitura (3min 32s), mas 64% saem depois dele. Falta um convite para agendar no fim do texto.`)}
+    ${card('Velocidade de carregamento','Segundos até a página aparecer · linha = limite recomendado',(()=>{const W=520,Hh=250,X0=150,X1=W-30,YT=10;const rh=(Hh-30)/pages.length;const x=v=>X0+v/3000*(X1-X0);let s=`<svg viewBox="0 0 ${W} ${Hh}" class="ch-svg" role="img" aria-label="Velocidade por página">`;[...pages].sort((a,b)=>b.loadTimeMs-a.loadTimeMs).forEach((p,i)=>{const yy=YT+i*rh;const c=p.loadTimeMs<1800?'#15803D':p.loadTimeMs<2500?'#FF8A3D':'#FF3CAC';s+=`<text x="${X0-10}" y="${yy+rh/2+4}" text-anchor="end" style="fill:var(--fg)">${p.title.length>20?p.title.slice(0,19)+'…':p.title}</text><rect x="${X0}" y="${yy+rh*.2}" width="${x(p.loadTimeMs)-X0}" height="${rh*.6}" rx="5" fill="${c}"/><text x="${x(p.loadTimeMs)+6}" y="${yy+rh/2+4}" style="fill:var(--fg);font-weight:700">${(p.loadTimeMs/1000).toFixed(1).replace('.',',')}s</text>`});s+=`<line x1="${x(2500)}" x2="${x(2500)}" y1="${YT}" y2="${Hh-24}" stroke="var(--fg)" stroke-dasharray="4 4"/><text x="${x(2500)}" y="${Hh-8}" text-anchor="middle">2,5s</text></svg>`;return s})(),'',`Páginas acima de 2,5s perdem visitantes no celular. Comprimir as imagens costuma resolver.`)}
+  </div>`;
+}
+
+/* ---------------- RESULTADOS ---------------- */
+function stackDaily(){const W=760,Hh=210,X0=34,X1=W-8,YT=10,YB=Hh-28;const n=daily.length,bw=(X1-X0)/n;const mx=Math.max(...contacts)*1.15;const y=v=>YB-v/mx*(YB-YT);let s=`<svg viewBox="0 0 ${W} ${Hh}" class="ch-svg" role="img" aria-label="Contatos por dia, WhatsApp e cadastros">`;[0,4,8].forEach(t=>s+=`<line class="gl" x1="${X0}" x2="${X1}" y1="${y(t)}" y2="${y(t)}"/><text x="${X0-6}" y="${y(t)+4}" text-anchor="end">${t}</text>`);daily.forEach((d,i)=>{const w=Math.round(d.contacts*.8),c=d.contacts-w;const x=X0+i*bw+bw*.18,ww=bw*.64;s+=`<g class="hp" tabindex="0"><rect x="${x}" y="${y(w)}" width="${ww}" height="${YB-y(w)}" rx="2" fill="#FF3CAC"/><rect x="${x}" y="${y(d.contacts)}" width="${ww}" height="${y(w)-y(d.contacts)}" rx="2" fill="#FF8A3D"/><g class="tt" transform="translate(${Math.min(Math.max(x,80),W-80)},${y(d.contacts)-6})"><rect x="-74" y="-40" width="148" height="36" rx="8"/><text class="t1" x="0" y="-25" text-anchor="middle">${dd(d.date)}: ${d.contacts} contatos</text><text class="t2" x="0" y="-11" text-anchor="middle">${w} WhatsApp · ${c} cadastros</text></g></g>`;if(i%5===0)s+=`<text x="${x+ww/2}" y="${Hh-8}" text-anchor="middle">${dd(d.date)}</text>`});return s+'</svg>'}
+function Results(){
+  const pc=[...pages].sort((a,b)=>b.contactsP-a.contactsP);const mxc=Math.max(...pc.map(p=>p.contactsP));
+  const btn={};D.clickDetails.forEach(c=>{const k=c.label+'|'+c.path;btn[k]=btn[k]||{...c,clicks:0,sessions:0};btn[k].clicks+=c.clicks;btn[k].sessions+=c.sessions});const btns=Object.values(btn).sort((a,b)=>b.clicks-a.clicks);
+  const intentC={whatsapp:'g',navigation:'n',outbound:'w'},intentL={whatsapp:'Contato',navigation:'Navegação',outbound:'Saída'};
+  const ev=D.conversionEvents.slice(-8).reverse();
+  const mxs=Math.max(...SMR.map(r=>r.whatsappClicks));
+  return header('i-target','Resultados','Os contatos e oportunidades que o seu site gerou.')+
+  `<div class="grid" style="grid-template-columns:1.25fr 1fr;margin-top:16px">
+    <article class="card"><div class="ch"><div><h3>Contatos iniciados</h3><p>Todas as formas de contato somadas</p></div>${delta(pct(T.contacts,P.contacts))}</div>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-top:6px"><b style="font-size:44px;font-weight:800;letter-spacing:-.05em">${T.contacts}</b><span style="color:var(--muted)">contatos · <b style="color:var(--fg)">${contactRate}%</b> das visitas ${help('Taxa de contato','De cada 100 visitas, quantas terminaram em um contato.')}</span></div>
+      <div class="stack" style="height:16px"><i style="width:${T.whatsappContacts/T.contacts*100}%;background:linear-gradient(90deg,#FF3CAC,#D61F83)"></i><i style="flex:1;background:#FF8A3D"></i></div>
+      <ul class="lg" style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 16px"><li><i style="background:#FF3CAC"></i>WhatsApp<b>${T.whatsappContacts}</b><small>${delta(pct(T.whatsappContacts,P.whatsappContacts))}</small></li><li><i style="background:#FF8A3D"></i>Cadastros<b>${T.signUps}</b><small>${delta(pct(T.signUps,P.signUps))}</small></li><li><i style="background:var(--track)"></i>Formulários<b>—</b><small>nenhum envio</small></li></ul></article>
+    <article class="card"><div class="ch"><div><h3>Outras ações no site</h3><p>Sinais de interesse que ainda não são contato</p></div></div>
+      <div class="grid" style="grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">${[['Intenções de compra','checkout, pagamento, assinatura','—'],['Downloads','arquivos baixados','—'],['Cliques de saída','links para outros sites','28'],['Logins','acessos à área restrita','0']].map(([a,b,c])=>`<div style="background:var(--bg);border-radius:10px;padding:10px 12px"><div style="font-size:12px;color:var(--muted);font-weight:600">${a}</div><b style="font-size:20px;letter-spacing:-.03em;${c==='—'?'color:var(--faint)':''}">${c}</b><div style="font-size:11px;color:var(--muted)">${b}</div></div>`).join('')}</div></article>
+  </div>
+  <div class="grid">${card('Contatos por dia','WhatsApp e cadastros empilhados · passe o mouse para ver cada dia',stackDaily(),`<div class="legend"><span><i class="sq" style="background:#FF3CAC"></i>WhatsApp</span><span><i class="sq" style="background:#FF8A3D"></i>Cadastros</span></div>`,`Os contatos acompanham as visitas: picos às quintas e sextas, queda no fim de semana.`)}</div>
+  <div class="grid g2e">
+    ${card('Páginas que mais convertem','Contatos gerados a partir de cada página',`<div class="tw"><table class="t"><thead><tr><th>Página</th><th>Contatos</th><th class="r">WhatsApp</th><th class="r">Cadastros</th><th class="r">Taxa</th></tr></thead><tbody>${pc.map(p=>{const r=p.contactsP/p.sess*100;return `<tr><td class="pg"><b>${p.title}</b><code>${p.path}</code></td><td>${cellBar(p.contactsP,mxc,'')}</td><td class="r num">${p.whats}</td><td class="r num">${p.signs||'—'}</td><td class="r"><span class="chip ${r>=6?'g':r>=3?'n':'w'}">${r.toFixed(1).replace('.',',')}%</span></td></tr>`}).join('')}</tbody></table></div>`,tabs(['Por página','Por canal']),`<b>Agende sua consulta</b> converte 8,3% das visitas. É a página que mais vale divulgar.`)}
+    ${card('Botões mais clicados','Somatório do período por botão',`<div class="tw"><table class="t"><thead><tr><th>Botão</th><th>Tipo</th><th class="r">Cliques</th></tr></thead><tbody>${btns.map(b=>`<tr><td class="pg"><b>${b.label}</b><small>em <code>${b.path}</code> → ${b.destination.replace('https://','').slice(0,24)}</small></td><td><span class="chip ${intentC[b.intent]}">${intentL[b.intent]}</span></td><td class="r num"><b>${b.clicks}</b></td></tr>`).join('')}</tbody></table></div>`,tabs(['Todos','WhatsApp','Formulários','Downloads','Links externos']),`O botão <b>Falar no WhatsApp</b> da página inicial gera a maior parte dos contatos.`)}
+  </div>
+  <div class="grid">${card('Origem, mídia e campanha','Quais canais geram contatos',`<div class="tw"><table class="t"><thead><tr><th>Canal</th><th>Campanha</th><th class="r">Sessões</th><th class="r">Visualizações</th><th class="r">Cliques gerais</th><th class="r">Cliques de contato</th><th>WhatsApp</th></tr></thead><tbody>${SMR.map(r=>`<tr><td class="pg"><b>${friendly(r.key)}</b><small>${r.key}</small></td><td>${r.campaign==='(not set)'?'<small class="m">sem campanha</small>':`<code>${r.campaign}</code>`}</td><td class="r num">${fmt(r.sessions)}</td><td class="r num">${fmt(r.pageViews)}</td><td class="r num">${r.generalClicks}</td><td class="r num">${r.contactClicks}</td><td>${cellBar(r.whatsappClicks,mxs,'')}</td></tr>`).join('')}</tbody></table></div>`,tabs(['Todos os canais','Com conversões','Apenas campanhas']))}</div>
+  <div class="grid">${card('Histórico de conversões e intenções','Cada contato e tentativa registrados, do mais recente ao mais antigo',`<div class="tw"><table class="t"><thead><tr><th>Data</th><th>Tipo</th><th>Ação</th><th>Página</th><th>Status</th><th class="r">Total</th></tr></thead><tbody>${ev.map(e=>`<tr><td><b>${dd(e.date)}</b></td><td>${e.type==='whatsapp'?'WhatsApp':'Cadastro'}</td><td>${e.name}</td><td><code>${e.path}</code></td><td><span class="chip ${e.stage==='confirmada'?'g':'w'}">${e.stage==='confirmada'?'Confirmada':'Iniciada'}</span></td><td class="r num"><b>${e.conversions}</b></td></tr>`).join('')}</tbody></table></div><div class="more"><span>Mostrando 8 de ${D.conversionEvents.length}</span><button class="link">Ver histórico completo ${ico('i-arrow')}</button></div>`,tabs(['Todos','Confirmadas','Iniciadas']))}</div>`;
+}
+
+/* ---------------- HEATMAP ---------------- */
+function Heatmap(){
+  const L=H.layout,scale=360/L.viewportWidth,ph=L.pageHeight*scale;const mxc=Math.max(...H.clicks.map(c=>c.count));
+  const sr=H.scrollRetention;const marks=[[25,sr['25'].percentage],[50,sr['50'].percentage],[75,sr['75'].percentage],[100,sr['100'].percentage]];
+  let rail=`<div class="scroll-rail" style="height:${ph}px;background:linear-gradient(180deg,#FF3CAC 0%,#FF8A3D ${marks[1][0]}%,#FFD2B3 ${marks[2][0]}%,var(--track) 100%)">`;rail+=`<span style="top:3%">100%</span>`+marks.map(([p,v])=>`<i style="top:${p}%;border-top:2px solid #fff6"></i><span style="top:${Math.min(p,97)}%">${v}%</span>`).join('')+'</div>';
+  let pg=`<div class="phonepg" style="height:${ph}px;max-width:360px">`;
+  L.blocks.forEach(b=>{pg+=`<div class="blk ${['button','header'].includes(b.type)?'solid':''}" style="top:${b.top*scale}px;height:${b.height*scale-6}px;${b.type==='button'?'left:'+(b.left*scale)+'px;right:auto;width:'+(b.width*scale)+'px;align-items:center;justify-content:center;background:var(--primary);color:#fff;border:0':''}">${b.label}</div>`});
+  pg+=`<div class="fold" style="top:${L.viewportHeight*scale}px">fim da 1ª tela</div>`;
+  H.clicks.forEach(c=>{const f=c.count/mxc,r=24+f*46;const x=c.x_pct/100*360,y=c.y_px*scale;pg+=`<div class="blob" style="left:${x}px;top:${y}px;width:${r*2}px;height:${r*2}px;background:radial-gradient(circle,rgba(255,60,172,${.35+f*.45}) 0%,rgba(255,138,61,${.25+f*.3}) 40%,rgba(255,138,61,0) 70%)"></div><span class="pin" style="left:${x}px;top:${y}px">${c.count}</span>`});
+  pg+='</div>';
+  const sorted=[...H.clicks].sort((a,b)=>b.count-a.count);
+  return header('i-flame','Heatmap e Rolagem','Onde os visitantes clicam e até onde descem na página.',false)+
+  `<div class="fbar"><div class="seg">${['7D','30D','90D'].map(p=>`<button class="${p==='30D'?'on':''}">${p}</button>`).join('')}</div><label class="range">${ico('i-file')}<select style="border:0;background:none;font-weight:600"><option>Página inicial ( / )</option><option>Especialidades</option><option>Agende sua consulta</option></select></label><div class="seg"><button>${'Computador'}</button><button class="on">Celular</button></div><span class="cmpnote">${fmt(H.totalVisitors)} visitantes nesta página</span></div>
+  <div class="hm">
+    <div class="hmc"><div><div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px;text-align:center">Rolagem</div>${rail}</div><div><div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:6px;text-align:center">Cliques na página</div>${pg}</div></div>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      ${card('Até onde descem','De cada 100 visitantes',hbars(marks.map(([p,v])=>({n:`${p}% da página`,v,d:v+'%'}))),'',`Só <b>${sr['50'].percentage}%</b> chegam à metade. O formulário de agendamento, no fim da página, é visto por menos de 1 em cada 5 pessoas.`)}
+      ${card('Elementos mais clicados',`${fmt(sum(H.clicks,'count'))} cliques no período`,hbars(sorted.map(c=>({n:c.label,s:c.tag==='a'?'link':'botão',v:c.count})),''),'',`<b>Agendar pelo WhatsApp</b> recebe ${Math.round(sorted[0].count/sum(H.clicks,'count')*100)}% dos cliques. O botão está no lugar certo.`)}
+    </div>
+  </div>`;
+}
+
+/* ---------------- INSIGHTS ---------------- */
+function Insights(){
+  const I=[
+   {t:'Oportunidade comercial',c:'#3B82F6',i:'i-spark',chip:'n',h:'Especialidades tem muito tráfego e pouca ação de WhatsApp',ev:'760',evl:'visualizações em Especialidades',ev2:'4,1%',evl2:'viram contato, contra 8,3% em Agendamento',data:'A página concentra acessos relevantes, com atenção acima da média, mas a taxa de cliques no WhatsApp ainda pode dobrar.',rec:'Adicione um botão de WhatsApp no meio e no fim da página.',proj:'+20% a 35% de contatos por semana'},
+   {t:'Alerta de desempenho',c:'#FF8A3D',i:'i-alert',chip:'w',h:'Páginas lentas no celular estão perdendo visitantes',ev:'2,6s',evl:'para abrir a Página inicial',ev2:'74%',evl2:'das visitas são pelo celular',data:'O tempo de abertura em smartphones está acima de 2,5s e eleva a saída nos primeiros segundos.',rec:'Converta as imagens para WebP e reduza scripts na primeira tela.',proj:'até 15% menos saídas'},
+   {t:'Otimização de campanhas',c:'#15803D',i:'i-check',chip:'g',h:'Anúncios convertem 1,7× mais que o tráfego espontâneo',ev:'5,7%',evl:'conversão do Google Ads',ev2:'3,3%',evl2:'conversão média sem anúncio',data:'As campanhas com termos específicos (clareamento, implante) geraram mais contatos por visita.',rec:'Transfira 30% da verba de campanhas genéricas para as de tratamentos específicos.',proj:'até 22% menos custo por contato'}];
+  return header('i-bulb','Insights','Descobertas da semana com o que fazer a seguir. Geradas por IA a partir dos dados do seu site.')+
+  `<div class="isum">${[['3','novos esta semana','i-spark','var(--primary)'],['1','oportunidade','i-spark','#3B82F6'],['1','alerta','i-alert','#FF8A3D'],['1','otimização','i-check','#15803D']].map(([n,l,ic,c])=>`<div>${ico(ic,`style="width:20px;height:20px;color:${c}"`)}<b>${n}</b><span>${l}</span></div>`).join('')}</div>
+  <div class="fbar" style="margin-top:14px">${tabs(['Todos','Oportunidades','Alertas','Otimizações','Concluídos'])}<button class="btn" style="margin-left:auto">${ico('i-spark')}Gerar nova análise</button></div>
+  ${I.map(x=>`<article class="ins"><i style="background:${x.c}"></i><div class="body"><div class="top">${ico(x.i,`style="color:${x.c}"`)}<span class="chip ${x.chip}">${x.t}</span><small style="color:var(--muted)">avaliado em 16/11/2026</small></div><h3>${x.h}</h3>
+   <div class="cols"><div><h4>O que os dados mostram</h4>${x.data}<div class="ev"><div><b>${x.ev}</b><div style="font-size:11.5px;color:var(--muted)">${x.evl}</div></div><div><b>${x.ev2}</b><div style="font-size:11.5px;color:var(--muted)">${x.evl2}</div></div></div></div><div><h4>O que fazer</h4>${x.rec}</div><div><h4>Resultado esperado</h4><b style="font-size:17px;letter-spacing:-.02em">${x.proj}</b></div></div>
+   <div class="act"><button class="btn ghost">${ico('i-check')}Marcar como feito</button><button class="link">Ver os dados ${ico('i-arrow')}</button></div></div></article>`).join('')}`;
+}
+
+/* ---------------- router ---------------- */
+const PAGES={dashboard:Dashboard,acquisition:Acquisition,audience:Audience,pages:Pages,results:Results,heatmap:Heatmap,insights:Insights};
+function go(p){if(!PAGES[p])p='dashboard';document.getElementById('nav').innerHTML=NAV.map(([k,l,i])=>`<button class="${k===p?'on':''}" data-go="${k}">${ico(i)}${l}${k==='insights'?'<span class="tag">3 novos</span>':''}</button>`).join('');document.getElementById('main').innerHTML=PAGES[p]();if(location.hash!=='#'+p)history.replaceState(null,'','#'+p);window.scrollTo(0,0)}
+document.addEventListener('click',e=>{const g=e.target.closest('[data-go]');if(g){go(g.dataset.go);return}const tb=e.target.closest('.tabs button');if(tb){tb.parentNode.querySelectorAll('button').forEach(b=>{b.classList.toggle('on',b===tb);b.setAttribute('aria-selected',b===tb)});const card=tb.closest('.card');if(card&&card.querySelector('#vw-chart')){const t=[...tb.parentNode.children].indexOf(tb)===1;card.querySelector('#vw-chart').hidden=t;card.querySelector('#vw-table').hidden=!t}}const sb=e.target.closest('.seg button');if(sb){sb.parentNode.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b===sb))}});
+function setTheme(t){document.documentElement.dataset.theme=t;document.querySelectorAll('.theme-fab button').forEach(b=>b.classList.toggle('on',b.dataset.t===t))}
+
+document.getElementById('tg').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+window.addEventListener('hashchange',()=>go(location.hash.slice(1)));
+go(location.hash.slice(1));
+</script>
+</body>
+</html>
