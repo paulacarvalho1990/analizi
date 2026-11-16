@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArrowLeft, SlidersHorizontal, BookOpen, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard, DualMetricCard } from './components/Metrics'
@@ -10,6 +10,8 @@ import { LandingPage } from './components/LandingPage'
 import { supabase } from './lib/supabase'
 import { BusinessProvider, useBusiness, type BusinessItem, type SiteItem } from './lib/business-context'
 import { BrazilGeoMap } from './components/BrazilMap'
+import * as R from './components/report/kit'
+import { Help } from './components/report/kit'
 
 const ITEMS_PER_PAGE = 25
 function TablePagination({ page, total, setPage }: { page: number, total: number, setPage: (page: number) => void }) { const pages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)); if (total <= ITEMS_PER_PAGE) return null; return <div className="table-pagination"><span>Mostrando {page * ITEMS_PER_PAGE + 1}–{Math.min((page + 1) * ITEMS_PER_PAGE, total)} de {total}</span><div><button disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</button><b>{page + 1} de {pages}</b><button disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Próxima</button></div></div> }
@@ -481,89 +483,186 @@ function PeakHoursMatrix({ peakHours }: { peakHours?: Array<{ dayOfWeek: number,
   );
 }
 
+/* ---------- utilitários compartilhados pelas telas de relatório ---------- */
+function weightedExitRate(pages: AnalyticsData['pages'] = []): number | null {
+  const valid = pages.filter(item => item.exitRate != null && Number(item.views || 0) > 0);
+  const total = valid.reduce((sum, item) => sum + Number(item.views || 0), 0);
+  if (!total) return null;
+  return valid.reduce((sum, item) => sum + Number(item.exitRate || 0) * Number(item.views || 0), 0) / total;
+}
+const DEVICE_LABEL: Record<string, string> = { mobile: 'Celular', desktop: 'Computador', tablet: 'Tablet' };
+const DEVICE_COLOR: Record<string, string> = { mobile: '#3B82F6', desktop: '#7C5CF0', tablet: '#FF8A3D' };
+function deviceKey(raw?: string) { const s = (raw || 'desktop').toLowerCase(); return s === 'mobile' || s === 'tablet' ? s : s === 'desktop' ? 'desktop' : s; }
+function aggregateDevices(devices: DeviceRow[] = []) {
+  const map = new Map<string, { key: string, label: string, sessions: number, views: number, users: number, newUsers: number, conversions: number }>();
+  devices.forEach(d => {
+    const k = deviceKey(d.device);
+    const cur = map.get(k) || { key: k, label: DEVICE_LABEL[k] || formatDeviceName(d.device), sessions: 0, views: 0, users: 0, newUsers: 0, conversions: 0 };
+    cur.sessions += Number(d.sessions || 0); cur.views += Number(d.views || 0); cur.users += Number(d.users || 0);
+    cur.newUsers += Number(d.newUsers || 0); cur.conversions += Number(d.conversions || 0);
+    map.set(k, cur);
+  });
+  return Array.from(map.values()).sort((a, b) => b.sessions - a.sessions);
+}
+function bestPeakCell(peakHours: R.PeakCell[] = []) {
+  if (!peakHours.length) return null;
+  return [...peakHours].sort((a, b) => Number(b.views || b.sessions || 0) - Number(a.views || a.sessions || 0))[0];
+}
+/** média de visualizações por dia da semana (só faz sentido agrupando por dia) */
+function weekdayPattern(daily: AnalyticsData['daily'] = []) {
+  if (daily.length < 7) return null;
+  const sums = Array(7).fill(0), counts = Array(7).fill(0);
+  daily.forEach(d => { const w = R.weekdayOf(d.date); sums[w] += Number(d.pageViews || 0); counts[w] += 1; });
+  const avg = sums.map((s, i) => (counts[i] ? s / counts[i] : 0));
+  const best = avg.indexOf(Math.max(...avg));
+  const weekdays = (avg[1] + avg[2] + avg[3] + avg[4] + avg[5]) / 5;
+  const weekend = (avg[0] + avg[6]) / 2;
+  return { best, weekendDiff: weekdays > 0 ? Math.round(((weekend - weekdays) / weekdays) * 100) : 0 };
+}
+function isSearchSource(name: string) { return /google|bing|yahoo|duckduckgo/i.test(name); }
+
 function Dashboard() {
   const analytics = useAnalytics();
+  const [view, setView] = useState<'chart' | 'table'>('chart');
+  const [metric, setMetric] = useState<'pageViews' | 'users' | 'contacts'>('pageViews');
   const [dailyPage, setDailyPage] = useState(0);
   const [dailyTab, setDailyTab] = useState<'all' | 'conversions'>('all');
   const t = analytics?.totals;
   const p = analytics?.previousTotals;
   const daily = analytics?.daily ?? [];
-  const filteredDaily = dailyTab === 'conversions' ? daily.filter(d => Number(d.contacts || 0) > 0) : daily;
+  const days = analytics?.periodDays ?? selectedDays();
+  const filter = readAnalyticsFilter();
+  const exitRate = weightedExitRate(analytics?.pages);
+  const devices = aggregateDevices(analytics?.devices);
+  const devTotal = devices.reduce((a, d) => a + d.sessions, 0);
+  const sources = (analytics?.sources ?? []).map(s => ({ name: normalizeOriginName(s.name), value: Number(s.value || 0) }));
+  const srcTotal = sources.reduce((a, s) => a + s.value, 0);
+  const topPages = [...(analytics?.pages ?? [])].sort((a, b) => Number(b.views || 0) - Number(a.views || 0)).slice(0, 4);
+  const regions = new Map<string, number>();
+  (analytics?.locations ?? []).forEach(l => { const k = l.region || 'Não identificado'; regions.set(k, (regions.get(k) || 0) + Number(l.views || 0)); });
+  const regionTotal = Array.from(regions.values()).reduce((a, b) => a + b, 0);
+  const topRegion = Array.from(regions.entries()).sort((a, b) => b[1] - a[1])[0];
+  const peak = bestPeakCell(analytics?.peakHours);
+  const pattern = filter.group === 'day' ? weekdayPattern(daily) : null;
+  const whatsapp = Number(t?.whatsappContacts || 0), signups = Number(t?.signUps || 0), contacts = Number(t?.contacts || 0);
+  const otherContacts = Math.max(contacts - whatsapp - signups, 0);
+  const contactRate = t?.sessions ? (Number(t.contactSessions || contacts) / Number(t.sessions)) * 100 : 0;
+  const labels = daily.map(d => R.shortDate(d.date));
+  const metricInfo = {
+    pageViews: { label: 'Visualizações', unit: 'visualizações', colors: ['#3B82F6', '#7C5CF0', '#FF3CAC'] },
+    users: { label: 'Usuários', unit: 'pessoas', colors: ['#3B82F6', '#3B82F6', '#7C5CF0'] },
+    contacts: { label: 'Contatos', unit: 'contatos', colors: ['#FF3CAC', '#FF3CAC', '#FF8A3D'] },
+  }[metric];
+  const series = daily.map(d => Number(d[metric] || 0));
+  const filteredDaily = (dailyTab === 'conversions' ? daily.filter(d => Number(d.contacts || 0) > 0) : daily).slice().reverse();
   const visibleDays = filteredDaily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE);
-  const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—';
-  const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO';
+  const maxViews = Math.max(...daily.map(d => Number(d.pageViews || 0)), 1);
+  const goTo = (page: Page, path: string) => { window.history.pushState({}, '', `${path}${window.location.search}`); window.dispatchEvent(new PopStateEvent('popstate')); void page; };
+  const periodLabel = `${R.shortDate(filter.start)} a ${R.shortDate(filter.end)} · ${days} ${days === 1 ? 'dia' : 'dias'}`;
 
   return (
     <>
-      <PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} />
+      <PageHeader report title="Visão geral" subtitle="Como o seu site foi no período, em um só lugar. Cada bloco leva para a tela com mais detalhes."
+        guide={<><b>Como ler esta tela:</b> comece pela faixa escura, que mostra o caminho das pessoas, da chegada até o contato. Passe o mouse no <b>ⓘ</b> para entender cada número. As setas comparam com o período anterior: <b>verde é melhora</b> e <b>rosa é piora</b>.</>} />
       <AnalyticsFilters analytics={analytics} />
-      <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />{badge}</span>
+      <div className="rp">
+        <R.Journey period={periodLabel}
+          users={Number(t?.users || 0)} usersDelta={R.change(t?.users, p?.users)}
+          newUsers={Number(t?.newUsers || 0)} newUsersDelta={R.change(t?.newUsers, p?.newUsers)}
+          views={Number(t?.pageViews || 0)} viewsDelta={R.change(t?.pageViews, p?.pageViews)}
+          attention={Number(t?.attentionSeconds || 0)} attentionDelta={R.change(t?.attentionSeconds, p?.attentionSeconds)}
+          contacts={contacts} contactsDelta={R.change(t?.contacts, p?.contacts)}
+          whatsapp={whatsapp} signups={signups} exitRate={exitRate} />
+
+        <div className="rp-grid rp-g5">
+          <R.Kpi label="Visualizações de páginas" value={R.fmt(t?.pageViews)} delta={R.change(t?.pageViews, p?.pageViews)} spark={daily.map(d => Number(d.pageViews || 0))}
+            desc="Páginas abertas pelos visitantes" help={{ what: 'Total de páginas abertas no período. Se uma pessoa vê 3 páginas, conta 3.', why: 'Mostra o volume de interesse pelo seu conteúdo.' }} />
+          <R.Kpi label="Usuários" value={R.fmt(t?.users)} delta={R.change(t?.users, p?.users)} spark={daily.map(d => Number(d.users || 0))}
+            desc="Pessoas diferentes no site" help={{ what: 'Pessoas diferentes que visitaram o site. Quem voltou várias vezes conta uma vez.', why: 'É o tamanho real do seu público no período.' }} />
+          <R.Kpi label="Novos usuários" value={R.fmt(t?.newUsers)} delta={R.change(t?.newUsers, p?.newUsers)}
+            desc={t?.users ? `${Math.round(R.share(Number(t.newUsers || 0), Number(t.users)))}% vieram pela primeira vez` : 'Primeira visita ao site'}
+            help={{ what: 'Pessoas que entraram no seu site pela primeira vez.', why: 'Mostra se o site está alcançando gente nova.', tip: 'Se cair, revise anúncios, redes sociais e o Google Meu Negócio.' }} />
+          <R.Kpi label="Tempo de atenção" value={R.dur(t?.attentionSeconds)} delta={R.change(t?.attentionSeconds, p?.attentionSeconds)}
+            desc="Média por visitante ativo" help={{ what: 'Tempo médio em que o site ficou aberto e visível na tela da pessoa.', why: 'Indica se o conteúdo está sendo lido de verdade.', tip: 'Acima de 1 minuto costuma ser bom para sites de serviços.' }} />
+          <R.Kpi label="Contatos iniciados" value={R.fmt(t?.contacts)} delta={R.change(t?.contacts, p?.contacts)} spark={daily.map(d => Number(d.contacts || 0))} sparkColor="#FF3CAC"
+            desc="Cliques para falar ou se cadastrar" help={{ what: 'Cliques em WhatsApp, telefone e formulários de cadastro.', why: 'É o número que mais se aproxima de novos clientes.', tip: 'Veja em Resultados quais páginas e botões geram mais contatos.' }} />
+        </div>
+
+        <div className="rp-grid rp-g2">
+          <R.Card title={view === 'chart' ? `${metricInfo.label} ao longo do período` : 'Métricas dia a dia'}
+            subtitle={view === 'chart' ? 'Passe o mouse para ver cada ponto. A linha tracejada é a média do período.' : 'Histórico de acessos, visitantes e contatos, do mais recente para o mais antigo'}
+            actions={<R.Tabs label="Forma de exibição" value={view} onChange={(v) => { setView(v); setDailyPage(0); }} options={[{ value: 'chart', label: 'Gráfico' }, { value: 'table', label: 'Tabela' }]} />}
+            read={pattern && view === 'chart' ? <>Em média, <b>{R.WEEKDAYS[pattern.best]}</b> é o dia mais forte. {pattern.weekendDiff < -10 ? <>Os fins de semana têm cerca de <b>{Math.abs(pattern.weekendDiff)}% menos</b> acessos.</> : pattern.weekendDiff > 10 ? <>Os fins de semana têm cerca de <b>{pattern.weekendDiff}% mais</b> acessos.</> : <>Os fins de semana têm movimento parecido com os dias úteis.</>}</> : undefined}
+            tip={view === 'chart' ? 'Publique novidades e anúncios um dia antes do seu dia mais forte para aproveitar o pico.' : undefined}>
+            {view === 'chart' ? (
+              <>
+                <div style={{ marginBottom: 6 }}>
+                  <R.Tabs label="Métrica do gráfico" value={metric} onChange={setMetric} options={[{ value: 'pageViews', label: 'Visualizações' }, { value: 'users', label: 'Usuários' }, { value: 'contacts', label: 'Contatos' }]} />
+                </div>
+                <R.TrendChart labels={labels} values={series} unit={metricInfo.unit} colors={metricInfo.colors}
+                  detail={(i) => `${R.fmt(daily[i].users)} pessoas · ${R.fmt(daily[i].contacts)} contatos`} />
+              </>
+            ) : (
+              <>
+                <div style={{ marginBottom: 8 }}>
+                  <R.Tabs label="Dias exibidos" value={dailyTab} onChange={(v) => { setDailyTab(v); setDailyPage(0); }} options={[{ value: 'all', label: 'Todos os dias' }, { value: 'conversions', label: 'Só dias com contato' }]} />
+                </div>
+                {visibleDays.length ? (
+                  <div className="rp-tw"><table className="rp-t">
+                    <thead><tr><th>Data</th><th>Visualizações</th><th className="r">Usuários</th><th className="r">Contatos</th></tr></thead>
+                    <tbody>{visibleDays.map(d => (
+                      <tr key={d.date}>
+                        <td><b>{R.shortDate(d.date)}</b> <small className="m">{R.WEEKDAYS_SHORT[R.weekdayOf(d.date)]}</small></td>
+                        <td><R.CellBar value={Number(d.pageViews || 0)} max={maxViews} /></td>
+                        <td className="r num">{R.fmt(d.users)}</td>
+                        <td className="r"><R.Chip tone={Number(d.contacts || 0) > 0 ? 'good' : 'neutral'}>{R.fmt(d.contacts)}</R.Chip></td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                ) : <R.Empty>{dailyTab === 'conversions' ? 'Nenhum dia com contatos no período.' : 'Ainda não recebemos acessos neste período.'}</R.Empty>}
+                <R.Pager page={dailyPage} total={filteredDaily.length} perPage={ITEMS_PER_PAGE} setPage={setDailyPage} />
+              </>
+            )}
+          </R.Card>
+
+          <R.Card title="Horários de maior movimento" subtitle="Dias da semana × horas do dia. Quanto mais forte a cor, mais acessos."
+            help={{ what: 'Cada quadrado é uma hora de um dia da semana. A cor mostra quantos acessos aconteceram ali, somando todo o período.', why: 'Ajuda a decidir quando atender, postar e anunciar.' }}
+            read={peak ? <>O horário mais movimentado é <b>{R.WEEKDAYS[peak.dayOfWeek]}, entre {peak.hourOfDay}h e {peak.hourOfDay + 1}h</b>.</> : undefined}
+            tip={peak ? 'Deixe alguém pronto para responder o WhatsApp nesse horário e programe anúncios para começar um pouco antes.' : undefined}>
+            {(analytics?.peakHours ?? []).length ? <R.PeakGrid peakHours={analytics!.peakHours!} /> : <R.Empty>Ainda não há acessos suficientes para montar o mapa de horários.</R.Empty>}
+          </R.Card>
+        </div>
+
+        <R.Section>Resumo das outras telas</R.Section>
+        <div className="rp-grid rp-g4">
+          <R.Card title="Como chegaram" actions={<button type="button" className="rp-link" onClick={() => goTo('acquisition', '/aquisicao')} title="Abrir Aquisição & Campanhas">Ver mais <ArrowRight size={14} /></button>} icon={<Compass size={16} />} subtitle="Acessos por canal"
+            read={sources[0] ? <><b>{sources[0].name}</b> traz {Math.round(R.share(sources[0].value, srcTotal))}% dos acessos.</> : undefined}>
+            <R.HBars rows={sources.slice(0, 4).map(s => ({ key: s.name, label: s.name, value: s.value }))} />
+          </R.Card>
+          <R.Card title="Quem são" actions={<button type="button" className="rp-link" onClick={() => goTo('audience', '/publico')} title="Abrir Público">Ver mais <ArrowRight size={14} /></button>} icon={<Users size={16} />} subtitle="Aparelho e região"
+            read={devices[0] && devTotal ? <><b>{Math.round(R.share(devices[0].sessions, devTotal))}%</b> acessam pelo {devices[0].label.toLowerCase()}.</> : undefined}>
+            <R.StackBar segments={devices.map(d => ({ value: d.sessions, color: DEVICE_COLOR[d.key] || '#9CA3AF', label: d.label }))} />
+            <ul className="rp-list" style={{ marginTop: 8 }}>
+              {devices.slice(0, 3).map(d => <li key={d.key}><i style={{ background: DEVICE_COLOR[d.key] || '#9CA3AF' }} />{d.label}<b>{Math.round(R.share(d.sessions, devTotal))}%</b></li>)}
+              {topRegion && <li><i style={{ background: 'var(--rp-primary)' }} />{topRegion[0]}<b>{Math.round(R.share(topRegion[1], regionTotal))}%</b></li>}
+            </ul>
+          </R.Card>
+          <R.Card title="Páginas que mais atraem" actions={<button type="button" className="rp-link" onClick={() => goTo('pages', '/paginas')} title="Abrir Páginas">Ver mais <ArrowRight size={14} /></button>} icon={<FileText size={16} />} subtitle="Visualizações por página">
+            <R.HBars tone="blue" rows={topPages.map(pg => ({ key: pg.path, label: pg.title || pg.path, value: Number(pg.views || 0), title: pg.path }))} />
+          </R.Card>
+          <R.Card title="Contatos" actions={<button type="button" className="rp-link" onClick={() => goTo('results', '/resultados')} title="Abrir Resultados">Ver mais <ArrowRight size={14} /></button>} icon={<Target size={16} />} subtitle="Por onde falaram com você">
+            <div className="rp-dn" style={{ gap: 14 }}>
+              <R.Donut size={84} center={R.fmt(contacts)} centerLabel="contatos" segments={[{ value: whatsapp, color: '#FF3CAC' }, { value: signups, color: '#FF8A3D' }, { value: otherContacts, color: '#7C5CF0' }]} />
+              <ul className="rp-list" style={{ flex: 1, minWidth: 0 }}>
+                <li><i style={{ background: '#FF3CAC' }} />WhatsApp<b>{R.fmt(whatsapp)}</b></li>
+                <li><i style={{ background: '#FF8A3D' }} />Cadastros<b>{R.fmt(signups)}</b></li>
+                {otherContacts > 0 && <li><i style={{ background: '#7C5CF0' }} />Outros<b>{R.fmt(otherContacts)}</b></li>}
+                <li><i style={{ background: 'var(--rp-track)' }} />Taxa<b>{t?.sessions ? R.fmtPct(contactRate) : '—'}</b></li>
+              </ul>
+            </div>
+          </R.Card>
+        </div>
       </div>
-      <section className="metrics">
-        <MetricCard title="Visualizações de páginas" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} />
-        <MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} />
-        <MetricCard title="Tempo de atenção" value={attention} note="média por usuário ativo" />
-        <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
-        <MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} />
-      </section>
-      <div className="dashboard-split">
-        <MetricChart analytics={analytics} />
-        <article className="table-card compact-table daily-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Calendar size={17} style={{ color: '#3b82f6' }} />
-                <h3 style={{ margin: 0 }}>Métricas por dia</h3>
-              </div>
-              <p>Histórico diário de acessos, visitantes e contatos</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={dailyTab === 'all' ? 'active' : ''}
-                onClick={() => { setDailyTab('all'); setDailyPage(0); }}
-              >
-                Todos os dias
-              </button>
-              <button
-                type="button"
-                className={dailyTab === 'conversions' ? 'active' : ''}
-                onClick={() => { setDailyTab('conversions'); setDailyPage(0); }}
-              >
-                Com conversões
-              </button>
-            </div>
-          </div>
-          <div className="daily-head">
-            <span>Data</span>
-            <span>Visualizações</span>
-            <span>Usuários</span>
-            <span>Contatos</span>
-          </div>
-          {visibleDays.map(day => (
-            <div className="daily-row" key={day.date}>
-              <span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span>
-              <span><b>{Number(day.pageViews || 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(day.users || 0).toLocaleString('pt-BR')}</span>
-              <span>
-                <b style={{ color: Number(day.contacts || 0) > 0 ? '#10b981' : undefined }}>
-                  {Number(day.contacts || 0).toLocaleString('pt-BR')}
-                </b>
-              </span>
-            </div>
-          ))}
-          {!filteredDaily.length && (
-            <p className="empty-state">
-              {dailyTab === 'conversions'
-                ? 'Nenhum dia com contatos ou conversões registrado no período.'
-                : 'Ainda não recebemos acessos neste período.'}
-            </p>
-          )}
-          <TablePagination page={dailyPage} total={filteredDaily.length} setPage={setDailyPage} />
-        </article>
-      </div>
-      <PeakHoursMatrix peakHours={analytics?.peakHours} />
     </>
   );
 }
@@ -2105,155 +2204,98 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
   const uniqueDevices = Array.from(new Set((analytics?.filterDevices ?? []).map(item => item.device).filter(Boolean)));
   const uniqueBrowsers = Array.from(new Set((analytics?.filterBrowsers ?? []).map(item => item.browser).filter(Boolean)));
 
+  const [open, setOpen] = useState(false);
+  const activeFilters: Array<{ key: keyof AnalyticsFilter, label: string }> = [
+    filter.page ? { key: 'page' as const, label: `Página: ${filter.page === '/' ? 'Página inicial' : filter.page}` } : null,
+    filter.device ? { key: 'device' as const, label: `Aparelho: ${formatDeviceName(filter.device)}` } : null,
+    filter.browser ? { key: 'browser' as const, label: `Navegador: ${filter.browser}` } : null,
+    filter.source ? { key: 'source' as const, label: `Origem: ${filter.source}` } : null,
+    filter.medium ? { key: 'medium' as const, label: `Mídia: ${formatMediumName(filter.medium)}` } : null,
+    filter.campaign ? { key: 'campaign' as const, label: `Campanha: ${filter.campaign}` } : null,
+  ].filter(Boolean) as Array<{ key: keyof AnalyticsFilter, label: string }>;
+  const groupLabel: Record<AnalyticsFilter['group'], string> = { day: 'dia', week: 'semana', month: 'mês', quarter: 'trimestre', semester: 'semestre', year: 'ano' };
+  const presets: Array<[number, string]> = [[7, '7D'], [14, '14D'], [30, '30D'], [90, '90D'], [365, '1A']];
+
   return (
-    <div className="analytics-filters">
-      <div className="filters-main-row">
-        {/* Date Picker Range */}
-        <div className="filter-group-date">
-          <Calendar size={14} className="filter-field-icon" />
-          <label className="filter-date-label">
-            <span>De</span>
-            <input
-              type="date"
-              className="filter-date-input"
-              value={filter.start}
-              max={filter.end}
-              min={shiftDays(filter.end, -729)}
-              onChange={(event) => apply({ ...filter, start: event.target.value })}
-            />
-          </label>
-          <span className="filter-date-sep">–</span>
-          <label className="filter-date-label">
-            <span>Até</span>
-            <input
-              type="date"
-              className="filter-date-input"
-              value={filter.end}
-              max={maxAvailableDate}
-              min={filter.start}
-              onChange={(event) => apply({ ...filter, end: event.target.value })}
-            />
-          </label>
+    <div className="rp rp-filters">
+      <div className="rp-fbar">
+        <div className="rp-seg" role="group" aria-label="Período rápido">
+          {presets.map(([days, label]) => (
+            <button key={label} type="button" className={(days === 365 ? currentDays >= 360 : currentDays === days) ? 'on' : ''} onClick={() => preset(days)} title={`Últimos ${days === 365 ? '12 meses' : `${days} dias`}`}>{label}</button>
+          ))}
         </div>
-
-        {/* Quick Period Presets */}
-        <div className="filter-quick-pills">
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays === 7 ? 'active' : ''}`}
-            onClick={() => preset(7)}
-          >
-            7D
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays === 14 ? 'active' : ''}`}
-            onClick={() => preset(14)}
-          >
-            14D
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays === 30 ? 'active' : ''}`}
-            onClick={() => preset(30)}
-          >
-            30D
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays === 90 ? 'active' : ''}`}
-            onClick={() => preset(90)}
-          >
-            90D
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays >= 360 ? 'active' : ''}`}
-            onClick={() => preset(365)}
-          >
-            1A
-          </button>
+        <div className="rp-range">
+          <Calendar size={14} />
+          <input type="date" aria-label="Data inicial" value={filter.start} max={filter.end} min={shiftDays(filter.end, -729)} onChange={(event) => apply({ ...filter, start: event.target.value })} />
+          <span>–</span>
+          <input type="date" aria-label="Data final" value={filter.end} max={maxAvailableDate} min={filter.start} onChange={(event) => apply({ ...filter, end: event.target.value })} />
         </div>
+        <button type="button" className="rp-fbtn" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <SlidersHorizontal size={14} />Filtros {activeFilters.length > 0 && <em>{activeFilters.length}</em>}
+          <ChevronDown size={14} style={{ transform: open ? 'rotate(180deg)' : undefined }} />
+        </button>
+        <span className="rp-cmp">
+          {currentDays} {currentDays === 1 ? 'dia' : 'dias'}, agrupado por {groupLabel[filter.group]} · comparado aos {currentDays} dias anteriores{' '}
+          <Help align="right" title="Comparação" what="As setas verdes e rosas comparam este período com o mesmo número de dias logo antes dele." tip="Use 30D para ver tendências. Períodos curtos variam mais." />
+        </span>
       </div>
-
-      <div className="filters-dim-row">
-        {/* Agrupar por */}
-        <div className="filter-item-field">
-          <span className="filter-field-label">Agrupar:</span>
-          <select value={filter.group} onChange={(event) => apply({ ...filter, group: event.target.value as AnalyticsFilter['group'] })}>
-            <option value="day">Dia</option>
-            <option value="week">Semana</option>
-            <option value="month">Mês</option>
-            <option value="quarter">Trimestre</option>
-            <option value="semester">Semestre</option>
-            <option value="year">Ano</option>
-          </select>
+      {activeFilters.length > 0 && !open && (
+        <div className="rp-active-filters">
+          {activeFilters.map(f => (
+            <button key={f.key} type="button" title="Remover este filtro" onClick={() => apply({ ...filter, [f.key]: '' })}>{f.label} ×</button>
+          ))}
         </div>
-
-        {/* Filtro de Página */}
-        <div className="filter-item-field">
-          <FileText size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Página:</span>
-          <select value={filter.page} onChange={(event) => apply({ ...filter, page: event.target.value })}>
-            <option value="">Todas as páginas</option>
-            {(analytics?.filterPages ?? []).map(item => (
-              <option key={item.path} value={item.path}>
-                {item.path === '/' ? '/ (Página Inicial)' : item.path}
-              </option>
-            ))}
-          </select>
+      )}
+      {open && (
+        <div className="rp-adv">
+          <label>Agrupar por
+            <select value={filter.group} onChange={(event) => apply({ ...filter, group: event.target.value as AnalyticsFilter['group'] })}>
+              <option value="day">Dia</option><option value="week">Semana</option><option value="month">Mês</option>
+              <option value="quarter">Trimestre</option><option value="semester">Semestre</option><option value="year">Ano</option>
+            </select>
+          </label>
+          <label>Página
+            <select value={filter.page} onChange={(event) => apply({ ...filter, page: event.target.value })}>
+              <option value="">Todas as páginas</option>
+              {(analytics?.filterPages ?? []).map(item => <option key={item.path} value={item.path}>{item.path === '/' ? '/ (Página inicial)' : item.path}</option>)}
+            </select>
+          </label>
+          <label>Aparelho
+            <select value={filter.device || ''} onChange={(event) => apply({ ...filter, device: event.target.value })}>
+              <option value="">Todos</option>
+              {uniqueDevices.map(dev => <option key={dev} value={dev}>{formatDeviceName(dev)}</option>)}
+            </select>
+          </label>
+          <label>Navegador
+            <select value={filter.browser || ''} onChange={(event) => apply({ ...filter, browser: event.target.value })}>
+              <option value="">Todos</option>
+              {uniqueBrowsers.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </label>
+          <label>Origem
+            <select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}>
+              <option value="">Todas</option>
+              {uniqueSources.map(sourceName => <option key={sourceName} value={sourceName}>{sourceName}</option>)}
+            </select>
+          </label>
+          <label>Mídia
+            <select value={filter.medium || ''} onChange={(event) => apply({ ...filter, medium: event.target.value })}>
+              <option value="">Todas</option>
+              {uniqueMediums.map(m => <option key={m} value={m}>{formatMediumName(m)}</option>)}
+            </select>
+          </label>
+          <label>Campanha
+            <select value={filter.campaign || ''} onChange={(event) => apply({ ...filter, campaign: event.target.value })}>
+              <option value="">Todas</option>
+              {uniqueCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <div className="rp-adv-foot">
+            <span>Os filtros valem para todas as telas de relatório. Origem é de onde a pessoa veio (Google, Instagram…). Mídia é o tipo de tráfego (orgânico, pago, social).</span>
+            {activeFilters.length > 0 && <button type="button" className="rp-link" onClick={() => apply({ ...filter, page: '', device: '', browser: '', source: '', medium: '', campaign: '' })}>Limpar filtros</button>}
+          </div>
         </div>
-
-        {/* Dispositivo */}
-        <div className="filter-item-field">
-          <Monitor size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Aparelho:</span>
-          <select value={filter.device || ''} onChange={(event) => apply({ ...filter, device: event.target.value })}>
-            <option value="">Todos</option>
-            {uniqueDevices.map(dev => <option key={dev} value={dev}>{formatDeviceName(dev)}</option>)}
-          </select>
-        </div>
-
-        {/* Navegador */}
-        <div className="filter-item-field">
-          <Globe size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Navegador:</span>
-          <select value={filter.browser || ''} onChange={(event) => apply({ ...filter, browser: event.target.value })}>
-            <option value="">Todos</option>
-            {uniqueBrowsers.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </div>
-
-        {/* Origem */}
-        <div className="filter-item-field">
-          <Compass size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Origem:</span>
-          <select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}>
-            <option value="">Todas</option>
-            {uniqueSources.map(sourceName => <option key={sourceName} value={sourceName}>{sourceName}</option>)}
-          </select>
-        </div>
-
-        {/* Mídia */}
-        <div className="filter-item-field">
-          <Layers size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Mídia:</span>
-          <select value={filter.medium || ''} onChange={(event) => apply({ ...filter, medium: event.target.value })}>
-            <option value="">Todas</option>
-            {uniqueMediums.map(m => <option key={m} value={m}>{formatMediumName(m)}</option>)}
-          </select>
-        </div>
-
-        {/* Campanha */}
-        <div className="filter-item-field">
-          <Target size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Campanha:</span>
-          <select value={filter.campaign || ''} onChange={(event) => apply({ ...filter, campaign: event.target.value })}>
-            <option value="">Todas</option>
-            {uniqueCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -2273,7 +2315,7 @@ function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) {
   );
 }
 
-function ConnectionStatus() {
+function ConnectionStatus({ compact = false }: { compact?: boolean }) {
   const { currentSite, loading: businessLoading } = useBusiness();
   const [state, setState] = useState<'loading' | 'none' | 'pending' | 'warning_24h' | 'inactive_24h' | 'ready'>('loading');
   const [updatedAt, setUpdatedAt] = useState('');
@@ -2375,6 +2417,20 @@ function ConnectionStatus() {
     return () => { isMounted = false; };
   }, [currentSite, businessLoading]);
 
+  if (compact && state === 'loading') {
+    return <span className="rp-status" aria-busy="true"><i style={{ background: '#9CA3AF', boxShadow: 'none' }} />Verificando a conexão do seu site…</span>;
+  }
+  if (compact && state === 'ready') {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const yFmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(y);
+    return (
+      <span className="rp-status" title={updatedAt ? `Última atividade recebida: ${updatedAt}` : undefined}>
+        <i />Conectado · dados até <b>{yFmt}</b>
+        <Help align="left" title="De quando são os dados" what="Os números são consolidados uma vez por dia. Por isso os relatórios vão até ontem." tip="Visitas de hoje aparecem amanhã." />
+      </span>
+    );
+  }
   if (state === 'loading') {
     return (
       <article className="connection-status loading" aria-busy="true">
@@ -3999,18 +4055,35 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
   </>;
 }
 
+function ReportGuide({ id, children }: { id: string, children: React.ReactNode }) {
+  const key = `analizi-guide-hidden:${id}`;
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem(key) === '1'; } catch { return false; } });
+  if (hidden) return null;
+  return (
+    <div className="rp-guide" role="note">
+      <BookOpen size={16} />
+      <span>{children}</span>
+      <button type="button" aria-label="Esconder esta explicação" title="Esconder esta explicação" onClick={() => { try { localStorage.setItem(key, '1'); } catch { /* sem armazenamento */ } setHidden(true); }}>×</button>
+    </div>
+  );
+}
+
 function PageHeader({
   title,
   subtitle,
   eyebrow,
   icon: Icon,
-  iconColor
+  iconColor,
+  report = false,
+  guide
 }: {
   title: string;
   subtitle: string;
   eyebrow?: string;
   icon?: React.ComponentType<{ size?: number; style?: React.CSSProperties; className?: string }>;
   iconColor?: string;
+  report?: boolean;
+  guide?: React.ReactNode;
 }) {
   const { currentBusiness, currentSite } = useBusiness();
   const [name, setName] = useState('Sua conta');
@@ -4046,6 +4119,28 @@ function PageHeader({
   const resolvedEyebrow = eyebrow ?? meta?.eyebrow;
   const ResolvedIcon = Icon ?? meta?.icon;
   const resolvedIconColor = iconColor ?? meta?.iconColor;
+
+  if (report) {
+    return (
+      <div className="rp">
+        <header className="rp-head">
+          <div>
+            <h1>{ResolvedIcon && <ResolvedIcon size={24} />}{title}</h1>
+            <p>{subtitle}</p>
+          </div>
+          <div className="rp-head-right">
+            <button className="profile" title={`Perfil: ${name}`}>
+              <span>{initials}</span>
+              <b>{name}</b>
+              <ChevronDown size={16}/>
+            </button>
+          </div>
+        </header>
+        <div style={{ marginTop: 10 }}><ConnectionStatus compact /></div>
+        {guide && <ReportGuide id={title}>{guide}</ReportGuide>}
+      </div>
+    );
+  }
 
   return <>
     <header className="page-header">
