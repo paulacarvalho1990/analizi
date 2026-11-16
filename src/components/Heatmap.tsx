@@ -603,7 +603,11 @@ export function Heatmap() {
   const totalClicks = clicks.reduce((acc, c) => acc + c.count, 0)
   const topClicks = [...clicks].sort((a, b) => b.count - a.count).slice(0, 6)
   const scrollPct = (k: string) => Number(data?.scrollRetention?.[k]?.percentage || 0)
-  const scrollRows = data?.scrollRetention ? ['25%', '50%', '75%', '100%'].filter(k => data.scrollRetention[k]).map(k => ({ key: k, label: k === '100%' ? 'Fim da página' : `${k} da página`, value: scrollPct(k), display: `${scrollPct(k)}%` })) : []
+  const scrollBase = Number(data?.scrollRetention?.['0%']?.visitors || 0)
+  const scrollLabel: Record<string, string> = { '0%': 'Topo (abriram a página)', '25%': '25% da página', '50%': 'Metade da página', '75%': '75% da página', '100%': 'Fim da página' }
+  const scrollRows = data?.scrollRetention && (scrollBase > 0 || scrollPct('25%') > 0)
+    ? ['0%', '25%', '50%', '75%', '100%'].filter(k => k !== '0%' || scrollBase > 0).map(k => ({ key: k, label: scrollLabel[k], value: k === '0%' ? 100 : scrollPct(k), display: `${k === '0%' ? 100 : scrollPct(k)}%` }))
+    : []
 
   return (
     <div className="heatmap-container">
@@ -745,44 +749,6 @@ export function Heatmap() {
       ) : (
         <div className="rp-hm-layout">
           <div style={{ minWidth: 0 }}>
-          {/* Resumo do Scroll no padrão dos cards de métricas das outras páginas */}
-          {activeLayer === 'scroll' && data?.scrollRetention && (
-            <section className="metrics">
-              <MetricCard
-                title="Topo (até 25%)"
-                value={`${data.scrollRetention['25%']?.percentage || 100}%`}
-                caption="Visualizaram o topo"
-                tooltipWhat="Porcentagem de visitantes que viram a dobra inicial da página."
-                tooltipWhy="Mede a taxa de permanência imediata de quem acessa o seu site."
-                tooltipTip="Garanta que sua proposta de valor e CTA principal estejam visíveis aqui."
-              />
-              <MetricCard
-                title="Dobra média (50%)"
-                value={`${data.scrollRetention['50%']?.percentage || 0}%`}
-                caption="Continuaram rolando"
-                tooltipWhat="Percentual de visitantes que rolaram até a metade do conteúdo."
-                tooltipWhy="Indica se a introdução e o início do site foram atraentes o suficiente para gerar interesse."
-                tooltipTip="Adicione tópicos dinâmicos ou prévia de benefícios para engajar a leitura."
-              />
-              <MetricCard
-                title="Conteúdo baixo (75%)"
-                value={`${data.scrollRetention['75%']?.percentage || 0}%`}
-                caption="Chegaram ao terço final"
-                tooltipWhat="Visitantes que consumiram a maior parte das informações da página."
-                tooltipWhy="Representa um público altamente qualificado e com interesse real na oferta."
-                tooltipTip="Posicione depoimentos e garantias nesta área para eliminar dúvidas finais."
-              />
-              <MetricCard
-                title="Fim da página (100%)"
-                value={`${data.scrollRetention['100%']?.percentage || 0}%`}
-                caption="Leram até o fim"
-                tooltipWhat="Percentual de visitantes que rolaram a página inteira até o rodapé."
-                tooltipWhy="Mostra o engajamento máximo e a profundidade de leitura dos usuários mais atentos."
-                tooltipTip="Não deixe o rodapé vazio: coloque um botão de contato ou formulário de fechamento."
-              />
-            </section>
-          )}
-
           {/* Legenda de Cores do Mapa de Cliques */}
           {activeLayer === 'clicks' && (
             <div className="heatmap-color-legend" aria-label="Legenda de intensidade de cliques">
@@ -938,10 +904,10 @@ export function Heatmap() {
                 {activeLayer === 'scroll' && data?.scrollRetention && (
                   <div className="heatmap-layer-scroll" style={{ height: `${pageHeight}px` }}>
                     {[
-                      { label: 'Dobra Superior (25%)', pct: 25, data: data.scrollRetention['25%'] },
-                      { label: 'Metade da Página (50%)', pct: 50, data: data.scrollRetention['50%'] },
-                      { label: 'Três Quartos (75%)', pct: 75, data: data.scrollRetention['75%'] },
-                      { label: 'Rodapé Completo (100%)', pct: 98, data: data.scrollRetention['100%'] }
+                      { label: '25% da página', pct: 25, data: data.scrollRetention['25%'] },
+                      { label: 'Metade da página', pct: 50, data: data.scrollRetention['50%'] },
+                      { label: '75% da página', pct: 75, data: data.scrollRetention['75%'] },
+                      { label: 'Fim da página', pct: 98, data: data.scrollRetention['100%'] }
                     ].map((line, idx) => (
                       <div
                         key={idx}
@@ -950,7 +916,7 @@ export function Heatmap() {
                       >
                         <div className="scroll-tag">
                           <b>{line.label}</b>
-                          <span>{line.data?.percentage || 0}% dos visitantes atingiram</span>
+                          <span>{line.data?.percentage || 0}% de quem abriu a página chegou aqui</span>
                         </div>
                       </div>
                     ))}
@@ -961,8 +927,8 @@ export function Heatmap() {
           </div>
           </div>
           <aside className="rp rp-hm-aside" aria-label="Resumo do heatmap">
-            <Card title="Até onde descem" subtitle={`De cada 100 visitantes desta página${data?.totalVisitors ? ` (${data.totalVisitors.toLocaleString('pt-BR')} no período)` : ''}`}
-              help={{ what: 'Percentual de visitantes que rolaram até cada ponto da página.', why: 'O que fica abaixo do ponto onde a maioria para quase não é visto.' }}
+            <Card title="Até onde descem" subtitle={`De cada 100 aberturas desta página no ${device === 'mobile' ? 'celular' : 'computador'}${scrollBase ? ` (${scrollBase.toLocaleString('pt-BR')} no período)` : ''}`}
+              help={{ what: 'Todo mundo que abre a página vê o topo (100%). As outras linhas mostram quantos rolaram até um quarto, a metade, três quartos e o fim da altura total da página.', why: 'O que fica abaixo do ponto onde a maioria para quase não é visto.', tip: 'Em páginas longas, é normal pouca gente chegar a 25%: a primeira tela já é uma parte pequena da página.' }}
               read={scrollRows.length ? <>Só <b>{scrollPct('50%')}%</b> chegam à metade da página e <b>{scrollPct('100%')}%</b> chegam ao fim.</> : undefined}
               tip={scrollRows.length ? (scrollPct('50%') < 50 ? 'Leve o botão de contato e a informação mais importante para a parte de cima da página.' : 'Boa leitura. Coloque um convite para contato também no fim da página.') : undefined}>
               {scrollRows.length ? <HBars rows={scrollRows} /> : <Empty>Ainda não há dados de rolagem para esta página.</Empty>}

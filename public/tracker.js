@@ -575,6 +575,8 @@
     if (sentScrollForCurrentPage && elapsedSinceLast < 1000) return
     const brackets = []
     if (!sentScrollForCurrentPage) {
+      // "0%" = a página foi aberta: serve de base (100%) para calcular quantos chegaram a cada profundidade
+      brackets.push('0%')
       if (maxScrollPct >= 25) brackets.push('25%')
       if (maxScrollPct >= 50) brackets.push('50%')
       if (maxScrollPct >= 75) brackets.push('75%')
