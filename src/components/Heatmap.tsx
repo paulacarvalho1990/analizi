@@ -5,10 +5,11 @@ import {
   CreditCard, Flag, TextCursorInput, Link as LinkIcon,
   BarChart3, SlidersHorizontal, Table as TableIcon, MapPin, HelpCircle,
   MessageSquareQuote, Volume2, GalleryHorizontal, ZoomIn, ZoomOut, Maximize2,
-  Calendar, FileText
+  Calendar, FileText, BookOpen
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
+import { Card, Empty, HBars, Tip } from './report/kit'
 
 interface LayoutBlock {
   type: string
@@ -599,20 +600,25 @@ export function Heatmap() {
 
   const scaledStageWidth = Math.round(totalDeviceWidth * activeScale)
   const scaledStageHeight = Math.round((pageHeight + frameBorderPadding) * activeScale)
+  const totalClicks = clicks.reduce((acc, c) => acc + c.count, 0)
+  const topClicks = [...clicks].sort((a, b) => b.count - a.count).slice(0, 6)
+  const scrollPct = (k: string) => Number(data?.scrollRetention?.[k]?.percentage || 0)
+  const scrollRows = data?.scrollRetention ? ['25%', '50%', '75%', '100%'].filter(k => data.scrollRetention[k]).map(k => ({ key: k, label: k === '100%' ? 'Fim da página' : `${k} da página`, value: scrollPct(k), display: `${scrollPct(k)}%` })) : []
 
   return (
     <div className="heatmap-container">
-      <header className="page-header">
-        <div>
-          <span className="eyebrow">COMPORTAMENTO VISUAL</span>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Flame style={{ color: '#f97316' }} size={28} /> Heatmap e Rolagem
-          </h1>
-          <p className="subtitle">
-            Veja exatamente onde os visitantes clicam e até que altura da página eles rolam.
-          </p>
+      <div className="rp">
+        <header className="rp-head">
+          <div>
+            <h1><Flame size={24} />Heatmap e Rolagem</h1>
+            <p>Onde os visitantes clicam e até onde descem em cada página do seu site.</p>
+          </div>
+        </header>
+        <div className="rp-guide" role="note">
+          <BookOpen size={16} />
+          <span><b>Como ler esta tela:</b> escolha uma página e o aparelho. No <b>mapa de cliques</b>, as cores quentes mostram onde as pessoas mais clicam. Na <b>profundidade de rolagem</b>, as linhas mostram quantas pessoas chegaram a cada parte da página. O que fica abaixo do ponto onde a maioria para quase não é visto.</span>
         </div>
-      </header>
+      </div>
 
       {/* Barra de Controles e Filtros */}
       <div className="heatmap-toolbar">
@@ -737,7 +743,8 @@ export function Heatmap() {
           </span>
         </div>
       ) : (
-        <>
+        <div className="rp-hm-layout">
+          <div style={{ minWidth: 0 }}>
           {/* Resumo do Scroll no padrão dos cards de métricas das outras páginas */}
           {activeLayer === 'scroll' && data?.scrollRetention && (
             <section className="metrics">
@@ -952,7 +959,22 @@ export function Heatmap() {
               </div>
             </div>
           </div>
-        </>
+          </div>
+          <aside className="rp rp-hm-aside" aria-label="Resumo do heatmap">
+            <Card title="Até onde descem" subtitle={`De cada 100 visitantes desta página${data?.totalVisitors ? ` (${data.totalVisitors.toLocaleString('pt-BR')} no período)` : ''}`}
+              help={{ what: 'Percentual de visitantes que rolaram até cada ponto da página.', why: 'O que fica abaixo do ponto onde a maioria para quase não é visto.' }}
+              read={scrollRows.length ? <>Só <b>{scrollPct('50%')}%</b> chegam à metade da página e <b>{scrollPct('100%')}%</b> chegam ao fim.</> : undefined}
+              tip={scrollRows.length ? (scrollPct('50%') < 50 ? 'Leve o botão de contato e a informação mais importante para a parte de cima da página.' : 'Boa leitura. Coloque um convite para contato também no fim da página.') : undefined}>
+              {scrollRows.length ? <HBars rows={scrollRows} /> : <Empty>Ainda não há dados de rolagem para esta página.</Empty>}
+            </Card>
+            <Card title="Elementos mais clicados" subtitle={`${totalClicks.toLocaleString('pt-BR')} cliques no período`}
+              help={{ what: 'Botões, links e áreas que mais receberam cliques nesta página e neste aparelho.', tip: 'Cliques em áreas que não são links mostram que a pessoa esperava algo ali.' }}
+              read={topClicks[0] && totalClicks ? <><b>{topClicks[0].label || topClicks[0].tag}</b> recebe {Math.round((topClicks[0].count / totalClicks) * 100)}% dos cliques.</> : undefined}>
+              {topClicks.length ? <HBars rows={topClicks.map((c, i) => ({ key: `${c.label}-${i}`, label: c.label || c.tag, sub: c.tag === 'a' ? 'link' : c.tag === 'button' ? 'botão' : c.tag, value: c.count }))} /> : <Empty>Ainda não há cliques registrados nesta página.</Empty>}
+            </Card>
+            <Tip>Compare celular e computador: o mesmo botão pode ficar escondido em uma das versões.</Tip>
+          </aside>
+        </div>
       )}
     </div>
   )

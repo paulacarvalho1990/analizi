@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArrowLeft, TrendingUp, Eye, SlidersHorizontal, BookOpen, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard, DualMetricCard } from './components/Metrics'
@@ -10,6 +10,8 @@ import { LandingPage } from './components/LandingPage'
 import { supabase } from './lib/supabase'
 import { BusinessProvider, useBusiness, type BusinessItem, type SiteItem } from './lib/business-context'
 import { BrazilGeoMap } from './components/BrazilMap'
+import * as R from './components/report/kit'
+import { Help } from './components/report/kit'
 
 const ITEMS_PER_PAGE = 25
 function TablePagination({ page, total, setPage }: { page: number, total: number, setPage: (page: number) => void }) { const pages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)); if (total <= ITEMS_PER_PAGE) return null; return <div className="table-pagination"><span>Mostrando {page * ITEMS_PER_PAGE + 1}–{Math.min((page + 1) * ITEMS_PER_PAGE, total)} de {total}</span><div><button disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</button><b>{page + 1} de {pages}</b><button disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Próxima</button></div></div> }
@@ -481,91 +483,198 @@ function PeakHoursMatrix({ peakHours }: { peakHours?: Array<{ dayOfWeek: number,
   );
 }
 
+/* ---------- utilitários compartilhados pelas telas de relatório ---------- */
+function weightedExitRate(pages: AnalyticsData['pages'] = []): number | null {
+  const valid = pages.filter(item => item.exitRate != null && Number(item.views || 0) > 0);
+  const total = valid.reduce((sum, item) => sum + Number(item.views || 0), 0);
+  if (!total) return null;
+  return valid.reduce((sum, item) => sum + Number(item.exitRate || 0) * Number(item.views || 0), 0) / total;
+}
+const DEVICE_LABEL: Record<string, string> = { mobile: 'Celular', desktop: 'Computador', tablet: 'Tablet' };
+const DEVICE_COLOR: Record<string, string> = { mobile: '#3B82F6', desktop: '#7C5CF0', tablet: '#FF8A3D' };
+function deviceKey(raw?: string) { const s = (raw || 'desktop').toLowerCase(); return s === 'mobile' || s === 'tablet' ? s : s === 'desktop' ? 'desktop' : s; }
+function aggregateDevices(devices: DeviceRow[] = []) {
+  const map = new Map<string, { key: string, label: string, sessions: number, views: number, users: number, newUsers: number, conversions: number }>();
+  devices.forEach(d => {
+    const k = deviceKey(d.device);
+    const cur = map.get(k) || { key: k, label: DEVICE_LABEL[k] || formatDeviceName(d.device), sessions: 0, views: 0, users: 0, newUsers: 0, conversions: 0 };
+    cur.sessions += Number(d.sessions || 0); cur.views += Number(d.views || 0); cur.users += Number(d.users || 0);
+    cur.newUsers += Number(d.newUsers || 0); cur.conversions += Number(d.conversions || 0);
+    map.set(k, cur);
+  });
+  return Array.from(map.values()).sort((a, b) => b.sessions - a.sessions);
+}
+function bestPeakCell(peakHours: R.PeakCell[] = []) {
+  if (!peakHours.length) return null;
+  return [...peakHours].sort((a, b) => Number(b.views || b.sessions || 0) - Number(a.views || a.sessions || 0))[0];
+}
+/** média de visualizações por dia da semana (só faz sentido agrupando por dia) */
+function weekdayPattern(daily: AnalyticsData['daily'] = []) {
+  if (daily.length < 7) return null;
+  const sums = Array(7).fill(0), counts = Array(7).fill(0);
+  daily.forEach(d => { const w = R.weekdayOf(d.date); sums[w] += Number(d.pageViews || 0); counts[w] += 1; });
+  const avg = sums.map((s, i) => (counts[i] ? s / counts[i] : 0));
+  const best = avg.indexOf(Math.max(...avg));
+  const weekdays = (avg[1] + avg[2] + avg[3] + avg[4] + avg[5]) / 5;
+  const weekend = (avg[0] + avg[6]) / 2;
+  return { best, weekendDiff: weekdays > 0 ? Math.round(((weekend - weekdays) / weekdays) * 100) : 0 };
+}
+function isSearchSource(name: string) { return /google|bing|yahoo|duckduckgo/i.test(name); }
+
 function Dashboard() {
   const analytics = useAnalytics();
+  const [view, setView] = useState<'chart' | 'table'>('chart');
+  const [metric, setMetric] = useState<'pageViews' | 'users' | 'contacts'>('pageViews');
   const [dailyPage, setDailyPage] = useState(0);
   const [dailyTab, setDailyTab] = useState<'all' | 'conversions'>('all');
   const t = analytics?.totals;
   const p = analytics?.previousTotals;
   const daily = analytics?.daily ?? [];
-  const filteredDaily = dailyTab === 'conversions' ? daily.filter(d => Number(d.contacts || 0) > 0) : daily;
+  const days = analytics?.periodDays ?? selectedDays();
+  const filter = readAnalyticsFilter();
+  const exitRate = weightedExitRate(analytics?.pages);
+  const devices = aggregateDevices(analytics?.devices);
+  const devTotal = devices.reduce((a, d) => a + d.sessions, 0);
+  const sources = (analytics?.sources ?? []).map(s => ({ name: normalizeOriginName(s.name), value: Number(s.value || 0) }));
+  const srcTotal = sources.reduce((a, s) => a + s.value, 0);
+  const topPages = [...(analytics?.pages ?? [])].sort((a, b) => Number(b.views || 0) - Number(a.views || 0)).slice(0, 4);
+  const regions = new Map<string, number>();
+  (analytics?.locations ?? []).forEach(l => { const k = l.region || 'Não identificado'; regions.set(k, (regions.get(k) || 0) + Number(l.views || 0)); });
+  const regionTotal = Array.from(regions.values()).reduce((a, b) => a + b, 0);
+  const topRegion = Array.from(regions.entries()).sort((a, b) => b[1] - a[1])[0];
+  const peak = bestPeakCell(analytics?.peakHours);
+  const pattern = filter.group === 'day' ? weekdayPattern(daily) : null;
+  const whatsapp = Number(t?.whatsappContacts || 0), signups = Number(t?.signUps || 0), contacts = Number(t?.contacts || 0);
+  const otherContacts = Math.max(contacts - whatsapp - signups, 0);
+  const contactRate = t?.sessions ? (Number(t.contactSessions || contacts) / Number(t.sessions)) * 100 : 0;
+  const labels = daily.map(d => R.shortDate(d.date));
+  const metricInfo = {
+    pageViews: { label: 'Visualizações', unit: 'visualizações', colors: ['#3B82F6', '#7C5CF0', '#FF3CAC'] },
+    users: { label: 'Usuários', unit: 'pessoas', colors: ['#3B82F6', '#3B82F6', '#7C5CF0'] },
+    contacts: { label: 'Contatos', unit: 'contatos', colors: ['#FF3CAC', '#FF3CAC', '#FF8A3D'] },
+  }[metric];
+  const series = daily.map(d => Number(d[metric] || 0));
+  const filteredDaily = (dailyTab === 'conversions' ? daily.filter(d => Number(d.contacts || 0) > 0) : daily).slice().reverse();
   const visibleDays = filteredDaily.slice(dailyPage * ITEMS_PER_PAGE, (dailyPage + 1) * ITEMS_PER_PAGE);
-  const attention = t?.attentionSeconds ? `${Math.floor(t.attentionSeconds / 60)}min ${t.attentionSeconds % 60}s` : '—';
-  const badge = analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO';
+  const maxViews = Math.max(...daily.map(d => Number(d.pageViews || 0)), 1);
+  const goTo = (page: Page, path: string) => { window.history.pushState({}, '', `${path}${window.location.search}`); window.dispatchEvent(new PopStateEvent('popstate')); void page; };
+  const periodLabel = `${R.shortDate(filter.start)} a ${R.shortDate(filter.end)} · ${days} ${days === 1 ? 'dia' : 'dias'}`;
 
   return (
     <>
-      <PageHeader title="Visão geral" subtitle={`Veja como seu site foi nos últimos ${analytics?.periodDays ?? selectedDays()} dias.`} />
+      <PageHeader report title="Visão geral" subtitle="Como o seu site foi no período, em um só lugar. Cada bloco leva para a tela com mais detalhes."
+        guide={<><b>Como ler esta tela:</b> comece pela faixa escura, que mostra o caminho das pessoas, da chegada até o contato. Passe o mouse no <b>ⓘ</b> para entender cada número. As setas comparam com o período anterior: <b>verde é melhora</b> e <b>rosa é piora</b>.</>} />
       <AnalyticsFilters analytics={analytics} />
-      <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />{badge}</span>
+      <div className="rp">
+        <R.Journey period={periodLabel}
+          users={Number(t?.users || 0)} usersDelta={R.change(t?.users, p?.users)}
+          newUsers={Number(t?.newUsers || 0)} newUsersDelta={R.change(t?.newUsers, p?.newUsers)}
+          views={Number(t?.pageViews || 0)} viewsDelta={R.change(t?.pageViews, p?.pageViews)}
+          attention={Number(t?.attentionSeconds || 0)} attentionDelta={R.change(t?.attentionSeconds, p?.attentionSeconds)}
+          contacts={contacts} contactsDelta={R.change(t?.contacts, p?.contacts)}
+          whatsapp={whatsapp} signups={signups} exitRate={exitRate} />
+
+        <div className="rp-grid rp-g5">
+          <R.Kpi label="Visualizações de páginas" value={R.fmt(t?.pageViews)} delta={R.change(t?.pageViews, p?.pageViews)} spark={daily.map(d => Number(d.pageViews || 0))}
+            desc="Páginas abertas pelos visitantes" help={{ what: 'Total de páginas abertas no período. Se uma pessoa vê 3 páginas, conta 3.', why: 'Mostra o volume de interesse pelo seu conteúdo.' }} />
+          <R.Kpi label="Usuários" value={R.fmt(t?.users)} delta={R.change(t?.users, p?.users)} spark={daily.map(d => Number(d.users || 0))}
+            desc="Pessoas diferentes no site" help={{ what: 'Pessoas diferentes que visitaram o site. Quem voltou várias vezes conta uma vez.', why: 'É o tamanho real do seu público no período.' }} />
+          <R.Kpi label="Novos usuários" value={R.fmt(t?.newUsers)} delta={R.change(t?.newUsers, p?.newUsers)}
+            desc={t?.users ? `${Math.round(R.share(Number(t.newUsers || 0), Number(t.users)))}% vieram pela primeira vez` : 'Primeira visita ao site'}
+            help={{ what: 'Pessoas que entraram no seu site pela primeira vez.', why: 'Mostra se o site está alcançando gente nova.', tip: 'Se cair, revise anúncios, redes sociais e o Google Meu Negócio.' }} />
+          <R.Kpi label="Tempo de atenção" value={R.dur(t?.attentionSeconds)} delta={R.change(t?.attentionSeconds, p?.attentionSeconds)}
+            desc="Média por visitante ativo" help={{ what: 'Tempo médio em que o site ficou aberto e visível na tela da pessoa.', why: 'Indica se o conteúdo está sendo lido de verdade.', tip: 'Acima de 1 minuto costuma ser bom para sites de serviços.' }} />
+          <R.Kpi label="Contatos iniciados" value={R.fmt(t?.contacts)} delta={R.change(t?.contacts, p?.contacts)} spark={daily.map(d => Number(d.contacts || 0))} sparkColor="#FF3CAC"
+            desc="Cliques para falar ou se cadastrar" help={{ what: 'Cliques em WhatsApp, telefone e formulários de cadastro.', why: 'É o número que mais se aproxima de novos clientes.', tip: 'Veja em Resultados quais páginas e botões geram mais contatos.' }} />
+        </div>
+
+        <div className="rp-grid rp-g2">
+          <R.Card title={view === 'chart' ? `${metricInfo.label} ao longo do período` : 'Métricas dia a dia'}
+            subtitle={view === 'chart' ? 'Passe o mouse para ver cada ponto. A linha tracejada é a média do período.' : 'Histórico de acessos, visitantes e contatos, do mais recente para o mais antigo'}
+            actions={<R.Tabs label="Forma de exibição" value={view} onChange={(v) => { setView(v); setDailyPage(0); }} options={[{ value: 'chart', label: 'Gráfico' }, { value: 'table', label: 'Tabela' }]} />}
+            read={pattern && view === 'chart' ? <>Em média, <b>{R.WEEKDAYS[pattern.best]}</b> é o dia mais forte. {pattern.weekendDiff < -10 ? <>Os fins de semana têm cerca de <b>{Math.abs(pattern.weekendDiff)}% menos</b> acessos.</> : pattern.weekendDiff > 10 ? <>Os fins de semana têm cerca de <b>{pattern.weekendDiff}% mais</b> acessos.</> : <>Os fins de semana têm movimento parecido com os dias úteis.</>}</> : undefined}
+            tip={view === 'chart' ? 'Publique novidades e anúncios um dia antes do seu dia mais forte para aproveitar o pico.' : undefined}>
+            {view === 'chart' ? (
+              <>
+                <div style={{ marginBottom: 6 }}>
+                  <R.Tabs label="Métrica do gráfico" value={metric} onChange={setMetric} options={[{ value: 'pageViews', label: 'Visualizações' }, { value: 'users', label: 'Usuários' }, { value: 'contacts', label: 'Contatos' }]} />
+                </div>
+                <R.TrendChart labels={labels} values={series} unit={metricInfo.unit} colors={metricInfo.colors}
+                  detail={(i) => `${R.fmt(daily[i].users)} pessoas · ${R.fmt(daily[i].contacts)} contatos`} />
+              </>
+            ) : (
+              <>
+                <div style={{ marginBottom: 8 }}>
+                  <R.Tabs label="Dias exibidos" value={dailyTab} onChange={(v) => { setDailyTab(v); setDailyPage(0); }} options={[{ value: 'all', label: 'Todos os dias' }, { value: 'conversions', label: 'Só dias com contato' }]} />
+                </div>
+                {visibleDays.length ? (
+                  <div className="rp-tw"><table className="rp-t">
+                    <thead><tr><th>Data</th><th>Visualizações</th><th className="r">Usuários</th><th className="r">Contatos</th></tr></thead>
+                    <tbody>{visibleDays.map(d => (
+                      <tr key={d.date}>
+                        <td><b>{R.shortDate(d.date)}</b> <small className="m">{R.WEEKDAYS_SHORT[R.weekdayOf(d.date)]}</small></td>
+                        <td><R.CellBar value={Number(d.pageViews || 0)} max={maxViews} /></td>
+                        <td className="r num">{R.fmt(d.users)}</td>
+                        <td className="r"><R.Chip tone={Number(d.contacts || 0) > 0 ? 'good' : 'neutral'}>{R.fmt(d.contacts)}</R.Chip></td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                ) : <R.Empty>{dailyTab === 'conversions' ? 'Nenhum dia com contatos no período.' : 'Ainda não recebemos acessos neste período.'}</R.Empty>}
+                <R.Pager page={dailyPage} total={filteredDaily.length} perPage={ITEMS_PER_PAGE} setPage={setDailyPage} />
+              </>
+            )}
+          </R.Card>
+
+          <R.Card title="Horários de maior movimento" subtitle="Dias da semana × horas do dia. Quanto mais forte a cor, mais acessos."
+            help={{ what: 'Cada quadrado é uma hora de um dia da semana. A cor mostra quantos acessos aconteceram ali, somando todo o período.', why: 'Ajuda a decidir quando atender, postar e anunciar.' }}
+            read={peak ? <>O horário mais movimentado é <b>{R.WEEKDAYS[peak.dayOfWeek]}, entre {peak.hourOfDay}h e {peak.hourOfDay + 1}h</b>.</> : undefined}
+            tip={peak ? 'Deixe alguém pronto para responder o WhatsApp nesse horário e programe anúncios para começar um pouco antes.' : undefined}>
+            {(analytics?.peakHours ?? []).length ? <R.PeakGrid peakHours={analytics!.peakHours!} /> : <R.Empty>Ainda não há acessos suficientes para montar o mapa de horários.</R.Empty>}
+          </R.Card>
+        </div>
+
+        <R.Section>Resumo das outras telas</R.Section>
+        <div className="rp-grid rp-g4">
+          <R.Card title="Como chegaram" actions={<button type="button" className="rp-link" onClick={() => goTo('acquisition', '/aquisicao')} title="Abrir Aquisição & Campanhas">Ver mais <ArrowRight size={14} /></button>} icon={<Compass size={16} />} subtitle="Acessos por canal"
+            read={sources[0] ? <><b>{sources[0].name}</b> traz {Math.round(R.share(sources[0].value, srcTotal))}% dos acessos.</> : undefined}>
+            <R.HBars rows={sources.slice(0, 4).map(s => ({ key: s.name, label: s.name, value: s.value }))} />
+          </R.Card>
+          <R.Card title="Quem são" actions={<button type="button" className="rp-link" onClick={() => goTo('audience', '/publico')} title="Abrir Público">Ver mais <ArrowRight size={14} /></button>} icon={<Users size={16} />} subtitle="Aparelho e região"
+            read={devices[0] && devTotal ? <><b>{Math.round(R.share(devices[0].sessions, devTotal))}%</b> acessam pelo {devices[0].label.toLowerCase()}.</> : undefined}>
+            <R.StackBar segments={devices.map(d => ({ value: d.sessions, color: DEVICE_COLOR[d.key] || '#9CA3AF', label: d.label }))} />
+            <ul className="rp-list" style={{ marginTop: 8 }}>
+              {devices.slice(0, 3).map(d => <li key={d.key}><i style={{ background: DEVICE_COLOR[d.key] || '#9CA3AF' }} />{d.label}<b>{Math.round(R.share(d.sessions, devTotal))}%</b></li>)}
+              {topRegion && <li><i style={{ background: 'var(--rp-primary)' }} />{topRegion[0]}<b>{Math.round(R.share(topRegion[1], regionTotal))}%</b></li>}
+            </ul>
+          </R.Card>
+          <R.Card title="Páginas que mais atraem" actions={<button type="button" className="rp-link" onClick={() => goTo('pages', '/paginas')} title="Abrir Páginas">Ver mais <ArrowRight size={14} /></button>} icon={<FileText size={16} />} subtitle="Visualizações por página">
+            <R.HBars tone="blue" rows={topPages.map(pg => ({ key: pg.path, label: pg.title || pg.path, value: Number(pg.views || 0), title: pg.path }))} />
+          </R.Card>
+          <R.Card title="Contatos" actions={<button type="button" className="rp-link" onClick={() => goTo('results', '/resultados')} title="Abrir Resultados">Ver mais <ArrowRight size={14} /></button>} icon={<Target size={16} />} subtitle="Por onde falaram com você">
+            <div className="rp-dn" style={{ gap: 14 }}>
+              <R.Donut size={84} center={R.fmt(contacts)} centerLabel="contatos" segments={[{ value: whatsapp, color: '#FF3CAC' }, { value: signups, color: '#FF8A3D' }, { value: otherContacts, color: '#7C5CF0' }]} />
+              <ul className="rp-list" style={{ flex: 1, minWidth: 0 }}>
+                <li><i style={{ background: '#FF3CAC' }} />WhatsApp<b>{R.fmt(whatsapp)}</b></li>
+                <li><i style={{ background: '#FF8A3D' }} />Cadastros<b>{R.fmt(signups)}</b></li>
+                {otherContacts > 0 && <li><i style={{ background: '#7C5CF0' }} />Outros<b>{R.fmt(otherContacts)}</b></li>}
+                <li><i style={{ background: 'var(--rp-track)' }} />Taxa<b>{t?.sessions ? R.fmtPct(contactRate) : '—'}</b></li>
+              </ul>
+            </div>
+          </R.Card>
+        </div>
       </div>
-      <section className="metrics">
-        <MetricCard title="Visualizações de páginas" value={String(t?.pageViews ?? '—')} {...comparison(t?.pageViews, p?.pageViews)} />
-        <MetricCard title="Usuários" value={String(t?.users ?? '—')} {...comparison(t?.users, p?.users)} />
-        <MetricCard title="Tempo de atenção" value={attention} note="média por usuário ativo" />
-        <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
-        <MetricCard title="Novos usuários" value={String(t?.newUsers ?? '—')} {...comparison(t?.newUsers, p?.newUsers)} />
-      </section>
-      <div className="dashboard-split">
-        <MetricChart analytics={analytics} />
-        <article className="table-card compact-table daily-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Calendar size={17} style={{ color: '#3b82f6' }} />
-                <h3 style={{ margin: 0 }}>Métricas por dia</h3>
-              </div>
-              <p>Histórico diário de acessos, visitantes e contatos</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={dailyTab === 'all' ? 'active' : ''}
-                onClick={() => { setDailyTab('all'); setDailyPage(0); }}
-              >
-                Todos os dias
-              </button>
-              <button
-                type="button"
-                className={dailyTab === 'conversions' ? 'active' : ''}
-                onClick={() => { setDailyTab('conversions'); setDailyPage(0); }}
-              >
-                Com conversões
-              </button>
-            </div>
-          </div>
-          <div className="daily-head">
-            <span>Data</span>
-            <span>Visualizações</span>
-            <span>Usuários</span>
-            <span>Contatos</span>
-          </div>
-          {visibleDays.map(day => (
-            <div className="daily-row" key={day.date}>
-              <span><b>{day.date.slice(5).split('-').reverse().join('/')}</b></span>
-              <span><b>{Number(day.pageViews || 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(day.users || 0).toLocaleString('pt-BR')}</span>
-              <span>
-                <b style={{ color: Number(day.contacts || 0) > 0 ? '#10b981' : undefined }}>
-                  {Number(day.contacts || 0).toLocaleString('pt-BR')}
-                </b>
-              </span>
-            </div>
-          ))}
-          {!filteredDaily.length && (
-            <p className="empty-state">
-              {dailyTab === 'conversions'
-                ? 'Nenhum dia com contatos ou conversões registrado no período.'
-                : 'Ainda não recebemos acessos neste período.'}
-            </p>
-          )}
-          <TablePagination page={dailyPage} total={filteredDaily.length} setPage={setDailyPage} />
-        </article>
-      </div>
-      <PeakHoursMatrix peakHours={analytics?.peakHours} />
     </>
   );
+}
+
+/** campanha válida: ignora vazio e os marcadores "(not set)" / "(none)" do GA4 */
+function hasCampaign(campaign?: string) {
+  const c = (campaign || '').trim().toLowerCase();
+  return c.length > 0 && c !== '(not set)' && c !== '(none)' && c !== 'not set';
+}
+/** tráfego pago: mídia de anúncio ou link com campanha UTM */
+function isPaidTraffic(item: { source?: string, medium?: string, campaign?: string }) {
+  return /cpc|ppc|paid|ads|adwords|sponsored/i.test(item.medium || '') || /ads$|adwords/i.test(item.source || '') || hasCampaign(item.campaign);
 }
 
 function Acquisition() {
@@ -584,7 +693,7 @@ function Acquisition() {
     let topAd: { name: string; channel: string; contacts: number; convRate: number } | null = null;
 
     rawSm.forEach(item => {
-      const isPaid = /cpc|ppc|paid|ads|adwords|meta|sponsored/i.test((item.medium || '') + (item.source || '')) || Boolean(item.campaign && item.campaign.trim().length > 0);
+      const isPaid = isPaidTraffic(item);
       const sess = Number(item.sessions || 0);
       const cont = Number(item.whatsappClicks || item.contactClicks || 0);
 
@@ -596,7 +705,7 @@ function Acquisition() {
         orgContacts += cont;
       }
 
-      if (item.campaign && cont > (topAd?.contacts || 0)) {
+      if (hasCampaign(item.campaign) && cont > (topAd?.contacts || 0)) {
         topAd = {
           name: item.campaign,
           channel: `${item.source} / ${item.medium}`,
@@ -615,7 +724,7 @@ function Acquisition() {
     return {
       organic: { sessions: orgSessions, share: orgShare, contacts: orgContacts, convRate: orgConvRate },
       paid: { sessions: paidSessions, share: paidShare, contacts: paidContacts, convRate: paidConvRate },
-      bestAd: topAd || (rawSm[0]?.campaign ? {
+      bestAd: topAd || (hasCampaign(rawSm[0]?.campaign) ? {
         name: rawSm[0].campaign,
         channel: `${rawSm[0].source} / ${rawSm[0].medium}`,
         contacts: Number(rawSm[0].whatsappClicks || 0),
@@ -640,7 +749,7 @@ function Acquisition() {
     }
     if (acqTab === 'campaign') {
       const map = new Map<string, { key: string; label: string; sub?: string; sessions: number; views: number; users: number; contacts: number }>();
-      rawSm.filter(item => Boolean(item.campaign && item.campaign.trim().length > 0)).forEach(item => {
+      rawSm.filter(item => hasCampaign(item.campaign)).forEach(item => {
         const k = item.campaign;
         const cur = map.get(k) || { key: k, label: k, sub: `${item.source} / ${item.medium}`, sessions: 0, views: 0, users: 0, contacts: 0 };
         cur.sessions += Number(item.sessions || 0);
@@ -663,128 +772,117 @@ function Acquisition() {
   }, [rawSm, acqTab]);
 
   const visibleItems = tableItems.slice(acqPage * ITEMS_PER_PAGE, (acqPage + 1) * ITEMS_PER_PAGE);
+  const maxSessions = Math.max(...tableItems.map(i => i.sessions), 1);
+  const sources = (analytics?.sources ?? []).map(s => ({ name: normalizeOriginName(s.name), value: Number(s.value || 0) }));
+  const srcTotal = sources.reduce((a, s) => a + s.value, 0);
+  const totalSessions = organic.sessions + paid.sessions;
+  const orgRate = organic.sessions ? (organic.contacts / organic.sessions) * 100 : 0;
+  const paidRate = paid.sessions ? (paid.contacts / paid.sessions) * 100 : 0;
+  const channelRates = useMemo(() => {
+    const map = new Map<string, { key: string, label: string, sub: string, paid: boolean, sessions: number, contacts: number }>();
+    rawSm.forEach(item => {
+      const k = `${item.source || '(direto)'}|${item.medium || '(nenhum)'}`;
+      const cur = map.get(k) || { key: k, label: normalizeOriginName(item.source), sub: formatMediumName(item.medium), paid: isPaidTraffic(item), sessions: 0, contacts: 0 };
+      cur.sessions += Number(item.sessions || 0);
+      cur.contacts += Number(item.whatsappClicks || item.contactClicks || 0);
+      map.set(k, cur);
+    });
+    return Array.from(map.values()).filter(c => c.sessions >= 10).map(c => ({ ...c, rate: (c.contacts / c.sessions) * 100 })).sort((a, b) => b.rate - a.rate).slice(0, 7);
+  }, [rawSm]);
+  const avgRate = totalSessions ? ((organic.contacts + paid.contacts) / totalSessions) * 100 : 0;
+  const bestChannel = channelRates[0];
+  const tabHelp: Record<typeof acqTab, string> = {
+    source: 'Cada linha é uma combinação de origem (de onde veio) e mídia (tipo de tráfego).',
+    campaign: 'Só o tráfego que veio com nome de campanha no link (parâmetro utm_campaign).',
+    content: 'Variações de anúncio ou criativo, quando o link tem o parâmetro utm_content.',
+    term: 'Palavras-chave das campanhas, quando o link tem o parâmetro utm_term.',
+  };
 
   return (
     <>
-      <PageHeader
-        title="Aquisição & Campanhas"
-        subtitle="Descubra como os visitantes encontram o seu site e quais anúncios, criativos e canais geram mais contatos."
-      />
+      <PageHeader report title="Aquisição & Campanhas" subtitle="Como as pessoas encontram o seu site e quais canais, anúncios e criativos trazem mais contatos."
+        guide={<><b>Como ler esta tela:</b> <b>espontâneo</b> é quem chegou sozinho (pesquisa no Google, redes sociais sem anúncio, quem digitou o endereço). <b>Pago</b> é quem veio de anúncios. O que importa não é só o volume, mas <b>quantos viram contato</b>.</>} />
       <AnalyticsFilters analytics={analytics} />
-      <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />RASTREADOR ANALIZI ATIVO</span>
-      </div>
-
-      <section className="metrics">
-        <DualMetricCard
-          title="Tráfego Orgânico vs. Pago"
-          organicSessions={organic.sessions.toLocaleString('pt-BR')}
-          organicShare={`${organic.share} do tráfego`}
-          organicContacts={organic.contacts}
-          organicConvRate={organic.convRate}
-          paidSessions={paid.sessions.toLocaleString('pt-BR')}
-          paidShare={`${paid.share} do tráfego`}
-          paidContacts={paid.contacts}
-          paidConvRate={paid.convRate}
-        />
-        <MetricCard
-          title="Origem principal"
-          value={topSource?.name ? normalizeOriginName(topSource.name) : '—'}
-          note={topSource ? `${topSource.value} acessos` : 'sem dados'}
-        />
-        <MetricCard
-          title="Melhor anúncio / criativo"
-          value={bestAd?.name || '—'}
-          subtitle={bestAd ? bestAd.channel : 'nenhuma campanha ativa'}
-          compactText={Boolean(bestAd?.name)}
-          note={bestAd ? `${bestAd.contacts} contatos (${bestAd.convRate.toFixed(1).replace('.', ',')}%)` : undefined}
-        />
-      </section>
-
-      <div className="dashboard-split" style={{ marginTop: 24 }}>
-        <OriginChart analytics={analytics} />
-
-        <article className="table-card compact-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Layers size={17} style={{ color: '#FF3CAC' }} />
-                <h3 style={{ margin: 0 }}>Desempenho por canal e criativo</h3>
-              </div>
-              <p className="chart-header-caption">Sessões, cliques e conversões por parâmetro de aquisição</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={acqTab === 'source' ? 'active' : ''}
-                onClick={() => { setAcqTab('source'); setAcqPage(0); }}
-              >
-                Source / Medium
-              </button>
-              <button
-                type="button"
-                className={acqTab === 'campaign' ? 'active' : ''}
-                onClick={() => { setAcqTab('campaign'); setAcqPage(0); }}
-              >
-                Campanhas
-              </button>
-              <button
-                type="button"
-                className={acqTab === 'content' ? 'active' : ''}
-                onClick={() => { setAcqTab('content'); setAcqPage(0); }}
-              >
-                Criativos
-              </button>
-              <button
-                type="button"
-                className={acqTab === 'term' ? 'active' : ''}
-                onClick={() => { setAcqTab('term'); setAcqPage(0); }}
-              >
-                Termos
-              </button>
-            </div>
+      <div className="rp">
+        <div className="rp-grid rp-g2">
+          <R.Card title="Tráfego espontâneo × pago" subtitle="Visitas que chegaram sozinhas comparadas às que vieram de anúncios"
+            help={{ what: 'Separa as visitas que vieram de anúncios (Google Ads, Meta Ads, links com campanha) das que chegaram de forma natural.', why: 'Mostra quanto o seu site depende de anúncio para ter movimento.' }}
+            read={totalSessions ? (paid.sessions && organic.sessions
+              ? <>Os anúncios trazem <b>{Math.round(R.share(paid.sessions, totalSessions))}%</b> das visitas e convertem <b>{R.fmtPct(paidRate)}</b>, contra <b>{R.fmtPct(orgRate)}</b> do tráfego espontâneo.</>
+              : paid.sessions ? <>Todo o tráfego do período veio de anúncios.</> : <>Nenhuma visita veio de anúncios neste período. Todo o movimento foi espontâneo.</>) : undefined}
+            tip={paid.sessions && organic.sessions ? (paidRate > orgRate * 1.2 ? 'Os anúncios trazem gente mais decidida. Vale manter as campanhas que mais convertem e pausar as que só trazem visitas.' : 'O tráfego espontâneo converte tão bem quanto o pago. Invista em conteúdo e no seu perfil do Google para crescer sem depender de anúncio.') : 'Para medir anúncios, use links com parâmetros UTM (utm_source, utm_medium e utm_campaign).'}>
+            {totalSessions ? (
+              <>
+                <div className="rp-split">
+                  {organic.sessions > 0 && <div style={{ width: `${R.share(organic.sessions, totalSessions)}%`, background: 'linear-gradient(100deg,#3B82F6,#7C5CF0)' }}>Espontâneo {Math.round(R.share(organic.sessions, totalSessions))}%</div>}
+                  {paid.sessions > 0 && <div style={{ flex: 1, background: 'linear-gradient(100deg,#FF3CAC,#FF8A3D)' }}>Pago {Math.round(R.share(paid.sessions, totalSessions))}%</div>}
+                </div>
+                <div className="rp-grid rp-g2e" style={{ marginTop: 12, gap: 12 }}>
+                  <div className="rp-mini"><span className="t">Espontâneo</span><b className="num">{R.fmt(organic.sessions)} visitas</b><small>{R.fmt(organic.contacts)} contatos · conversão {organic.convRate}</small></div>
+                  <div className="rp-mini"><span className="t">Pago (anúncios)</span><b className="num">{R.fmt(paid.sessions)} visitas</b><small>{R.fmt(paid.contacts)} contatos · conversão {paid.convRate}</small></div>
+                </div>
+              </>
+            ) : <R.Empty>Ainda não há visitas neste período.</R.Empty>}
+          </R.Card>
+          <div className="rp-grid rp-g2e" style={{ marginTop: 0 }}>
+            <R.Kpi label="Origem principal" text value={topSource?.name ? normalizeOriginName(topSource.name) : '—'}
+              desc={topSource && srcTotal ? `${Math.round(R.share(Number(topSource.value), srcTotal))}% dos acessos · ${R.fmt(topSource.value)} acessos` : 'Sem dados no período'}
+              help={{ what: 'O canal que mais trouxe visitas no período.', tip: 'Se um único canal traz quase tudo, vale diversificar para não depender dele.' }} />
+            <R.Kpi label="Melhor campanha" text value={bestAd?.name || '—'}
+              desc={bestAd ? `${bestAd.channel} · ${bestAd.contacts} contatos (${R.fmtPct(bestAd.convRate)})` : 'Nenhuma campanha com UTM no período'}
+              help={{ what: 'A campanha (utm_campaign) que mais gerou contatos.', why: 'Mostra onde o dinheiro de anúncio está rendendo mais.' }} />
+            <R.Kpi label="Canais ativos" value={R.fmt(channelRates.length || new Set(rawSm.map(i => `${i.source}|${i.medium}`)).size)} desc="Combinações de origem e mídia com visitas"
+              help={{ what: 'Quantas fontes diferentes (Google, Instagram, anúncios…) trouxeram visitas.' }} />
+            <R.Kpi label="Contatos de anúncios" value={R.fmt(paid.contacts)}
+              desc={organic.contacts + paid.contacts ? `${Math.round(R.share(paid.contacts, organic.contacts + paid.contacts))}% de todos os contatos` : 'Sem contatos no período'}
+              help={{ what: 'Contatos (WhatsApp e formulários) de quem chegou por anúncio.' }} />
           </div>
+        </div>
 
-          <div className="table-head" style={{ gridTemplateColumns: '1.4fr 80px 80px 90px 80px' }}>
-            <span>Origem / Dimensão</span>
-            <span>Sessões</span>
-            <span>Usuários</span>
-            <span>WhatsApp</span>
-            <span>Taxa Conv.</span>
-          </div>
+        <div className="rp-grid rp-g2e">
+          <R.Card title="Origens dos acessos" subtitle="Quantos acessos vieram de cada canal"
+            help={{ what: '"Direto" é quem digitou o endereço, usou um favorito ou abriu o link por um aplicativo que não informa a origem (como o WhatsApp).' }}
+            read={sources[0] ? <><b>{sources[0].name}</b> responde por {Math.round(R.share(sources[0].value, srcTotal))}% dos acessos{sources[1] ? <>, seguido por <b>{sources[1].name}</b> ({Math.round(R.share(sources[1].value, srcTotal))}%)</> : null}.</> : undefined}>
+            <R.HBars rows={sources.map(s => ({ key: s.name, label: s.name, value: s.value, display: <>{R.fmt(s.value)} <small style={{ color: 'var(--rp-muted)', fontWeight: 400 }}>{Math.round(R.share(s.value, srcTotal))}%</small></> }))} />
+          </R.Card>
+          <R.Card title="Qual canal converte melhor" subtitle="De cada 100 visitas de cada canal, quantas viraram contato"
+            help={{ what: 'Taxa de conversão = contatos ÷ visitas de cada canal. Só mostramos canais com pelo menos 10 visitas, para evitar números enganosos.', why: 'Um canal com poucas visitas e muita conversão pode valer mais que um canal grande que não converte.' }}
+            read={bestChannel ? <><b>{bestChannel.label}</b> ({bestChannel.sub}) converte <b>{R.fmtPct(bestChannel.rate)}</b>. A média do site é {R.fmtPct(avgRate)}.</> : undefined}
+            tip={bestChannel ? 'Coloque mais energia nos canais do topo desta lista. São eles que trazem gente pronta para falar com você.' : undefined}>
+            {channelRates.length ? (
+              <R.HBars max={Math.max(...channelRates.map(c => c.rate), 0.1)} rows={channelRates.map(c => ({
+                key: c.key, tone: c.paid ? 'pink' : 'blue', value: c.rate, display: R.fmtPct(c.rate),
+                label: <>{c.label} <R.Chip tone={c.paid ? 'brand' : 'neutral'}>{c.paid ? 'anúncio' : 'espontâneo'}</R.Chip></>,
+                sub: `${R.fmt(c.sessions)} visitas`,
+              }))} />
+            ) : <R.Empty>Ainda não há canais com visitas suficientes para comparar.</R.Empty>}
+          </R.Card>
+        </div>
 
-          {visibleItems.map(item => {
-            const conv = item.sessions > 0 ? ((item.contacts / item.sessions) * 100).toFixed(1).replace('.', ',') : '0,0';
-            return (
-              <div className="page-row" key={item.key} style={{ gridTemplateColumns: '1.4fr 80px 80px 90px 80px' }}>
-                <span>
-                  <b>{item.label}</b>
-                  {item.sub && <small style={{ color: 'var(--muted-foreground)' }}>{item.sub}</small>}
-                </span>
-                <span>{item.sessions.toLocaleString('pt-BR')}</span>
-                <span>{item.users.toLocaleString('pt-BR')}</span>
-                <span>
-                  <b style={{ color: item.contacts > 0 ? '#10b981' : undefined }}>
-                    {item.contacts.toLocaleString('pt-BR')}
-                  </b>
-                </span>
-                <span>
-                  <span className={`badge-pill ${Number(conv.replace(',', '.')) >= 3 ? 'good' : 'brand'}`}>
-                    {conv}%
-                  </span>
-                </span>
-              </div>
-            );
-          })}
-
-          {!visibleItems.length && (
-            <p className="empty-state">
-              Nenhum dado de aquisição registrado para o filtro e aba selecionados.
-            </p>
-          )}
-
-          <TablePagination page={acqPage} total={tableItems.length} setPage={setAcqPage} />
-        </article>
+        <div className="rp-grid">
+          <R.Card title="Desempenho por canal e criativo" subtitle={tabHelp[acqTab]}
+            help={{ what: 'UTM são etiquetas que você coloca no final dos links dos anúncios e posts (ex.: ?utm_source=instagram&utm_campaign=promo). Com elas, o Analizi sabe exatamente de onde veio cada visita.', tip: 'Use o mesmo padrão de nomes em todas as campanhas para comparar com facilidade.' }}
+            actions={<R.Tabs label="Agrupar tabela" value={acqTab} onChange={(v) => { setAcqTab(v); setAcqPage(0); }} options={[{ value: 'source', label: 'Origem / Mídia' }, { value: 'campaign', label: 'Campanhas' }, { value: 'content', label: 'Criativos' }, { value: 'term', label: 'Termos' }]} />}>
+            {visibleItems.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Canal / campanha</th><th>Sessões</th><th className="r">Usuários</th><th className="r">Contatos</th><th className="r">Conversão <Help align="right" title="Conversão" what="Contatos ÷ sessões do canal." tip="Verde: acima de 3%. Laranja: abaixo de 1%." /></th></tr></thead>
+                <tbody>{visibleItems.map(item => {
+                  const conv = item.sessions > 0 ? (item.contacts / item.sessions) * 100 : 0;
+                  return (
+                    <tr key={item.key}>
+                      <td className="pg"><b>{item.label}</b>{item.sub && <small>{item.sub}</small>}</td>
+                      <td><R.CellBar value={item.sessions} max={maxSessions} /></td>
+                      <td className="r num">{R.fmt(item.users)}</td>
+                      <td className="r num"><b>{R.fmt(item.contacts)}</b></td>
+                      <td className="r"><R.Chip tone={conv >= 3 ? 'good' : conv >= 1 ? 'neutral' : 'warn'}>{R.fmtPct(conv)}</R.Chip></td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            ) : <R.Empty>{acqTab === 'campaign' ? 'Nenhuma campanha com UTM no período. Adicione utm_campaign nos links dos seus anúncios para vê-las aqui.' : 'Nenhum dado de aquisição para os filtros e a aba selecionados.'}</R.Empty>}
+            <R.Pager page={acqPage} total={tableItems.length} perPage={ITEMS_PER_PAGE} setPage={setAcqPage} />
+          </R.Card>
+        </div>
       </div>
     </>
   );
@@ -842,7 +940,7 @@ function formatMediumName(raw?: string): string {
 function Audience() {
   const analytics = useAnalytics();
   const [sourcePage, setSourcePage] = useState(0);
-  const [sourceTab, setSourceTab] = useState<'all' | 'top'>('all');
+  const [sourceTab, setSourceTab] = useState<'all' | 'top'>('top');
   const [devicePage, setDevicePage] = useState(0);
   const [deviceTab, setDeviceTab] = useState<'devices' | 'browsers'>('devices');
   const [locationPage, setLocationPage] = useState(0);
@@ -972,199 +1070,173 @@ function Audience() {
     ? `${topLocation.region && topLocation.region !== 'Não identificado' ? `${topLocation.region} · ` : ''}${formatCountryName(topLocation.country)}`
     : undefined;
 
+  const totals = analytics?.totals;
+  const users = Number(totals?.users || 0), newUsers = Number(totals?.newUsers || 0);
+  const returning = Math.max(users - newUsers, 0);
+  const devAgg = aggregateDevices(rawDevices);
+  const devTotal = devAgg.reduce((a, d) => a + d.sessions, 0);
+  const mobile = devAgg.find(d => d.key === 'mobile');
+  const sources = (analytics?.sources ?? []).map(s => ({ name: normalizeOriginName(s.name), value: Number(s.value || 0) }));
+  const srcTotal = sources.reduce((a, s) => a + s.value, 0);
+  const locTotal = rawLocations.reduce((a, l) => a + Number(l.views || 0), 0);
+  const regionsAgg = new Map<string, number>();
+  rawLocations.forEach(l => { const k = l.region || 'Não identificado'; regionsAgg.set(k, (regionsAgg.get(k) || 0) + Number(l.views || 0)); });
+  const topRegionEntry = Array.from(regionsAgg.entries()).sort((a, b) => b[1] - a[1])[0];
+  // matriz canal × página (top 4 canais e top 5 páginas)
+  const matrix = useMemo(() => {
+    const byChannel = new Map<string, number>(), byPage = new Map<string, number>(), cell = new Map<string, number>();
+    sourcePages.forEach(item => {
+      const ch = normalizeOriginName(item.source); const v = Number(item.views || 0);
+      byChannel.set(ch, (byChannel.get(ch) || 0) + v); byPage.set(item.path, (byPage.get(item.path) || 0) + v);
+      cell.set(`${ch}|${item.path}`, (cell.get(`${ch}|${item.path}`) || 0) + v);
+    });
+    const channels = Array.from(byChannel.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0]);
+    const paths = Array.from(byPage.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+    const max = Math.max(...Array.from(cell.values()), 1);
+    return { channels, paths, cell, max };
+  }, [sourcePages]);
+  const pageTitle = (path: string) => analytics?.pages?.find(pg => pg.path === path)?.title || (path === '/' ? 'Página inicial' : path);
+  const maxDevSessions = Math.max(...aggregatedDevices.map(d => d.sessions), 1);
+  const maxLocViews = Math.max(...aggregatedLocations.map(l => l.views), 1);
+  const instagramTop = matrix.channels.includes('Instagram') ? matrix.paths.reduce<{ path: string, v: number } | null>((best, path) => { const v = matrix.cell.get(`Instagram|${path}`) || 0; return !best || v > best.v ? { path, v } : best; }, null) : null;
+
   return (
     <>
-      <PageHeader title="Seu público" subtitle="Entenda de onde vêm as pessoas que chegam ao seu site." />
+      <PageHeader report title="Seu público" subtitle="Quem são, de onde vêm e como acessam o seu site."
+        guide={<><b>Como ler esta tela:</b> <b>sessões</b> são visitas e <b>usuários</b> são pessoas. Uma pessoa que entrou 3 vezes conta 1 usuário e 3 sessões. Use esta tela para saber <b>em qual aparelho testar o site</b> e <b>onde anunciar</b>.</>} />
       <AnalyticsFilters analytics={analytics}/>
-      <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />{analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}</span>
-      </div>
-      <section className="metrics">
-        <MetricCard title="Sessões" value={String(analytics?.totals.sessions ?? '—')} {...comparison(analytics?.totals.sessions, p?.sessions)} />
-        <MetricCard title="Usuários" value={String(analytics?.totals.users ?? '—')} {...comparison(analytics?.totals.users, p?.users)} />
-        <MetricCard title="Novos usuários" value={String(analytics?.totals.newUsers ?? '—')} {...comparison(analytics?.totals.newUsers, p?.newUsers)} />
-        <MetricCard title="Origem principal" value={topSource?.name ? normalizeOriginName(topSource.name) : '—'} note={topSource ? `${topShare} do tráfego` : 'sem dados'} />
-        <MetricCard title="Localização principal" value={topLocationLabel} subtitle={topLocationSub} note={topLocation ? `${topLocation.views} visualizações` : 'sem dados'} />
-      </section>
-      <div className="audience-split">
-        <OriginChart analytics={analytics}/>
-        <article className="table-card compact-table source-pages-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Compass size={17} style={{ color: '#ff3cac' }} />
-                <h3 style={{ margin: 0 }}>Origem por página</h3>
-              </div>
-              <p>Onde o tráfego de cada canal desembarcou</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={sourceTab === 'all' ? 'active' : ''}
-                onClick={() => { setSourceTab('all'); setSourcePage(0); }}
-              >
-                Todos os canais
-              </button>
-              <button
-                type="button"
-                className={sourceTab === 'top' ? 'active' : ''}
-                onClick={() => { setSourceTab('top'); setSourcePage(0); }}
-              >
-                Top 10 páginas
-              </button>
-            </div>
-          </div>
-          <div className="source-pages-head">
-            <span>Canal</span>
-            <span>Página de destino</span>
-            <span>Visualizações</span>
-            <span>Usuários</span>
-          </div>
-          {visibleSources.map(item => (
-            <div className="source-pages-row" key={`${item.source}-${item.path}`}>
-              <span><b>{normalizeOriginName(item.source)}</b></span>
-              <span><code className="path-code">{item.path}</code></span>
-              <span><b>{Number(item.views || 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(item.users || 0).toLocaleString('pt-BR')}</span>
-            </div>
-          ))}
-          {!filteredSources.length && <p className="empty-state">Ainda não recebemos dados de origens de tráfego.</p>}
-          <TablePagination page={sourcePage} total={filteredSources.length} setPage={setSourcePage}/>
-        </article>
-      </div>
-
-      <article className="table-card compact-table devices-table" style={{ marginTop: 18 }}>
-        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <Monitor size={17} style={{ color: '#3b82f6' }} />
-              <h3 style={{ margin: 0 }}>Dispositivos e navegadores</h3>
-            </div>
-            <p>Quais aparelhos e navegadores as pessoas utilizam para acessar o seu site</p>
-          </div>
-          <div className="heatmap-segmented-control">
-            <button
-              type="button"
-              className={deviceTab === 'devices' ? 'active' : ''}
-              onClick={() => { setDeviceTab('devices'); setDevicePage(0); }}
-            >
-              Por Dispositivo
-            </button>
-            <button
-              type="button"
-              className={deviceTab === 'browsers' ? 'active' : ''}
-              onClick={() => { setDeviceTab('browsers'); setDevicePage(0); }}
-            >
-              Dispositivo + Navegador
-            </button>
-          </div>
+      <div className="rp">
+        <div className="rp-grid rp-g5">
+          <R.Kpi label="Sessões" value={R.fmt(totals?.sessions)} delta={R.change(totals?.sessions, p?.sessions)} desc="Visitas recebidas no período"
+            help={{ what: 'Cada vez que alguém abre o site conta uma sessão. A mesma pessoa pode ter várias.', why: 'Mede o movimento total do site.' }} />
+          <R.Kpi label="Usuários" value={R.fmt(users)} delta={R.change(users, p?.users)} desc="Pessoas diferentes"
+            help={{ what: 'Pessoas diferentes que visitaram o site no período.' }} />
+          <R.Kpi label="Novos usuários" value={R.fmt(newUsers)} delta={R.change(newUsers, p?.newUsers)} desc="Primeira visita ao site"
+            help={{ what: 'Pessoas que entraram no site pela primeira vez.', tip: 'Se a maioria é nova, foque em fazer o primeiro contato fácil (WhatsApp visível).' }} />
+          <R.Kpi label="Origem principal" text value={topSource?.name ? normalizeOriginName(topSource.name) : '—'} desc={topSource ? `${topShare} do tráfego` : 'Sem dados'}
+            help={{ what: 'Canal que mais trouxe visitas. Veja detalhes em Aquisição & Campanhas.' }} />
+          <R.Kpi label="Localização principal" text value={topLocationLabel} desc={topLocation ? `${topLocationSub ?? ''} · ${R.fmt(topLocation.views)} visualizações` : 'Sem dados'}
+            help={{ what: 'Cidade de onde vem a maior parte dos acessos, identificada pela conexão de internet.', why: 'Ajuda a escolher a região dos anúncios.' }} />
         </div>
-        <div className="devices-head">
-          <span>Dispositivo</span>
-          <span>Navegador</span>
-          <span>Sessões</span>
-          <span>Visualizações</span>
-          <span>Usuários</span>
-          <span>Novos usuários</span>
-          <span>Participação</span>
-        </div>
-        {visibleDevices.map((dev) => {
-          const share = totalDeviceViews > 0 ? `${Math.round((dev.views / totalDeviceViews) * 100)}%` : '0%';
-          const isMobile = dev.device.toLowerCase().includes('mobile');
-          const isTablet = dev.device.toLowerCase().includes('tablet');
-          const DevIcon = isMobile ? Smartphone : isTablet ? Tablet : Monitor;
-          return (
-            <div className="devices-row" key={dev.key}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <DevIcon size={14} style={{ color: isMobile ? '#ff3cac' : '#3b82f6', flexShrink: 0 }} />
-                <b>{dev.device}</b>
-              </span>
-              <span>{dev.browser}</span>
-              <span>{Number(dev.sessions || 0).toLocaleString('pt-BR')}</span>
-              <span><b>{Number(dev.views || 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(dev.users || 0).toLocaleString('pt-BR')}</span>
-              <span>{Number(dev.newUsers || 0).toLocaleString('pt-BR')}</span>
-              <span><b>{share}</b></span>
-            </div>
-          );
-        })}
-        {!aggregatedDevices.length && (
-          <p className="empty-state">
-            Ainda não recebemos dados de dispositivos para os filtros selecionados neste período.
-          </p>
-        )}
-        <TablePagination page={devicePage} total={aggregatedDevices.length} setPage={setDevicePage} />
-      </article>
 
-      <div className="geo-map-split" style={{ marginTop: 18 }}>
-        <BrazilGeoMap locations={analytics?.locations} />
-
-        <article className="table-card compact-table geo-locations-table" style={{ margin: 0 }}>
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <MapPin size={17} style={{ color: '#ff3cac' }} />
-                <h3 style={{ margin: 0 }}>Localização geográfica (Cidade, Estado e País)</h3>
+        <div className="rp-grid rp-g3">
+          <R.Card title="Novos × recorrentes" subtitle="Quem veio pela primeira vez e quem voltou"
+            help={{ what: 'Recorrentes são pessoas que já tinham visitado o site antes deste período ou dentro dele.', why: 'Quem volta costuma estar mais perto de virar cliente.' }}
+            read={users ? <>A cada 10 pessoas, <b>{Math.round(R.share(returning, users) / 10)}</b> já conheciam o site.</> : undefined}
+            tip={users && R.share(returning, users) < 20 ? 'Poucos voltam. Ofereça um motivo para retornar: blog, novidades ou um lembrete pelo WhatsApp.' : users ? 'Boa lembrança de marca. Mantenha o site atualizado para quem volta encontrar novidades.' : undefined}>
+            {users ? (
+              <div className="rp-dn">
+                <R.Donut center={R.fmt(users)} centerLabel="pessoas" segments={[{ value: newUsers, color: '#3B82F6' }, { value: returning, color: '#FF3CAC' }]} />
+                <ul className="rp-list" style={{ flex: 1, minWidth: 0 }}>
+                  <li><i style={{ background: '#3B82F6' }} />Novos<b>{R.fmt(newUsers)}</b><small>{Math.round(R.share(newUsers, users))}% · primeira visita</small></li>
+                  <li><i style={{ background: '#FF3CAC' }} />Voltaram<b>{R.fmt(returning)}</b><small>{Math.round(R.share(returning, users))}% · já conheciam</small></li>
+                </ul>
               </div>
-              <p>De quais cidades, estados e países seus visitantes estão acessando o site</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={locationTab === 'cities' ? 'active' : ''}
-                onClick={() => { setLocationTab('cities'); setLocationPage(0); }}
-              >
-                Cidades
-              </button>
-              <button
-                type="button"
-                className={locationTab === 'regions' ? 'active' : ''}
-                onClick={() => { setLocationTab('regions'); setLocationPage(0); }}
-              >
-                Estados / Regiões
-              </button>
-              <button
-                type="button"
-                className={locationTab === 'countries' ? 'active' : ''}
-                onClick={() => { setLocationTab('countries'); setLocationPage(0); }}
-              >
-                Países
-              </button>
-            </div>
-          </div>
-          <div className="geo-locations-head">
-            <span>Cidade</span>
-            <span>Estado / Região</span>
-            <span>País</span>
-            <span>Visualizações</span>
-            <span>Usuários</span>
-            <span>Contatos</span>
-          </div>
-          {visibleLocations.map((loc) => (
-            <div className="geo-locations-row" key={loc.key}>
-              <span><b>{loc.city}</b></span>
-              <span>{loc.region}</span>
-              <span>{loc.country}</span>
-              <span><b>{Number(loc.views || 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(loc.users || 0).toLocaleString('pt-BR')}</span>
-              <span>
-                <b style={{ color: Number(loc.conversions || 0) > 0 ? '#10b981' : undefined }}>
-                  {Number(loc.conversions || 0).toLocaleString('pt-BR')}
-                </b>
-              </span>
-            </div>
-          ))}
-          {!aggregatedLocations.length && (
-            <p className="empty-state">
-              Ainda não há dados geográficos consolidados neste período. Novos acessos já estão sendo registrados com Cidade, Estado e País.
-            </p>
-          )}
-          <TablePagination page={locationPage} total={aggregatedLocations.length} setPage={setLocationPage} />
-        </article>
+            ) : <R.Empty>Ainda não há visitantes neste período.</R.Empty>}
+          </R.Card>
+          <R.Card title="Aparelhos" subtitle="Por onde as pessoas acessam"
+            read={mobile && devTotal ? <><b>{Math.round(R.share(mobile.sessions, devTotal))}%</b> das visitas são pelo celular.</> : undefined}
+            tip={mobile && R.share(mobile.sessions, devTotal) > 50 ? 'A maioria usa celular. Sempre teste o site no telefone e deixe o botão de WhatsApp fácil de tocar.' : devTotal ? 'Boa parte usa computador. Capriche em fotos e textos mais completos.' : undefined}>
+            {devTotal ? (
+              <>
+                <R.StackBar height={18} segments={devAgg.map(d => ({ value: d.sessions, color: DEVICE_COLOR[d.key] || '#9CA3AF', label: d.label }))} />
+                <ul className="rp-list" style={{ marginTop: 10 }}>
+                  {devAgg.map(d => <li key={d.key}><i style={{ background: DEVICE_COLOR[d.key] || '#9CA3AF' }} />{d.label}<b>{Math.round(R.share(d.sessions, devTotal))}%</b><small>{R.fmt(d.sessions)} sessões · {R.fmt(d.conversions)} contatos</small></li>)}
+                </ul>
+              </>
+            ) : <R.Empty>Ainda não há dados de aparelhos neste período.</R.Empty>}
+          </R.Card>
+          <R.Card title="Origens dos acessos" subtitle="Canais de onde seu público chegou"
+            read={sources[0] ? <><b>{sources[0].name}</b> traz {Math.round(R.share(sources[0].value, srcTotal))}% dos acessos.</> : undefined}>
+            <R.HBars rows={sources.slice(0, 6).map(s => ({ key: s.name, label: s.name, value: s.value }))} />
+          </R.Card>
+        </div>
+
+        <div className="rp-grid rp-g2e">
+          <R.Card title="Onde estão" subtitle="Acessos por estado no mapa e ranking ao lado"
+            help={{ what: 'A localização vem da conexão de internet. Pode indicar a cidade da operadora em vez da cidade exata.', why: 'Mostra se você está alcançando a região onde atende.' }}
+            read={topRegionEntry && locTotal ? <><b>{Math.round(R.share(topRegionEntry[1], locTotal))}%</b> dos acessos vêm de <b>{topRegionEntry[0]}</b>.</> : undefined}
+            tip={topRegionEntry ? 'Se você atende só uma região, limite os anúncios a ela para não pagar por cliques de longe.' : undefined}>
+            <BrazilGeoMap locations={analytics?.locations} />
+          </R.Card>
+          <R.Card title="Ranking de localização" subtitle="Cidades, estados e países com mais acessos"
+            actions={<R.Tabs label="Agrupar localização" value={locationTab} onChange={(v) => { setLocationTab(v); setLocationPage(0); }} options={[{ value: 'cities', label: 'Cidades' }, { value: 'regions', label: 'Estados' }, { value: 'countries', label: 'Países' }]} />}>
+            {visibleLocations.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>{locationTab === 'cities' ? 'Cidade' : locationTab === 'regions' ? 'Estado' : 'País'}</th><th>Visualizações</th><th className="r">Usuários</th><th className="r">Contatos</th></tr></thead>
+                <tbody>{visibleLocations.map(loc => (
+                  <tr key={loc.key}>
+                    <td className="pg"><b>{locationTab === 'cities' ? loc.city : locationTab === 'regions' ? loc.region : loc.country}</b><small>{locationTab === 'cities' ? `${loc.region} · ${loc.country}` : locationTab === 'regions' ? loc.country : ''}</small></td>
+                    <td><R.CellBar value={loc.views} max={maxLocViews} /></td>
+                    <td className="r num">{R.fmt(loc.users)}</td>
+                    <td className="r">{loc.conversions > 0 ? <R.Chip tone="good">{R.fmt(loc.conversions)}</R.Chip> : <span className="num">0</span>}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            ) : <R.Empty>Ainda não há dados geográficos neste período. Os novos acessos já são registrados com cidade, estado e país.</R.Empty>}
+            <R.Pager page={locationPage} total={aggregatedLocations.length} perPage={ITEMS_PER_PAGE} setPage={setLocationPage} />
+          </R.Card>
+        </div>
+
+        <div className="rp-grid rp-g2e">
+          <R.Card title="Origem por página" subtitle="Por qual página cada canal entra no site. Quanto mais forte a cor, mais visualizações."
+            help={{ what: 'Cruza o canal de origem com a primeira página vista (página de entrada).', why: 'Mostra se cada canal está levando as pessoas para a página certa.' }}
+            actions={<R.Tabs label="Formato" value={sourceTab} onChange={(v) => { setSourceTab(v); setSourcePage(0); }} options={[{ value: 'top', label: 'Mapa de calor' }, { value: 'all', label: 'Lista completa' }]} />}
+            read={instagramTop && instagramTop.v > 0 ? <>Quem vem do <b>Instagram</b> entra mais por <b>{pageTitle(instagramTop.path)}</b>.</> : undefined}
+            tip="Nos links de bio, anúncios e posts, aponte direto para a página do serviço anunciado, não só para a página inicial.">
+            {sourceTab === 'top' ? (matrix.channels.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Canal ↓ · Página →</th>{matrix.paths.map(path => <th key={path} className="r" title={path}>{pageTitle(path).length > 16 ? `${pageTitle(path).slice(0, 15)}…` : pageTitle(path)}</th>)}</tr></thead>
+                <tbody>{matrix.channels.map(ch => (
+                  <tr key={ch}><td><b>{ch}</b></td>{matrix.paths.map(path => {
+                    const v = matrix.cell.get(`${ch}|${path}`) || 0; const f = v / matrix.max;
+                    return <td key={path} className="r num heat" style={{ background: R.heatColor(f * 0.9), color: f > 0.5 ? '#fff' : undefined, fontWeight: f > 0.5 ? 700 : undefined }}>{R.fmt(v)}</td>;
+                  })}</tr>
+                ))}</tbody>
+              </table></div>
+            ) : <R.Empty>Ainda não recebemos dados de origem por página.</R.Empty>) : (
+              <>
+                {visibleSources.length ? (
+                  <div className="rp-tw"><table className="rp-t">
+                    <thead><tr><th>Canal</th><th>Página de entrada</th><th className="r">Visualizações</th><th className="r">Usuários</th></tr></thead>
+                    <tbody>{visibleSources.map(item => (
+                      <tr key={`${item.source}-${item.path}`}><td><b>{normalizeOriginName(item.source)}</b></td><td><code>{item.path}</code></td><td className="r num"><b>{R.fmt(item.views)}</b></td><td className="r num">{R.fmt(item.users)}</td></tr>
+                    ))}</tbody>
+                  </table></div>
+                ) : <R.Empty>Ainda não recebemos dados de origem por página.</R.Empty>}
+                <R.Pager page={sourcePage} total={filteredSources.length} perPage={ITEMS_PER_PAGE} setPage={setSourcePage} />
+              </>
+            )}
+          </R.Card>
+          <R.Card title="Dispositivos e navegadores" subtitle="Detalhe por aparelho e navegador"
+            help={{ what: 'Navegador é o programa usado para abrir o site (Chrome, Safari…).', tip: 'Se um navegador tem muitas visitas e poucos contatos, teste o site nele: pode haver algo quebrado.' }}
+            actions={<R.Tabs label="Agrupar aparelhos" value={deviceTab} onChange={(v) => { setDeviceTab(v); setDevicePage(0); }} options={[{ value: 'devices', label: 'Por aparelho' }, { value: 'browsers', label: 'Aparelho + navegador' }]} />}>
+            {visibleDevices.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Aparelho</th>{deviceTab === 'browsers' && <th>Navegador</th>}<th>Sessões</th><th className="r">Novos</th><th className="r">Participação</th></tr></thead>
+                <tbody>{visibleDevices.map(dev => {
+                  const isMobile = dev.device.toLowerCase().includes('mobile'); const isTablet = dev.device.toLowerCase().includes('tablet');
+                  const DevIcon = isMobile ? Smartphone : isTablet ? Tablet : Monitor;
+                  return (
+                    <tr key={dev.key}>
+                      <td><b style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><DevIcon size={14} style={{ color: 'var(--rp-muted)' }} />{DEVICE_LABEL[deviceKey(dev.key.split('-')[0])] || dev.device}</b></td>
+                      {deviceTab === 'browsers' && <td>{dev.browser}</td>}
+                      <td><R.CellBar value={dev.sessions} max={maxDevSessions} /></td>
+                      <td className="r num">{R.fmt(dev.newUsers)}</td>
+                      <td className="r"><b>{totalDeviceViews > 0 ? `${Math.round((dev.views / totalDeviceViews) * 100)}%` : '0%'}</b></td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            ) : <R.Empty>Ainda não recebemos dados de dispositivos para os filtros selecionados.</R.Empty>}
+            <R.Pager page={devicePage} total={aggregatedDevices.length} perPage={ITEMS_PER_PAGE} setPage={setDevicePage} />
+          </R.Card>
+        </div>
       </div>
     </>
   );
 }
+
 function isLeadClick(item: { intent?: string, isContactLead?: number, label: string, destination?: string }): boolean {
   if (item.isContactLead === 1) return true;
   if (item.intent && item.intent !== 'geral' && item.intent !== 'outro' && item.intent !== 'download' && item.intent !== 'link_externo') return true;
@@ -1236,7 +1308,7 @@ function Results() {
   const filteredSmResults = smTab === 'conversions'
     ? rawSmResults.filter(item => Number(item.whatsappClicks || 0) > 0 || Number(item.contactClicks || 0) > 0)
     : smTab === 'campaigns'
-    ? rawSmResults.filter(item => Boolean(item.campaign && item.campaign.trim().length > 0))
+    ? rawSmResults.filter(item => hasCampaign(item.campaign))
     : rawSmResults;
 
   const filteredLeadClicks = leadClickTab === 'whatsapp'
@@ -1325,381 +1397,191 @@ function Results() {
   const visibleSmResults = filteredSmResults.slice(smPage * ITEMS_PER_PAGE, (smPage + 1) * ITEMS_PER_PAGE);
   const contactRate = t?.sessions ? `${((Number(t.contactSessions || 0) / Number(t.sessions)) * 100).toFixed(1).replace('.', ',')}%` : '—';
 
+  const [leadView, setLeadView] = useState<'buttons' | 'days'>('buttons');
+  const contacts = Number(t?.contacts || 0), whatsapp = Number(t?.whatsappContacts || 0), signups = Number(t?.signUps || 0);
+  const otherContacts = Math.max(contacts - whatsapp - signups, 0);
+  const contactRateNum = t?.sessions ? (Number(t.contactSessions || 0) / Number(t.sessions)) * 100 : 0;
+  const daily = analytics?.daily ?? [];
+  const waByDate = new Map<string, number>();
+  (analytics?.contactDetails ?? []).filter(c => c.type === 'whatsapp').forEach(c => waByDate.set(c.date, (waByDate.get(c.date) || 0) + Number(c.contacts || 0)));
+  const hasWaDetail = waByDate.size > 0;
+  const waSeries = daily.map(d => Math.min(waByDate.get(d.date) || 0, Number(d.contacts || 0)));
+  const restSeries = daily.map((d, i) => Math.max(Number(d.contacts || 0) - (hasWaDetail ? waSeries[i] : 0), 0));
+  const leadButtons = (() => {
+    const map = new Map<string, { key: string, label: string, path: string, destination?: string, clicks: number, sessions: number }>();
+    filteredLeadClicks.forEach(c => { const k = `${c.label}|${c.path}`; const cur = map.get(k) || { key: k, label: c.label, path: c.path, destination: c.destination, clicks: 0, sessions: 0 }; cur.clicks += Number(c.clicks || 0); cur.sessions += Number(c.sessions || 0); map.set(k, cur); });
+    return Array.from(map.values()).sort((a, b) => b.clicks - a.clicks);
+  })();
+  const leadList = leadView === 'buttons' ? leadButtons : filteredLeadClicks;
+  const visibleLead = leadList.slice(leadClickPage * ITEMS_PER_PAGE, (leadClickPage + 1) * ITEMS_PER_PAGE);
+  const maxLeadClicks = Math.max(...leadButtons.map(b => b.clicks), 1);
+  const maxConvTotal = Math.max(...currentConversionList.map(i => Number(i.total || 0)), 1);
+  const maxSmWa = Math.max(...filteredSmResults.map(i => Number(i.whatsappClicks || 0)), 1);
+  const bestPage = pageConversions.filter(pc => pc.sessions >= 20).sort((a, b) => b.conversionRate - a.conversionRate)[0];
+  const pageTitle = (path: string) => analytics?.pages?.find(pg => pg.path === path)?.title || (path === '/' ? 'Página inicial' : path);
+  const shortDest = (d?: string) => (d ? d.replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 32) : '—');
+
   return (
     <>
-      <PageHeader title="Resultados" subtitle="Acompanhe as oportunidades e contatos gerados pelo seu site." />
+      <PageHeader report title="Resultados" subtitle="Os contatos e oportunidades que o seu site gerou."
+        guide={<><b>Como ler esta tela:</b> <b>contato iniciado</b> é quando alguém clica para falar com você (WhatsApp, telefone) ou envia um cadastro. Não quer dizer que virou venda, mas é o melhor sinal de interesse. Use as tabelas para descobrir <b>quais páginas, botões e canais</b> trazem esses contatos.</>} />
       <AnalyticsFilters analytics={analytics} />
-      <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />{analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}</span>
-      </div>
-      <section className="metrics">
-        <MetricCard title="Contatos iniciados" value={String(t?.contacts ?? '—')} {...comparison(t?.contacts, p?.contacts)} />
-        <MetricCard title="WhatsApp" value={String(t?.whatsappContacts ?? '—')} {...comparison(t?.whatsappContacts, p?.whatsappContacts)} />
-        <MetricCard title="Cadastros" value={String(t?.signUps ?? '—')} {...comparison(t?.signUps, p?.signUps)} />
-        <MetricCard title="Formulários enviados" value={String(formSubmits || '—')} note="envios confirmados" />
-        <MetricCard title="Intenções de compra" value={String(purchaseIntents || '—')} note="checkout, pagamento ou assinatura" />
-        <MetricCard title="Downloads de arquivos" value={String(totalDownloads || '—')} note="arquivos baixados no site" />
-        <MetricCard title="Cliques de saída" value={String(totalOutbound || '—')} note="links externos clicados" />
-        {formStarts > 0 ? (
-          <MetricCard
-            title="Abandono de formulário"
-            value={`${formAbandonRate}%`}
-            note={`${formAbandons} saíram de ${formStarts} iniciados`}
-          />
-        ) : (
-          <MetricCard title="Logins" value={String(t?.logins ?? '—')} {...comparison(t?.logins, p?.logins)} />
-        )}
-        <MetricCard title="Taxa de contato" value={contactRate} note="sessões com ação" />
-      </section>
-
-      <article className="table-card compact-table source-medium-table" style={{ marginTop: '24px' }}>
-        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <Layers size={17} style={{ color: '#3b82f6' }} />
-              <h3 style={{ margin: 0 }}>Origem, Mídia e Campanha</h3>
+      <div className="rp">
+        <div className="rp-grid" style={{ gridTemplateColumns: 'minmax(0,1.25fr) minmax(0,1fr)' }}>
+          <R.Card title="Contatos iniciados" subtitle="Todas as formas de contato somadas" actions={<R.Delta value={R.change(t?.contacts, p?.contacts)} emptyLabel="sem comparação" />}
+            help={{ what: 'Soma dos cliques em WhatsApp e telefone e dos cadastros enviados pelo site.', why: 'É o principal resultado do seu site: pessoas que levantaram a mão.' }}
+            read={contacts ? <>De cada 100 visitas, <b>{R.fmtDec(contactRateNum)}</b> terminaram em contato. {whatsapp ? <>O WhatsApp responde por <b>{Math.round(R.share(whatsapp, contacts))}%</b> deles.</> : null}</> : undefined}
+            tip={contacts ? (R.share(whatsapp, contacts) > 60 ? 'O WhatsApp é o seu canal principal. Responda rápido: a primeira hora é quando a pessoa está mais interessada.' : 'Os formulários têm peso grande. Confira se os e-mails de cadastro estão chegando e sendo respondidos.') : 'Adicione um botão de WhatsApp visível em todas as páginas para começar a receber contatos.'}>
+            <div className="rp-big"><b className="num">{R.fmt(contacts)}</b><span>contatos · <b style={{ color: 'var(--rp-fg)' }}>{contactRate}</b> das visitas <Help title="Taxa de contato" what="Sessões com pelo menos um contato ÷ total de sessões." tip="Entre 2% e 5% é comum em sites de serviços." /></span></div>
+            <div style={{ marginTop: 12 }}><R.StackBar height={16} segments={[{ value: whatsapp, color: '#FF3CAC', label: 'WhatsApp' }, { value: signups, color: '#FF8A3D', label: 'Cadastros' }, { value: otherContacts, color: '#7C5CF0', label: 'Outros' }]} /></div>
+            <div className="rp-grid rp-g3" style={{ marginTop: 10, gap: 10 }}>
+              <div className="rp-mini"><span className="t"><i style={{ width: 8, height: 8, borderRadius: 2, background: '#FF3CAC', display: 'inline-block' }} />WhatsApp</span><b className="num">{R.fmt(whatsapp)}</b><R.Delta value={R.change(t?.whatsappContacts, p?.whatsappContacts)} /></div>
+              <div className="rp-mini"><span className="t"><i style={{ width: 8, height: 8, borderRadius: 2, background: '#FF8A3D', display: 'inline-block' }} />Cadastros</span><b className="num">{R.fmt(signups)}</b><R.Delta value={R.change(t?.signUps, p?.signUps)} /></div>
+              <div className="rp-mini"><span className="t">Formulários enviados<Help title="Formulários enviados" what="Envios confirmados de formulários de contato, agendamento, orçamento ou newsletter." /></span><b className={`num ${formSubmits ? '' : 'empty'}`}>{formSubmits ? R.fmt(formSubmits) : '—'}</b><small>{formSubmits ? 'envios confirmados' : 'nenhum envio'}</small></div>
             </div>
-            <p>Sessões, visualizações de páginas, usuários e cliques divididos por canal de tráfego</p>
-          </div>
-          <div className="heatmap-segmented-control">
-            <button
-              type="button"
-              className={smTab === 'all' ? 'active' : ''}
-              onClick={() => { setSmTab('all'); setSmPage(0); }}
-            >
-              Todos os canais
-            </button>
-            <button
-              type="button"
-              className={smTab === 'conversions' ? 'active' : ''}
-              onClick={() => { setSmTab('conversions'); setSmPage(0); }}
-            >
-              Com conversões
-            </button>
-            <button
-              type="button"
-              className={smTab === 'campaigns' ? 'active' : ''}
-              onClick={() => { setSmTab('campaigns'); setSmPage(0); }}
-            >
-              Apenas campanhas
-            </button>
-          </div>
-        </div>
-        <div className="source-medium-head">
-          <span>Origem / Mídia</span>
-          <span>Campanha</span>
-          <span>Sessões</span>
-          <span>Visualizações</span>
-          <span>Usuários</span>
-          <span>Cliques gerais</span>
-          <span>Cliques contatos</span>
-          <span>Cliques WhatsApp</span>
-        </div>
-        {visibleSmResults.map((item, index) => {
-          const sourceDisplay = normalizeOriginName(item.source);
-          const mediumDisplay = formatMediumName(item.medium);
-          const campaignDisplay = item.campaign && item.campaign.trim().length > 0 ? item.campaign : '—';
-          return (
-            <div className="source-medium-row" key={`${item.source}-${item.medium}-${item.campaign}-${index}`}>
-              <span>
-                <b>{sourceDisplay}</b> <small style={{ color: 'var(--muted-foreground, #64748b)' }}>/ {mediumDisplay}</small>
-              </span>
-              <span>{campaignDisplay !== '—' ? <b>{campaignDisplay}</b> : '—'}</span>
-              <span>{Number(item.sessions || 0).toLocaleString('pt-BR')}</span>
-              <span><b>{Number(item.pageViews ?? item.views ?? 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(item.users || 0).toLocaleString('pt-BR')}</span>
-              <span>{Number(item.generalClicks || 0).toLocaleString('pt-BR')}</span>
-              <span>{Number(item.contactClicks || 0).toLocaleString('pt-BR')}</span>
-              <span><b style={{ color: Number(item.whatsappClicks || 0) > 0 ? '#10b981' : undefined }}>{Number(item.whatsappClicks || 0).toLocaleString('pt-BR')}</b></span>
-            </div>
-          );
-        })}
-        {!filteredSmResults.length && <p className="empty-state">Nenhum dado de origem e mídia registrado no período para os filtros selecionados.</p>}
-        <TablePagination page={smPage} total={filteredSmResults.length} setPage={setSmPage} />
-      </article>
-
-      <div className="results-tables" style={{ marginTop: '24px' }}>
-        <article className="table-card compact-table results-conversion-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Target size={17} style={{ color: '#10b981' }} />
-                <h3 style={{ margin: 0 }}>Desempenho de conversão</h3>
-              </div>
-              <p>
-                {conversionTab === 'pages'
-                  ? 'Páginas do site que mais convertem visitantes em contatos e leads'
-                  : 'Canais e fontes de tráfego com maior taxa de conversão'}
-              </p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={conversionTab === 'pages' ? 'active' : ''}
-                onClick={() => { setConversionTab('pages'); setConversionPage(0); }}
-              >
-                Por Página
-              </button>
-              <button
-                type="button"
-                className={conversionTab === 'channels' ? 'active' : ''}
-                onClick={() => { setConversionTab('channels'); setConversionPage(0); }}
-              >
-                Por Canal
-              </button>
-            </div>
-          </div>
-
-          {conversionTab === 'pages' ? (
-            <>
-              <div className="conversion-detail-head">
-                <span>Página</span>
-                <span>Sessões</span>
-                <span>WhatsApp</span>
-                <span>Cadastros</span>
-                <span>Com contato</span>
-                <span>Taxa de contato</span>
-              </div>
-              {visibleConversions.map((rawItem, index) => {
-                const item = rawItem as typeof pageConversions[number];
-                const hasConv = item.total > 0;
-                return (
-                  <div className="conversion-detail-row" key={`${item.path}-${index}`}>
-                    <span title={item.path} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      <code className="path-code">{item.path}</code>
-                    </span>
-                    <span>{Number(item.sessions || 0).toLocaleString('pt-BR')}</span>
-                    <span>
-                      <b style={{ color: item.whatsapp > 0 ? '#10b981' : undefined }}>
-                        {item.whatsapp > 0 ? Number(item.whatsapp).toLocaleString('pt-BR') : '—'}
-                      </b>
-                    </span>
-                    <span>
-                      {item.signups > 0 ? Number(item.signups).toLocaleString('pt-BR') : '—'}
-                    </span>
-                    <span>
-                      <b style={{ color: hasConv ? '#10b981' : undefined }}>
-                        {Number(item.total).toLocaleString('pt-BR')}
-                      </b>
-                    </span>
-                    <span>
-                      <span className={`conversion-rate-badge ${item.conversionRate > 0 ? 'active' : 'empty'}`}>
-                        {item.conversionRate > 0 ? `${item.conversionRate.toFixed(1).replace('.', ',')}%` : '0%'}
-                      </span>
-                    </span>
-                  </div>
-                );
-              })}
-              {!pageConversions.length && (
-                <p className="empty-state">Nenhuma página com sessões ou contatos no período selecionado.</p>
+          </R.Card>
+          <R.Card title="Outras ações no site" subtitle="Sinais de interesse que ainda não são contato">
+            <div className="rp-grid rp-g2e" style={{ marginTop: 0, gap: 10 }}>
+              <div className="rp-mini"><span className="t">Intenções de compra<Help title="Intenções de compra" what="Pessoas que começaram um checkout, pagamento ou assinatura." /></span><b className={purchaseIntents ? '' : 'empty'}>{purchaseIntents ? R.fmt(purchaseIntents) : '—'}</b><small>checkout, pagamento ou assinatura</small></div>
+              <div className="rp-mini"><span className="t">Downloads<Help title="Downloads" what="Arquivos baixados no site, como PDFs, cardápios e catálogos." /></span><b className={totalDownloads ? '' : 'empty'}>{totalDownloads ? R.fmt(totalDownloads) : '—'}</b><small>arquivos baixados</small></div>
+              <div className="rp-mini"><span className="t">Cliques de saída<Help title="Cliques de saída" what="Cliques em links que levam para outros sites (Google Maps, redes sociais…)." /></span><b className={totalOutbound ? '' : 'empty'}>{totalOutbound ? R.fmt(totalOutbound) : '—'}</b><small>links para outros sites</small></div>
+              {formStarts > 0 ? (
+                <div className="rp-mini"><span className="t">Abandono de formulário<Help title="Abandono de formulário" what="Pessoas que começaram a preencher um formulário e desistiram." tip="Formulários longos espantam. Peça só o essencial." /></span><b>{formAbandonRate}%</b><small>{formAbandons} desistiram de {formStarts} iniciados</small></div>
+              ) : (
+                <div className="rp-mini"><span className="t">Logins<Help title="Logins" what="Acessos à área restrita do seu site, se houver." /></span><b className={Number(t?.logins || 0) ? '' : 'empty'}>{R.fmt(t?.logins)}</b><small>acessos à área restrita</small></div>
               )}
-            </>
-          ) : (
-            <>
-              <div className="conversion-detail-head">
-                <span>Canal</span>
-                <span>Sessões</span>
-                <span>WhatsApp</span>
-                <span>Outros</span>
-                <span>Com contato</span>
-                <span>Taxa de contato</span>
-              </div>
-              {visibleConversions.map((rawItem, index) => {
-                const item = rawItem as typeof channelConversions[number];
-                const sourceDisplay = normalizeOriginName(item.source);
-                const mediumDisplay = formatMediumName(item.medium);
-                const hasConv = item.total > 0;
-                return (
-                  <div className="conversion-detail-row" key={`${item.source}-${item.medium}-${index}`}>
-                    <span title={`${sourceDisplay} / ${mediumDisplay}`} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      <b>{sourceDisplay}</b> <small style={{ color: 'var(--muted-foreground, #64748b)' }}>/ {mediumDisplay}</small>
-                    </span>
-                    <span>{Number(item.sessions || 0).toLocaleString('pt-BR')}</span>
-                    <span>
-                      <b style={{ color: item.whatsapp > 0 ? '#10b981' : undefined }}>
-                        {item.whatsapp > 0 ? Number(item.whatsapp).toLocaleString('pt-BR') : '—'}
-                      </b>
-                    </span>
-                    <span>
-                      {item.others > 0 ? Number(item.others).toLocaleString('pt-BR') : '—'}
-                    </span>
-                    <span>
-                      <b style={{ color: hasConv ? '#10b981' : undefined }}>
-                        {Number(item.total).toLocaleString('pt-BR')}
-                      </b>
-                    </span>
-                    <span>
-                      <span className={`conversion-rate-badge ${item.conversionRate > 0 ? 'active' : 'empty'}`}>
-                        {item.conversionRate > 0 ? `${item.conversionRate.toFixed(1).replace('.', ',')}%` : '0%'}
-                      </span>
-                    </span>
-                  </div>
-                );
-              })}
-              {!channelConversions.length && (
-                <p className="empty-state">Nenhum canal com tráfego registrado no período selecionado.</p>
-              )}
-            </>
-          )}
+            </div>
+            <div style={{ marginTop: 'auto', paddingTop: 12 }}><R.Tip>Se o seu site não tem loja, downloads ou área restrita, é normal estes números ficarem zerados.</R.Tip></div>
+          </R.Card>
+        </div>
 
-          <TablePagination page={conversionPage} total={currentConversionList.length} setPage={setConversionPage} />
-        </article>
+        <div className="rp-grid">
+          <R.Card title="Contatos ao longo do período" subtitle="Passe o mouse em cada barra para ver os detalhes do dia"
+            actions={<div className="rp-legend">{hasWaDetail ? <><span><i style={{ background: '#FF3CAC' }} />WhatsApp</span><span><i style={{ background: '#FF8A3D' }} />Outros contatos</span></> : <span><i style={{ background: '#FF3CAC' }} />Contatos</span>}</div>}
+            read={daily.length ? (() => { const mx = Math.max(...daily.map(d => Number(d.contacts || 0))); const d = daily.find(x => Number(x.contacts || 0) === mx); return d && mx ? <>O melhor dia foi <b>{R.shortDate(d.date)} ({R.WEEKDAYS[R.weekdayOf(d.date)]})</b>, com {mx} contatos.</> : undefined; })() : undefined}>
+            <R.StackedBars unit="contatos" labels={daily.map(d => R.shortDate(d.date))}
+              series={hasWaDetail ? [{ name: 'WhatsApp', color: '#FF3CAC', values: waSeries }, { name: 'outros', color: '#FF8A3D', values: restSeries }] : [{ name: 'contatos', color: '#FF3CAC', values: restSeries }]} />
+          </R.Card>
+        </div>
 
-        <article className="table-card compact-table click-detail-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <MousePointerClick size={17} style={{ color: '#ff3cac' }} />
-                <h3 style={{ margin: 0 }}>Cliques com intenção de contato</h3>
-              </div>
-              <p>Cliques em botões de WhatsApp, telefone e formulários</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={leadClickTab === 'all' ? 'active' : ''}
-                onClick={() => { setLeadClickTab('all'); setLeadClickPage(0); }}
-              >
-                Todos
-              </button>
-              <button
-                type="button"
-                className={leadClickTab === 'whatsapp' ? 'active' : ''}
-                onClick={() => { setLeadClickTab('whatsapp'); setLeadClickPage(0); }}
-              >
-                WhatsApp
-              </button>
-              <button
-                type="button"
-                className={leadClickTab === 'forms' ? 'active' : ''}
-                onClick={() => { setLeadClickTab('forms'); setLeadClickPage(0); }}
-              >
-                Formulários
-              </button>
-            </div>
-          </div>
-          <div className="click-detail-head">
-            <span>Data</span>
-            <span>Botão</span>
-            <span>Página</span>
-            <span>Destino</span>
-            <span>Cliques</span>
-          </div>
-          {visibleLeadClicks.map((item, index) => (
-            <div className="click-detail-row" key={`${item.date}-${item.label}-${item.path}-${index}`}>
-              <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
-              <span><b>{item.label}</b>{item.buttonId ? <small>#{item.buttonId}</small> : null}</span>
-              <span><code className="path-code">{item.path}</code></span>
-              <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
-              <span><b>{Number(item.clicks || 0).toLocaleString('pt-BR')}</b></span>
-            </div>
-          ))}
-          {!filteredLeadClicks.length && <p className="empty-state">Nenhum clique de contato foi identificado no período.</p>}
-          <TablePagination page={leadClickPage} total={filteredLeadClicks.length} setPage={setLeadClickPage} />
-        </article>
+        <div className="rp-grid rp-g2e">
+          <R.Card title={conversionTab === 'pages' ? 'Páginas que mais convertem' : 'Canais que mais convertem'}
+            subtitle={conversionTab === 'pages' ? 'Contatos gerados a partir de cada página' : 'Contatos gerados por canal de origem'}
+            help={{ what: 'Taxa de contato = sessões que tiveram contato ÷ sessões que passaram pela página (ou vieram do canal).', tip: 'Divulgue mais as páginas e canais com taxa alta.' }}
+            actions={<R.Tabs label="Ver por" value={conversionTab} onChange={(v) => { setConversionTab(v); setConversionPage(0); }} options={[{ value: 'pages', label: 'Por página' }, { value: 'channels', label: 'Por canal' }]} />}
+            read={conversionTab === 'pages' && bestPage ? <><b>{pageTitle(bestPage.path)}</b> converte <b>{R.fmtPct(bestPage.conversionRate)}</b> das visitas. É a página que mais vale divulgar.</> : undefined}>
+            {visibleConversions.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>{conversionTab === 'pages' ? 'Página' : 'Canal'}</th><th>Contatos</th><th className="r">WhatsApp</th><th className="r">{conversionTab === 'pages' ? 'Cadastros' : 'Outros'}</th><th className="r">Taxa</th></tr></thead>
+                <tbody>{visibleConversions.map((raw, index) => {
+                  const isPage = conversionTab === 'pages';
+                  const item = raw as (typeof pageConversions)[number] & (typeof channelConversions)[number];
+                  const extra = isPage ? (raw as (typeof pageConversions)[number]).signups : (raw as (typeof channelConversions)[number]).others;
+                  return (
+                    <tr key={index}>
+                      <td className="pg">{isPage ? <><b>{pageTitle(item.path)}</b><code>{item.path}</code></> : <><b>{normalizeOriginName(item.source)}</b><small>{formatMediumName(item.medium)}</small></>}</td>
+                      <td><R.CellBar tone="pink" value={Number(item.total || 0)} max={maxConvTotal} /></td>
+                      <td className="r num">{item.whatsapp ? R.fmt(item.whatsapp) : '—'}</td>
+                      <td className="r num">{extra ? R.fmt(extra) : '—'}</td>
+                      <td className="r"><R.Chip tone={item.conversionRate >= 5 ? 'good' : item.conversionRate > 0 ? 'neutral' : 'warn'}>{R.fmtPct(item.conversionRate)}</R.Chip></td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            ) : <R.Empty>Nenhuma página ou canal com sessões neste período.</R.Empty>}
+            <R.Pager page={conversionPage} total={currentConversionList.length} perPage={ITEMS_PER_PAGE} setPage={setConversionPage} />
+          </R.Card>
+
+          <R.Card title="Botões de contato mais clicados" subtitle="Cliques em WhatsApp, telefone e formulários"
+            help={{ what: 'Botões e links identificados como contato: WhatsApp, telefone, e-mail ou textos como "agende", "orçamento" e "fale conosco".', tip: 'Se um botão importante não aparece aqui, confira se o texto dele deixa claro que é para contato.' }}
+            actions={<>
+              <R.Tabs label="Tipo de contato" value={leadClickTab} onChange={(v) => { setLeadClickTab(v); setLeadClickPage(0); }} options={[{ value: 'all', label: 'Todos' }, { value: 'whatsapp', label: 'WhatsApp' }, { value: 'forms', label: 'Outros' }]} />
+              <R.Tabs label="Agrupar" value={leadView} onChange={(v) => { setLeadView(v); setLeadClickPage(0); }} options={[{ value: 'buttons', label: 'Por botão' }, { value: 'days', label: 'Por dia' }]} />
+            </>}
+            read={leadButtons[0] ? <>O botão <b>“{leadButtons[0].label}”</b> em <b>{pageTitle(leadButtons[0].path)}</b> gera a maior parte dos cliques de contato.</> : undefined}>
+            {visibleLead.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr>{leadView === 'days' && <th>Data</th>}<th>Botão</th><th>{leadView === 'buttons' ? 'Cliques' : 'Página'}</th>{leadView === 'days' && <th className="r">Cliques</th>}</tr></thead>
+                <tbody>{leadView === 'buttons'
+                  ? (visibleLead as typeof leadButtons).map(b => (
+                    <tr key={b.key}><td className="pg"><b>{b.label}</b><small>em <code>{b.path}</code> → {shortDest(b.destination)}</small></td><td><R.CellBar tone="pink" value={b.clicks} max={maxLeadClicks} /></td></tr>
+                  ))
+                  : (visibleLead as typeof filteredLeadClicks).map((item, index) => (
+                    <tr key={`${item.date}-${item.label}-${index}`}><td><b>{R.shortDate(item.date)}</b></td><td className="pg"><b>{item.label}</b><small>{shortDest(item.destination)}</small></td><td><code>{item.path}</code></td><td className="r num"><b>{R.fmt(item.clicks)}</b></td></tr>
+                  ))}
+                </tbody>
+              </table></div>
+            ) : <R.Empty>Nenhum clique de contato identificado no período.</R.Empty>}
+            <R.Pager page={leadClickPage} total={leadList.length} perPage={ITEMS_PER_PAGE} setPage={setLeadClickPage} />
+          </R.Card>
+        </div>
+
+        <div className="rp-grid">
+          <R.Card title="Origem, mídia e campanha" subtitle="Visitas, cliques e contatos de cada canal de tráfego"
+            help={{ what: 'Cliques gerais são todos os cliques em botões e links. Cliques de contato são só os de WhatsApp, telefone e formulários.' }}
+            actions={<R.Tabs label="Filtrar canais" value={smTab} onChange={(v) => { setSmTab(v); setSmPage(0); }} options={[{ value: 'all', label: 'Todos os canais' }, { value: 'conversions', label: 'Com contatos' }, { value: 'campaigns', label: 'Só campanhas' }]} />}>
+            {visibleSmResults.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Canal</th><th>Campanha</th><th className="r">Sessões</th><th className="r">Visualizações</th><th className="r">Usuários</th><th className="r">Cliques gerais</th><th className="r">Cliques de contato</th><th>WhatsApp</th></tr></thead>
+                <tbody>{visibleSmResults.map((item, index) => (
+                  <tr key={`${item.source}-${item.medium}-${item.campaign}-${index}`}>
+                    <td className="pg"><b>{normalizeOriginName(item.source)}</b><small>{formatMediumName(item.medium)}</small></td>
+                    <td>{hasCampaign(item.campaign) ? <code>{item.campaign}</code> : <small className="m">sem campanha</small>}</td>
+                    <td className="r num">{R.fmt(item.sessions)}</td>
+                    <td className="r num">{R.fmt(item.pageViews ?? item.views)}</td>
+                    <td className="r num">{R.fmt(item.users)}</td>
+                    <td className="r num">{R.fmt(item.generalClicks)}</td>
+                    <td className="r num">{R.fmt(item.contactClicks)}</td>
+                    <td><R.CellBar tone="pink" value={Number(item.whatsappClicks || 0)} max={maxSmWa} /></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            ) : <R.Empty>Nenhum dado de origem e mídia para os filtros selecionados.</R.Empty>}
+            <R.Pager page={smPage} total={filteredSmResults.length} perPage={ITEMS_PER_PAGE} setPage={setSmPage} />
+          </R.Card>
+        </div>
+
+        <div className="rp-grid">
+          <R.Card title="Histórico de conversões e intenções" subtitle="Envios confirmados de formulário e ações comerciais iniciadas"
+            help={{ what: '"Confirmada" quer dizer que o envio foi concluído. "Iniciada" quer dizer que a pessoa começou, mas não sabemos se terminou.' }}>
+            {visibleConversionEvents.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Data</th><th>Tipo</th><th>Nome</th><th>Página</th><th>Status</th><th className="r">Total</th></tr></thead>
+                <tbody>{visibleConversionEvents.map((item, index) => (
+                  <tr key={`${item.date}-${item.type}-${item.name}-${index}`}>
+                    <td><b>{R.shortDate(item.date)}</b></td><td>{conversionTypeLabel(item.type)}</td><td>{item.name || '—'}</td><td><code>{item.path}</code></td>
+                    <td><R.Chip tone={item.stage === 'confirmada' ? 'good' : 'warn'}>{item.stage === 'confirmada' ? 'Confirmada' : 'Iniciada'}</R.Chip></td>
+                    <td className="r num"><b>{R.fmt(item.conversions)}</b></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            ) : <R.Empty>Ainda não há conversões ou intenções registradas neste período.</R.Empty>}
+            <R.Pager page={conversionEventPage} total={conversionEvents.length} perPage={ITEMS_PER_PAGE} setPage={setConversionEventPage} />
+          </R.Card>
+        </div>
+
+        <div className="rp-grid">
+          <R.Card title="Outros cliques no site" subtitle="Botões e links que não são de contato: navegação, downloads e links externos"
+            help={{ what: 'Ajuda a entender o que as pessoas procuram antes de falar com você.', tip: 'Se um botão de navegação é muito clicado, o assunto dele interessa: destaque-o mais.' }}
+            actions={<R.Tabs label="Tipo de clique" value={generalClickTab} onChange={(v) => { setGeneralClickTab(v); setGeneralClickPage(0); }} options={[{ value: 'top', label: 'Mais clicados' }, { value: 'downloads', label: `Downloads${totalDownloads ? ` (${totalDownloads})` : ''}` }, { value: 'outbound', label: `Links externos${totalOutbound ? ` (${totalOutbound})` : ''}` }, { value: 'all', label: 'Histórico recente' }]} />}>
+            {visibleGeneralClicks.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Data</th><th>Texto do botão</th><th>ID do botão</th><th>Destino</th><th className="r">Cliques</th></tr></thead>
+                <tbody>{visibleGeneralClicks.map((item, index) => (
+                  <tr key={`${item.date}-${item.label}-${index}`}>
+                    <td><b>{R.shortDate(item.date)}</b></td>
+                    <td><b>{item.label}</b> {isDownloadClick(item) && <R.Chip tone="brand">Download</R.Chip>} {isOutboundClick(item) && <R.Chip tone="neutral">Externo</R.Chip>}</td>
+                    <td>{item.buttonId ? <code>#{item.buttonId}</code> : '—'}</td>
+                    <td title={item.destination}><small className="m">{shortDest(item.destination)}</small></td>
+                    <td className="r num"><b>{R.fmt(item.clicks)}</b></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            ) : <R.Empty>Nenhum clique desse tipo foi registrado no período.</R.Empty>}
+            <R.Pager page={generalClickPage} total={sortedGeneralClicks.length} perPage={ITEMS_PER_PAGE} setPage={setGeneralClickPage} />
+          </R.Card>
+        </div>
       </div>
-
-      <article className="table-card compact-table conversion-events-table" style={{ marginTop: '24px' }}>
-        <div className="section-heading">
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <Target size={17} style={{ color: '#10b981' }} />
-              <h3 style={{ margin: 0 }}>Conversões e intenções</h3>
-            </div>
-            <p>Envios confirmados de formulário e ações comerciais iniciadas</p>
-          </div>
-        </div>
-        <div className="conversion-event-head">
-          <span>Data</span>
-          <span>Tipo</span>
-          <span>Nome</span>
-          <span>Página</span>
-          <span>Status</span>
-          <span>Total</span>
-        </div>
-        {visibleConversionEvents.map((item, index) => (
-          <div className="conversion-event-row" key={`${item.date}-${item.type}-${item.name}-${item.path}-${index}`}>
-            <span>{item.date.slice(5).split('-').reverse().join('/')}</span>
-            <span><b>{conversionTypeLabel(item.type)}</b></span>
-            <span>{item.name || '—'}</span>
-            <span><code className="path-code">{item.path}</code></span>
-            <span>{item.stage === 'confirmada' ? 'Confirmada' : 'Iniciada'}</span>
-            <span><b>{Number(item.conversions || 0).toLocaleString('pt-BR')}</b></span>
-          </div>
-        ))}
-        {!conversionEvents.length && <p className="empty-state">Ainda não há conversões ou intenções registradas neste período.</p>}
-        <TablePagination page={conversionEventPage} total={conversionEvents.length} setPage={setConversionEventPage} />
-      </article>
-
-      <article className="table-card general-clicks-table" style={{ marginTop: '24px' }}>
-        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <Target size={17} style={{ color: '#f59e0b' }} />
-              <h3 style={{ margin: 0 }}>Cliques em botões diversos</h3>
-            </div>
-            <p>Todos os cliques capturados em botões e links navegacionais pelo rastreador</p>
-          </div>
-          <div className="heatmap-segmented-control">
-            <button
-              type="button"
-              className={generalClickTab === 'top' ? 'active' : ''}
-              onClick={() => { setGeneralClickTab('top'); setGeneralClickPage(0); }}
-            >
-              Mais clicados
-            </button>
-            <button
-              type="button"
-              className={generalClickTab === 'downloads' ? 'active' : ''}
-              onClick={() => { setGeneralClickTab('downloads'); setGeneralClickPage(0); }}
-            >
-              Downloads {totalDownloads > 0 ? `(${totalDownloads})` : ''}
-            </button>
-            <button
-              type="button"
-              className={generalClickTab === 'outbound' ? 'active' : ''}
-              onClick={() => { setGeneralClickTab('outbound'); setGeneralClickPage(0); }}
-            >
-              Links externos {totalOutbound > 0 ? `(${totalOutbound})` : ''}
-            </button>
-            <button
-              type="button"
-              className={generalClickTab === 'all' ? 'active' : ''}
-              onClick={() => { setGeneralClickTab('all'); setGeneralClickPage(0); }}
-            >
-              Histórico recente
-            </button>
-          </div>
-        </div>
-        <div className="general-clicks-head">
-          <span>Data</span>
-          <span>Texto do botão</span>
-          <span>ID do botão</span>
-          <span>Destino / Href</span>
-          <span>Cliques</span>
-        </div>
-        {visibleGeneralClicks.map((item, index) => {
-          const isDownload = isDownloadClick(item);
-          const isOutbound = isOutboundClick(item);
-          return (
-            <div className="general-clicks-row" key={`${item.date}-${item.label}-${item.buttonId}-${item.destination}-${index}`}>
-              <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
-              <span>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <b>{item.label}</b>
-                  {isDownload && <span className="action-badge download">Download</span>}
-                  {isOutbound && <span className="action-badge outbound">Externo</span>}
-                </div>
-              </span>
-              <span>{item.buttonId ? <small>#{item.buttonId}</small> : '—'}</span>
-              <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
-              <span><b>{Number(item.clicks || 0).toLocaleString('pt-BR')}</b></span>
-            </div>
-          );
-        })}
-        {!sortedGeneralClicks.length && <p className="empty-state">Nenhum clique em botões diversos foi registrado no período.</p>}
-        <TablePagination page={generalClickPage} total={sortedGeneralClicks.length} setPage={setGeneralClickPage} />
-      </article>
     </>
   );
 }
@@ -1829,96 +1711,79 @@ function Insights() {
   ];
 
   const activeInsights = insights.length > 0 ? insights : defaultInsights;
+  const isExample = insights.length === 0;
+  const [insTab, setInsTab] = useState<'all' | 'neutral' | 'warning' | 'positive' | 'done'>('all');
+  const keyOf = (item: GeneratedInsight) => item.key || item.title;
+  const counts = {
+    open: activeInsights.filter(i => !readKeys.includes(keyOf(i))).length,
+    neutral: activeInsights.filter(i => i.status === 'neutral').length,
+    warning: activeInsights.filter(i => i.status === 'warning').length,
+    positive: activeInsights.filter(i => i.status === 'positive').length,
+  };
+  const shown = activeInsights.filter(i => insTab === 'all' ? true : insTab === 'done' ? readKeys.includes(keyOf(i)) : i.status === insTab);
+  const tone = (s: GeneratedInsight['status']) => s === 'warning' ? { color: '#FF8A3D', chip: 'warn' as const, Icon: AlertTriangle, label: 'Alerta' } : s === 'positive' ? { color: '#15803D', chip: 'good' as const, Icon: CircleCheck, label: 'Ponto positivo' } : { color: '#3B82F6', chip: 'neutral' as const, Icon: Sparkles, label: 'Oportunidade' };
 
   return (
     <>
-      <div className="insights-header-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <PageHeader
-            title="Insights"
-            subtitle={`Diagnósticos inteligentes consolidados para o seu site (${scopeLabel}).`}
-          />
-          <span className="badge-ia" style={{ marginTop: -18 }}>
-            <Sparkles size={13} /> IA
-          </span>
-        </div>
-        <div className="insights-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="source-badge">
-            <span className="source-badge-dot"></span>
-            RASTREADOR ANALIZI ATIVO
-          </span>
-        </div>
-      </div>
-
+      <PageHeader report title="Insights" subtitle={`Descobertas sobre o seu site, com o que fazer a seguir. Análise ${scopeLabel} gerada por IA a partir dos seus dados.`}
+        guide={<><b>Como usar:</b> leia cada cartão da esquerda para a direita: <b>o que os dados mostram</b>, <b>o que fazer</b> e <b>o resultado esperado</b>. Depois de aplicar a sugestão, clique em <b>Marcar como feito</b> para acompanhar o que já resolveu.</>} />
       <AnalyticsFilters analytics={analytics} />
+      <div className="rp">
+        {isExample && !loadingAI && (
+          <div className="rp-guide" role="status" style={{ marginTop: 4 }}>
+            <Info size={16} />
+            <span><b>Estes são exemplos.</b> Ainda não conseguimos gerar a análise do seu site, normalmente porque há poucos dados no período. Tente um período maior (30D) ou clique em <b>Gerar nova análise</b>.</span>
+          </div>
+        )}
+        <div className="rp-isum">
+          <div><Sparkles size={20} style={{ color: 'var(--rp-primary)' }} /><b>{counts.open}</b><span>{counts.open === 1 ? 'insight em aberto' : 'insights em aberto'}</span></div>
+          <div><Sparkles size={20} style={{ color: '#3B82F6' }} /><b>{counts.neutral}</b><span>{counts.neutral === 1 ? 'oportunidade' : 'oportunidades'}</span></div>
+          <div><AlertTriangle size={20} style={{ color: '#FF8A3D' }} /><b>{counts.warning}</b><span>{counts.warning === 1 ? 'alerta' : 'alertas'}</span></div>
+          <div><CircleCheck size={20} style={{ color: '#15803D' }} /><b>{counts.positive}</b><span>{counts.positive === 1 ? 'ponto positivo' : 'pontos positivos'}</span></div>
+        </div>
+        <div className="rp-fbar" style={{ marginTop: 14 }}>
+          <R.Tabs label="Filtrar insights" value={insTab} onChange={setInsTab} options={[{ value: 'all', label: 'Todos' }, { value: 'neutral', label: 'Oportunidades' }, { value: 'warning', label: 'Alertas' }, { value: 'positive', label: 'Pontos positivos' }, { value: 'done', label: `Feitos (${activeInsights.filter(i => readKeys.includes(keyOf(i))).length})` }]} />
+          <span className="rp-cmp">{modelLabel}{cachedNotice ? ' · análise salva desta semana' : ''} <Help align="right" title="De onde vêm os insights" what="A IA cruza os números do seu site com o seu segmento de negócio e aponta o que mais pode fazer diferença." tip="Os insights são sugestões. Use seu conhecimento do negócio para decidir o que aplicar." /></span>
+          <button type="button" className="rp-btn" onClick={() => void fetchInsights()} disabled={loadingAI || !analytics}>
+            <Sparkles size={15} className={loadingAI ? 'spin' : ''} />{loadingAI ? 'Analisando…' : 'Gerar nova análise'}
+          </button>
+        </div>
 
-      {loadingAI && !insights.length ? (
-        <section className="insights-loading-state" style={{ padding: 40, textAlign: 'center' }}>
-          <Sparkles size={32} className="spin" style={{ color: '#ff3cac', marginBottom: 12 }} />
-          <p style={{ fontSize: 14 }}>O Analizi está cruzando o comportamento do seu público com o seu segmento...</p>
-        </section>
-      ) : (
-        <section className="insights-modern-grid">
-          {activeInsights.map((item) => {
-            const read = readKeys.includes(item.key || item.title);
-            const isPos = item.status === 'positive';
-            const isWarn = item.status === 'warning';
-            const badgeType = isWarn ? 'warning' : isPos ? 'success' : 'opportunity';
-
-            return (
-              <article
-                className={`insight-card-system ${read ? 'viewed' : ''}`}
-                key={item.key || item.title}
-              >
-                <div className={`insight-icon-box ${badgeType}`}>
-                  {isWarn ? (
-                    <AlertTriangle size={22} />
-                  ) : isPos ? (
-                    <CircleCheck size={22} />
-                  ) : (
-                    <Sparkles size={22} />
-                  )}
+        {loadingAI && !insights.length ? (
+          <div className="rp-card" style={{ marginTop: 14, alignItems: 'center', textAlign: 'center', padding: 40 }}>
+            <Sparkles size={32} className="spin" style={{ color: 'var(--rp-pink)', marginBottom: 12 }} />
+            <p style={{ margin: 0, color: 'var(--rp-muted)' }}>O Analizi está cruzando o comportamento do seu público com o seu segmento. Isso leva alguns segundos…</p>
+          </div>
+        ) : shown.length ? shown.map(item => {
+          const done = readKeys.includes(keyOf(item));
+          const tn = tone(item.status);
+          return (
+            <article className={`rp-ins ${done ? 'done' : ''}`} key={keyOf(item)}>
+              <i style={{ background: tn.color }} />
+              <div className="rp-ins-body">
+                <div className="rp-ins-top">
+                  <tn.Icon size={16} style={{ color: tn.color }} />
+                  <R.Chip tone={tn.chip}>{item.badge || tn.label}</R.Chip>
+                  {isExample && <R.Chip tone="brand">Exemplo</R.Chip>}
+                  <span>avaliado em {date}</span>
+                  {done && <R.Chip tone="good">✓ Feito</R.Chip>}
                 </div>
-
-                <div className="insight-content-system">
-                  <div className="insight-meta-row">
-                    <span className={`insight-badge-pill ${badgeType}`}>{item.badge}</span>
-                    <span className="insight-date-stamp">Avaliado em {date}</span>
-                  </div>
-
-                  <h3>{item.title}</h3>
-
-                  <div className="insight-box-block">
-                    <strong style={{ display: 'block', marginBottom: 4, color: 'var(--foreground)' }}>O que os dados mostram:</strong>
-                    <span>{item.finding}</span>
-                  </div>
-
-                  <div className="insight-action-grid">
-                    <div className="insight-sub-box">
-                      <span className="insight-sub-box-title">Recomendação prática:</span>
-                      <p>{item.action}</p>
-                    </div>
-
-                    <div className="insight-sub-box">
-                      <span className="insight-sub-box-title">Projeção esperada:</span>
-                      <p>{item.projection}</p>
-                    </div>
-                  </div>
+                <h3>{item.title}</h3>
+                <div className="rp-ins-cols">
+                  <div><h4><Eye size={13} />O que os dados mostram</h4>{item.finding}</div>
+                  <div><h4><Lightbulb size={13} />O que fazer</h4>{item.action}</div>
+                  <div><h4><TrendingUp size={13} />Resultado esperado</h4><b>{item.projection}</b></div>
                 </div>
-
-                <button
-                  className="insight-read"
-                  onClick={() => toggleRead(item.key || item.title)}
-                  title={read ? 'Marcar como não lido' : 'Marcar como resolvido'}
-                  style={{ alignSelf: 'flex-start', marginTop: 4 }}
-                >
-                  <span />
-                </button>
-              </article>
-            );
-          })}
-        </section>
-      )}
+                <div className="rp-ins-act">
+                  <button type="button" className="rp-btn ghost" onClick={() => toggleRead(keyOf(item))}>
+                    {done ? <><RefreshCw size={14} />Reabrir</> : <><Check size={14} />Marcar como feito</>}
+                  </button>
+                </div>
+              </div>
+            </article>
+          );
+        }) : <div className="rp-card" style={{ marginTop: 14 }}><R.Empty>{insTab === 'done' ? 'Você ainda não marcou nenhum insight como feito.' : 'Nenhum insight deste tipo no momento.'}</R.Empty></div>}
+      </div>
     </>
   );
 }
@@ -2105,155 +1970,98 @@ function AnalyticsFilters({ analytics }: { analytics: AnalyticsData | null }) {
   const uniqueDevices = Array.from(new Set((analytics?.filterDevices ?? []).map(item => item.device).filter(Boolean)));
   const uniqueBrowsers = Array.from(new Set((analytics?.filterBrowsers ?? []).map(item => item.browser).filter(Boolean)));
 
+  const [open, setOpen] = useState(false);
+  const activeFilters: Array<{ key: keyof AnalyticsFilter, label: string }> = [
+    filter.page ? { key: 'page' as const, label: `Página: ${filter.page === '/' ? 'Página inicial' : filter.page}` } : null,
+    filter.device ? { key: 'device' as const, label: `Aparelho: ${formatDeviceName(filter.device)}` } : null,
+    filter.browser ? { key: 'browser' as const, label: `Navegador: ${filter.browser}` } : null,
+    filter.source ? { key: 'source' as const, label: `Origem: ${filter.source}` } : null,
+    filter.medium ? { key: 'medium' as const, label: `Mídia: ${formatMediumName(filter.medium)}` } : null,
+    filter.campaign ? { key: 'campaign' as const, label: `Campanha: ${filter.campaign}` } : null,
+  ].filter(Boolean) as Array<{ key: keyof AnalyticsFilter, label: string }>;
+  const groupLabel: Record<AnalyticsFilter['group'], string> = { day: 'dia', week: 'semana', month: 'mês', quarter: 'trimestre', semester: 'semestre', year: 'ano' };
+  const presets: Array<[number, string]> = [[7, '7D'], [14, '14D'], [30, '30D'], [90, '90D'], [365, '1A']];
+
   return (
-    <div className="analytics-filters">
-      <div className="filters-main-row">
-        {/* Date Picker Range */}
-        <div className="filter-group-date">
-          <Calendar size={14} className="filter-field-icon" />
-          <label className="filter-date-label">
-            <span>De</span>
-            <input
-              type="date"
-              className="filter-date-input"
-              value={filter.start}
-              max={filter.end}
-              min={shiftDays(filter.end, -729)}
-              onChange={(event) => apply({ ...filter, start: event.target.value })}
-            />
-          </label>
-          <span className="filter-date-sep">–</span>
-          <label className="filter-date-label">
-            <span>Até</span>
-            <input
-              type="date"
-              className="filter-date-input"
-              value={filter.end}
-              max={maxAvailableDate}
-              min={filter.start}
-              onChange={(event) => apply({ ...filter, end: event.target.value })}
-            />
-          </label>
+    <div className="rp rp-filters">
+      <div className="rp-fbar">
+        <div className="rp-seg" role="group" aria-label="Período rápido">
+          {presets.map(([days, label]) => (
+            <button key={label} type="button" className={(days === 365 ? currentDays >= 360 : currentDays === days) ? 'on' : ''} onClick={() => preset(days)} title={`Últimos ${days === 365 ? '12 meses' : `${days} dias`}`}>{label}</button>
+          ))}
         </div>
-
-        {/* Quick Period Presets */}
-        <div className="filter-quick-pills">
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays === 7 ? 'active' : ''}`}
-            onClick={() => preset(7)}
-          >
-            7D
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays === 14 ? 'active' : ''}`}
-            onClick={() => preset(14)}
-          >
-            14D
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays === 30 ? 'active' : ''}`}
-            onClick={() => preset(30)}
-          >
-            30D
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays === 90 ? 'active' : ''}`}
-            onClick={() => preset(90)}
-          >
-            90D
-          </button>
-          <button
-            type="button"
-            className={`filter-pill-btn ${currentDays >= 360 ? 'active' : ''}`}
-            onClick={() => preset(365)}
-          >
-            1A
-          </button>
+        <div className="rp-range">
+          <Calendar size={14} />
+          <input type="date" aria-label="Data inicial" value={filter.start} max={filter.end} min={shiftDays(filter.end, -729)} onChange={(event) => apply({ ...filter, start: event.target.value })} />
+          <span>–</span>
+          <input type="date" aria-label="Data final" value={filter.end} max={maxAvailableDate} min={filter.start} onChange={(event) => apply({ ...filter, end: event.target.value })} />
         </div>
+        <button type="button" className="rp-fbtn" aria-expanded={open} onClick={() => setOpen(!open)}>
+          <SlidersHorizontal size={14} />Filtros {activeFilters.length > 0 && <em>{activeFilters.length}</em>}
+          <ChevronDown size={14} style={{ transform: open ? 'rotate(180deg)' : undefined }} />
+        </button>
+        <span className="rp-cmp">
+          {currentDays} {currentDays === 1 ? 'dia' : 'dias'}, agrupado por {groupLabel[filter.group]} · comparado aos {currentDays} dias anteriores{' '}
+          <Help align="right" title="Comparação" what="As setas verdes e rosas comparam este período com o mesmo número de dias logo antes dele." tip="Use 30D para ver tendências. Períodos curtos variam mais." />
+        </span>
       </div>
-
-      <div className="filters-dim-row">
-        {/* Agrupar por */}
-        <div className="filter-item-field">
-          <span className="filter-field-label">Agrupar:</span>
-          <select value={filter.group} onChange={(event) => apply({ ...filter, group: event.target.value as AnalyticsFilter['group'] })}>
-            <option value="day">Dia</option>
-            <option value="week">Semana</option>
-            <option value="month">Mês</option>
-            <option value="quarter">Trimestre</option>
-            <option value="semester">Semestre</option>
-            <option value="year">Ano</option>
-          </select>
+      {activeFilters.length > 0 && !open && (
+        <div className="rp-active-filters">
+          {activeFilters.map(f => (
+            <button key={f.key} type="button" title="Remover este filtro" onClick={() => apply({ ...filter, [f.key]: '' })}>{f.label} ×</button>
+          ))}
         </div>
-
-        {/* Filtro de Página */}
-        <div className="filter-item-field">
-          <FileText size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Página:</span>
-          <select value={filter.page} onChange={(event) => apply({ ...filter, page: event.target.value })}>
-            <option value="">Todas as páginas</option>
-            {(analytics?.filterPages ?? []).map(item => (
-              <option key={item.path} value={item.path}>
-                {item.path === '/' ? '/ (Página Inicial)' : item.path}
-              </option>
-            ))}
-          </select>
+      )}
+      {open && (
+        <div className="rp-adv">
+          <label>Agrupar por
+            <select value={filter.group} onChange={(event) => apply({ ...filter, group: event.target.value as AnalyticsFilter['group'] })}>
+              <option value="day">Dia</option><option value="week">Semana</option><option value="month">Mês</option>
+              <option value="quarter">Trimestre</option><option value="semester">Semestre</option><option value="year">Ano</option>
+            </select>
+          </label>
+          <label>Página
+            <select value={filter.page} onChange={(event) => apply({ ...filter, page: event.target.value })}>
+              <option value="">Todas as páginas</option>
+              {(analytics?.filterPages ?? []).map(item => <option key={item.path} value={item.path}>{item.path === '/' ? '/ (Página inicial)' : item.path}</option>)}
+            </select>
+          </label>
+          <label>Aparelho
+            <select value={filter.device || ''} onChange={(event) => apply({ ...filter, device: event.target.value })}>
+              <option value="">Todos</option>
+              {uniqueDevices.map(dev => <option key={dev} value={dev}>{formatDeviceName(dev)}</option>)}
+            </select>
+          </label>
+          <label>Navegador
+            <select value={filter.browser || ''} onChange={(event) => apply({ ...filter, browser: event.target.value })}>
+              <option value="">Todos</option>
+              {uniqueBrowsers.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </label>
+          <label>Origem
+            <select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}>
+              <option value="">Todas</option>
+              {uniqueSources.map(sourceName => <option key={sourceName} value={sourceName}>{sourceName}</option>)}
+            </select>
+          </label>
+          <label>Mídia
+            <select value={filter.medium || ''} onChange={(event) => apply({ ...filter, medium: event.target.value })}>
+              <option value="">Todas</option>
+              {uniqueMediums.map(m => <option key={m} value={m}>{formatMediumName(m)}</option>)}
+            </select>
+          </label>
+          <label>Campanha
+            <select value={filter.campaign || ''} onChange={(event) => apply({ ...filter, campaign: event.target.value })}>
+              <option value="">Todas</option>
+              {uniqueCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </label>
+          <div className="rp-adv-foot">
+            <span>Os filtros valem para todas as telas de relatório. Origem é de onde a pessoa veio (Google, Instagram…). Mídia é o tipo de tráfego (orgânico, pago, social).</span>
+            {activeFilters.length > 0 && <button type="button" className="rp-link" onClick={() => apply({ ...filter, page: '', device: '', browser: '', source: '', medium: '', campaign: '' })}>Limpar filtros</button>}
+          </div>
         </div>
-
-        {/* Dispositivo */}
-        <div className="filter-item-field">
-          <Monitor size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Aparelho:</span>
-          <select value={filter.device || ''} onChange={(event) => apply({ ...filter, device: event.target.value })}>
-            <option value="">Todos</option>
-            {uniqueDevices.map(dev => <option key={dev} value={dev}>{formatDeviceName(dev)}</option>)}
-          </select>
-        </div>
-
-        {/* Navegador */}
-        <div className="filter-item-field">
-          <Globe size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Navegador:</span>
-          <select value={filter.browser || ''} onChange={(event) => apply({ ...filter, browser: event.target.value })}>
-            <option value="">Todos</option>
-            {uniqueBrowsers.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </div>
-
-        {/* Origem */}
-        <div className="filter-item-field">
-          <Compass size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Origem:</span>
-          <select value={filter.source} onChange={(event) => apply({ ...filter, source: event.target.value })}>
-            <option value="">Todas</option>
-            {uniqueSources.map(sourceName => <option key={sourceName} value={sourceName}>{sourceName}</option>)}
-          </select>
-        </div>
-
-        {/* Mídia */}
-        <div className="filter-item-field">
-          <Layers size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Mídia:</span>
-          <select value={filter.medium || ''} onChange={(event) => apply({ ...filter, medium: event.target.value })}>
-            <option value="">Todas</option>
-            {uniqueMediums.map(m => <option key={m} value={m}>{formatMediumName(m)}</option>)}
-          </select>
-        </div>
-
-        {/* Campanha */}
-        <div className="filter-item-field">
-          <Target size={13} className="filter-field-icon" />
-          <span className="filter-field-label">Campanha:</span>
-          <select value={filter.campaign || ''} onChange={(event) => apply({ ...filter, campaign: event.target.value })}>
-            <option value="">Todas</option>
-            {uniqueCampaigns.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -2273,14 +2081,16 @@ function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) {
   );
 }
 
-function ConnectionStatus() {
-  const { currentSite } = useBusiness();
+function ConnectionStatus({ compact = false }: { compact?: boolean }) {
+  const { currentSite, loading: businessLoading } = useBusiness();
   const [state, setState] = useState<'loading' | 'none' | 'pending' | 'warning_24h' | 'inactive_24h' | 'ready'>('loading');
   const [updatedAt, setUpdatedAt] = useState('');
 
   useEffect(() => {
     let isMounted = true;
+    setState('loading');
     const load = async () => {
+      if (businessLoading) return;
       if (!currentSite?.id) {
         if (isMounted) setState('none');
         return;
@@ -2371,9 +2181,30 @@ function ConnectionStatus() {
 
     void load();
     return () => { isMounted = false; };
-  }, [currentSite]);
+  }, [currentSite, businessLoading]);
 
-  if (state === 'loading') return null;
+  if (compact && state === 'loading') {
+    return <span className="rp-status" aria-busy="true"><i style={{ background: '#9CA3AF', boxShadow: 'none' }} />Verificando a conexão do seu site…</span>;
+  }
+  if (compact && state === 'ready') {
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    const yFmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(y);
+    return (
+      <span className="rp-status" title={updatedAt ? `Última atividade recebida: ${updatedAt}` : undefined}>
+        <i />Conectado · dados até <b>{yFmt}</b>
+        <Help align="left" title="De quando são os dados" what="Os números são consolidados uma vez por dia. Por isso os relatórios vão até ontem." tip="Visitas de hoje aparecem amanhã." />
+      </span>
+    );
+  }
+  if (state === 'loading') {
+    return (
+      <article className="connection-status loading" aria-busy="true">
+        <b>CARREGANDO SEUS DADOS...</b>
+        <p>Estamos verificando a conexão do seu site. Isso leva só alguns segundos.</p>
+      </article>
+    );
+  }
   if (state === 'none') {
     return (
       <article className="connection-status danger">
@@ -2461,102 +2292,88 @@ function Pages() {
     ? Math.round(pagesWithLoad.reduce((sum, item) => sum + Number(item.loadTimeMs || 0) * Number(item.views || 0), 0) / totalLoadViews)
     : 0;
 
-  const topPage = pages[0];
+  const topPage = [...pages].sort((a, b) => Number(b.views || 0) - Number(a.views || 0))[0];
   const topTitle = topPage ? (topPage.title || topPage.path) : '—';
-  const topPath = topPage ? topPage.path : undefined;
+  const maxViews = Math.max(...pages.map(pg => Number(pg.views || 0)), 1);
+  const conv = new Map((analytics?.pageConversionResults ?? []).map(c => [c.path, Number(c.contactSessions || 0)]));
+  const avgAttention = (() => {
+    const v = pages.filter(pg => Number(pg.attentionSeconds || 0) > 0);
+    const w = v.reduce((a, pg) => a + Number(pg.views || 0), 0);
+    return w ? v.reduce((a, pg) => a + Number(pg.attentionSeconds || 0) * Number(pg.views || 0), 0) / w : 0;
+  })();
+  const slowPages = pagesWithLoad.filter(pg => Number(pg.loadTimeMs) > 2500);
+  // página que prende a leitura mas perde as pessoas depois
+  const leaky = [...pages].filter(pg => Number(pg.views || 0) >= 20 && pg.exitRate != null && Number(pg.attentionSeconds || 0) > avgAttention).sort((a, b) => Number(b.exitRate) - Number(a.exitRate))[0];
+  const speedTone = (ms?: number) => (!ms ? 'neutral' : ms <= 1800 ? 'good' : ms <= 2500 ? 'warn' : 'bad') as 'good' | 'warn' | 'bad' | 'neutral';
+  const exitTone = (e?: number | null) => (e == null ? 'neutral' : e <= 30 ? 'good' : e <= 55 ? 'neutral' : 'bad') as 'good' | 'bad' | 'neutral';
+  const bySpeed = [...pagesWithLoad].sort((a, b) => Number(b.loadTimeMs) - Number(a.loadTimeMs)).slice(0, 8);
+  const maxLoad = Math.max(3000, ...bySpeed.map(pg => Number(pg.loadTimeMs || 0)));
 
   return (
     <>
-      <PageHeader title="Suas páginas" subtitle="Veja quais páginas atraem e mantêm mais pessoas no seu site."/>
+      <PageHeader report title="Suas páginas" subtitle="Quais páginas atraem, prendem e convertem os visitantes."
+        guide={<><b>Como ler esta tela:</b> cada linha é uma página do seu site. Os selos coloridos ajudam a achar problemas rápido: <b>verde está bom</b>, <b>laranja merece atenção</b> e <b>rosa precisa melhorar</b>. Clique nas abas para reordenar a tabela.</>} />
       <AnalyticsFilters analytics={analytics}/>
-      <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />{analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}</span>
+      <div className="rp">
+        <div className="rp-grid rp-g5">
+          <R.Kpi label="Páginas acompanhadas" value={R.fmt(pages.length)} desc="Endereços com visitas no período"
+            help={{ what: 'Quantas páginas diferentes do seu site receberam visitas.' }} />
+          <R.Kpi label="Visualizações de páginas" value={R.fmt(totalViews)} delta={R.change(totalViews, p?.pageViews)} desc="Páginas abertas pelos visitantes"
+            help={{ what: 'Total de páginas abertas. Uma pessoa que viu 3 páginas conta 3.' }} />
+          <R.Kpi label="Página mais vista" text value={topTitle} desc={topPage ? `${topPage.path} · ${Math.round(R.share(Number(topPage.views || 0), totalViews))}% das visualizações` : 'Sem dados'}
+            help={{ what: 'A página com mais visualizações. Geralmente é a porta de entrada do site.', tip: 'Garanta que ela tenha um botão de contato visível logo no início.' }} />
+          <R.Kpi label="Velocidade média" value={formatSpeed(averageLoadMs)} desc={averageLoadMs ? (averageLoadMs <= 2500 ? 'Dentro do recomendado (até 2,5s)' : 'Acima do recomendado (2,5s)') : 'Tempo para a página abrir'}
+            help={{ what: 'Tempo médio para a página aparecer na tela, ponderado pelas visualizações.', why: 'Páginas lentas fazem as pessoas desistirem antes de ver o conteúdo, principalmente no celular.', tip: 'Até 2,5s é considerado bom pelo Google.' }} />
+          <R.Kpi label="Taxa média de saída" value={averageExit ? R.fmtPct(averageExit) : '—'} desc="Visitas que terminaram sem interação"
+            help={{ what: 'De cada 100 visitas, quantas duraram menos de 10 segundos, viram só 1 página e não geraram contato (padrão do Google Analytics).', tip: 'Quanto menor, melhor. Abaixo de 30% é ótimo.' }} />
+        </div>
+
+        <div className="rp-grid">
+          <R.Card title="Desempenho das páginas" subtitle="Volume, atenção, velocidade, saída e contatos de cada página"
+            actions={<R.Tabs label="Ordenar por" value={pageSortTab} onChange={(v) => { setPageSortTab(v); setTablePage(0); }} options={[{ value: 'views', label: 'Mais acessadas' }, { value: 'speed', label: 'Mais rápidas' }, { value: 'attention', label: 'Maior atenção' }, { value: 'exit', label: 'Menor saída' }]} />}
+            read={leaky ? <><b>{leaky.title || leaky.path}</b> prende a leitura ({duration(leaky.attentionSeconds)}), mas {leaky.exitRate}% das visitas saem sem interagir depois dela.</> : undefined}
+            tip={leaky ? 'No fim de páginas com bastante leitura, coloque um convite claro: "Fale com a gente no WhatsApp" ou "Agende sua visita".' : undefined}>
+            {visiblePages.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr>
+                  <th>Página</th><th>Visualizações</th>
+                  <th className="r">Tempo de atenção <Help title="Tempo de atenção" what="Tempo médio com a página aberta e visível na tela." /></th>
+                  <th className="r">Velocidade <Help title="Velocidade" what="Tempo médio para a página carregar." tip="Verde até 1,8s · laranja até 2,5s · rosa acima disso." /></th>
+                  <th className="r">Taxa de saída <Help align="right" title="Taxa de saída" what="Visitas que terminaram sem interação nesta página." tip="Verde até 30% · rosa acima de 55%." /></th>
+                  <th className="r">Contatos</th>
+                </tr></thead>
+                <tbody>{visiblePages.map(item => (
+                  <tr key={item.path}>
+                    <td className="pg"><b>{item.title || item.path}</b><code>{item.path}</code></td>
+                    <td><R.CellBar value={Number(item.views || 0)} max={maxViews} /></td>
+                    <td className="r num">{duration(item.attentionSeconds)}</td>
+                    <td className="r"><R.Chip tone={speedTone(item.loadTimeMs)}>{formatSpeed(item.loadTimeMs)}</R.Chip></td>
+                    <td className="r"><R.Chip tone={exitTone(item.exitRate)}>{item.exitRate == null ? '—' : `${item.exitRate}%`}</R.Chip></td>
+                    <td className="r num"><b>{conv.has(item.path) ? R.fmt(conv.get(item.path)) : '—'}</b></td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            ) : <R.Empty>Ainda não recebemos visualizações de páginas neste período.</R.Empty>}
+            <R.Pager page={tablePage} total={sortedPages.length} perPage={ITEMS_PER_PAGE} setPage={setTablePage} />
+          </R.Card>
+        </div>
+
+        <div className="rp-grid rp-g2e">
+          <R.Card title="Visualizações por página" subtitle="As páginas que mais atraem visitantes"
+            read={topPage && totalViews ? <><b>{topTitle}</b> concentra {Math.round(R.share(Number(topPage.views || 0), totalViews))}% de todas as visualizações.</> : undefined}
+            tip="Use as páginas mais vistas como vitrine: coloque nelas seus serviços principais e o botão de contato.">
+            <R.HBars tone="blue" rows={[...pages].sort((a, b) => Number(b.views || 0) - Number(a.views || 0)).slice(0, 8).map(pg => ({ key: pg.path, label: pg.title || pg.path, sub: pg.path, value: Number(pg.views || 0) }))} />
+          </R.Card>
+          <R.Card title="Velocidade de carregamento" subtitle="Das mais lentas para as mais rápidas. O limite recomendado é 2,5s."
+            help={{ what: 'Tempo para a página aparecer, medido nos aparelhos dos seus visitantes.', why: 'Cada segundo a mais aumenta a chance de a pessoa desistir.' }}
+            read={bySpeed.length ? (slowPages.length ? <><b>{slowPages.length} {slowPages.length === 1 ? 'página está' : 'páginas estão'}</b> acima de 2,5s.</> : <>Todas as páginas abrem dentro do recomendado.</>) : undefined}
+            tip={slowPages.length ? 'Comprima as imagens (formato WebP) e evite vídeos que tocam sozinhos no topo. Isso costuma resolver a maior parte da lentidão.' : undefined}>
+            {bySpeed.length ? (
+              <R.HBars max={maxLoad} rows={bySpeed.map(pg => ({ key: pg.path, label: pg.title || pg.path, value: Number(pg.loadTimeMs || 0), display: <R.Chip tone={speedTone(pg.loadTimeMs)}>{formatSpeed(pg.loadTimeMs)}</R.Chip>, tone: Number(pg.loadTimeMs) > 2500 ? 'pink' : Number(pg.loadTimeMs) > 1800 ? 'orange' : 'green' }))} />
+            ) : <R.Empty>Ainda não medimos a velocidade das páginas neste período.</R.Empty>}
+          </R.Card>
+        </div>
       </div>
-      <section className="metrics page-metrics">
-        <MetricCard title="Páginas acompanhadas" value={String(pages.length || '—')} note="páginas com atividade no período"/>
-        <MetricCard title="Visualizações de páginas" value={String(totalViews || '—')} {...comparison(totalViews, p?.pageViews)}/>
-        <MetricCard title="Página mais vista" value={topTitle} subtitle={topPath} note="mais visualizada no período"/>
-        <MetricCard title="Velocidade média de carregamento" value={formatSpeed(averageLoadMs)} note="carregamento das páginas"/>
-        <MetricCard title="Taxa média de saída" value={averageExit ? `${averageExit.toFixed(1).replace('.', ',')}%` : '—'} note="sessões não engajadas"/>
-      </section>
-      <section className="pages-split">
-        <PageChart pages={pages}/>
-        <article className="table-card compact-table pages-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <FileText size={17} style={{ color: '#3b82f6' }} />
-                <h3 style={{ margin: 0 }}>Desempenho das páginas</h3>
-              </div>
-              <p>Visualizações, velocidade, tempo de atenção e taxa de saída por URL</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={pageSortTab === 'views' ? 'active' : ''}
-                onClick={() => { setPageSortTab('views'); setTablePage(0); }}
-              >
-                Mais acessadas
-              </button>
-              <button
-                type="button"
-                className={pageSortTab === 'speed' ? 'active' : ''}
-                onClick={() => { setPageSortTab('speed'); setTablePage(0); }}
-              >
-                Mais rápidas
-              </button>
-              <button
-                type="button"
-                className={pageSortTab === 'attention' ? 'active' : ''}
-                onClick={() => { setPageSortTab('attention'); setTablePage(0); }}
-              >
-                Maior atenção
-              </button>
-              <button
-                type="button"
-                className={pageSortTab === 'exit' ? 'active' : ''}
-                onClick={() => { setPageSortTab('exit'); setTablePage(0); }}
-              >
-                Menor saída
-              </button>
-            </div>
-          </div>
-          <div className="table-head">
-            <span>Página</span>
-            <span>Visualizações</span>
-            <span>Tempo de atenção</span>
-            <span title="Duração média de carregamento da página">Velocidade</span>
-            <span title="Porcentagem de sessões que duraram menos de 10s, viram apenas 1 página e não converteram (padrão GA4)">Taxa de saída</span>
-          </div>
-          {visiblePages.map((item) => {
-            const exit = item.exitRate;
-            const exitColor = exit != null ? (exit <= 30 ? '#10b981' : exit <= 55 ? 'inherit' : '#f59e0b') : undefined;
-            const speedColor = item.loadTimeMs ? (item.loadTimeMs <= 1800 ? '#10b981' : item.loadTimeMs <= 3000 ? 'inherit' : '#f59e0b') : undefined;
-            return (
-              <div className="page-row" key={item.path}>
-                <span>
-                  <b>{item.title || item.path}</b>
-                  <code className="path-code" style={{ marginTop: 3 }}>{item.path}</code>
-                </span>
-                <span><b>{Number(item.views || 0).toLocaleString('pt-BR')}</b></span>
-                <span>{duration(item.attentionSeconds)}</span>
-                <span>
-                  <b style={{ color: speedColor }}>
-                    {formatSpeed(item.loadTimeMs)}
-                  </b>
-                </span>
-                <span>
-                  <b style={{ color: exitColor }}>
-                    {item.exitRate == null ? '—' : `${item.exitRate}%`}
-                  </b>
-                </span>
-              </div>
-            );
-          })}
-          {!pages.length && <p className="empty-state">Ainda não recebemos visualizações de páginas neste período.</p>}
-          <TablePagination page={tablePage} total={sortedPages.length} setPage={setTablePage}/>
-        </article>
-      </section>
     </>
   );
 }
@@ -3990,18 +3807,35 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
   </>;
 }
 
+function ReportGuide({ id, children }: { id: string, children: React.ReactNode }) {
+  const key = `analizi-guide-hidden:${id}`;
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem(key) === '1'; } catch { return false; } });
+  if (hidden) return null;
+  return (
+    <div className="rp-guide" role="note">
+      <BookOpen size={16} />
+      <span>{children}</span>
+      <button type="button" aria-label="Esconder esta explicação" title="Esconder esta explicação" onClick={() => { try { localStorage.setItem(key, '1'); } catch { /* sem armazenamento */ } setHidden(true); }}>×</button>
+    </div>
+  );
+}
+
 function PageHeader({
   title,
   subtitle,
   eyebrow,
   icon: Icon,
-  iconColor
+  iconColor,
+  report = false,
+  guide
 }: {
   title: string;
   subtitle: string;
   eyebrow?: string;
   icon?: React.ComponentType<{ size?: number; style?: React.CSSProperties; className?: string }>;
   iconColor?: string;
+  report?: boolean;
+  guide?: React.ReactNode;
 }) {
   const { currentBusiness, currentSite } = useBusiness();
   const [name, setName] = useState('Sua conta');
@@ -4027,6 +3861,7 @@ function PageHeader({
     'Resultados': { eyebrow: 'CONVERSÃO E LEADS', icon: Target, iconColor: '#10b981' },
     'Insights & Recomendações': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
     'INSIGHTS (IA)': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
+    'Insights': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
     'Configurações': { eyebrow: 'PREFERÊNCIAS DO SISTEMA', icon: SettingsIcon, iconColor: '#8b5cf6' },
     'Fontes de dados': { eyebrow: 'INTEGRAÇÕES E CONEXÕES', icon: Link2, iconColor: '#3b82f6' },
     'Heatmap & Comportamento': { eyebrow: 'COMPORTAMENTO VISUAL', icon: Flame, iconColor: '#f97316' },
@@ -4037,6 +3872,28 @@ function PageHeader({
   const resolvedEyebrow = eyebrow ?? meta?.eyebrow;
   const ResolvedIcon = Icon ?? meta?.icon;
   const resolvedIconColor = iconColor ?? meta?.iconColor;
+
+  if (report) {
+    return (
+      <div className="rp">
+        <header className="rp-head">
+          <div>
+            <h1>{ResolvedIcon && <ResolvedIcon size={24} />}{title}</h1>
+            <p>{subtitle}</p>
+          </div>
+          <div className="rp-head-right">
+            <button className="profile" title={`Perfil: ${name}`}>
+              <span>{initials}</span>
+              <b>{name}</b>
+              <ChevronDown size={16}/>
+            </button>
+          </div>
+        </header>
+        <div style={{ marginTop: 10 }}><ConnectionStatus compact /></div>
+        {guide && <ReportGuide id={title}>{guide}</ReportGuide>}
+      </div>
+    );
+  }
 
   return <>
     <header className="page-header">
