@@ -2274,13 +2274,15 @@ function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) {
 }
 
 function ConnectionStatus() {
-  const { currentSite } = useBusiness();
+  const { currentSite, loading: businessLoading } = useBusiness();
   const [state, setState] = useState<'loading' | 'none' | 'pending' | 'warning_24h' | 'inactive_24h' | 'ready'>('loading');
   const [updatedAt, setUpdatedAt] = useState('');
 
   useEffect(() => {
     let isMounted = true;
+    setState('loading');
     const load = async () => {
+      if (businessLoading) return;
       if (!currentSite?.id) {
         if (isMounted) setState('none');
         return;
@@ -2371,9 +2373,16 @@ function ConnectionStatus() {
 
     void load();
     return () => { isMounted = false; };
-  }, [currentSite]);
+  }, [currentSite, businessLoading]);
 
-  if (state === 'loading') return null;
+  if (state === 'loading') {
+    return (
+      <article className="connection-status loading" aria-busy="true">
+        <b>CARREGANDO SEUS DADOS...</b>
+        <p>Estamos verificando a conexão do seu site. Isso leva só alguns segundos.</p>
+      </article>
+    );
+  }
   if (state === 'none') {
     return (
       <article className="connection-status danger">
