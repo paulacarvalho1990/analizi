@@ -281,8 +281,8 @@ export function StackedBars({ labels, series, height = 200, unit = '' }: {
   )
 }
 
-export interface BarRow { key?: string, label: ReactNode, sub?: ReactNode, value: number, display?: ReactNode, tone?: 'pink' | 'blue' | 'green', title?: string }
-export function HBars({ rows, tone = 'pink', max }: { rows: BarRow[], tone?: 'pink' | 'blue' | 'green', max?: number }) {
+export interface BarRow { key?: string, label: ReactNode, sub?: ReactNode, value: number, display?: ReactNode, tone?: 'pink' | 'blue' | 'green' | 'orange', title?: string }
+export function HBars({ rows, tone = 'pink', max }: { rows: BarRow[], tone?: 'pink' | 'blue' | 'green' | 'orange', max?: number }) {
   if (!rows.length) return <Empty>Ainda não há dados neste período.</Empty>
   const mx = max ?? Math.max(...rows.map(r => r.value), 1)
   return (

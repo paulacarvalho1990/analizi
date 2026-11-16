@@ -2369,7 +2369,7 @@ function Pages() {
             read={bySpeed.length ? (slowPages.length ? <><b>{slowPages.length} {slowPages.length === 1 ? 'página está' : 'páginas estão'}</b> acima de 2,5s.</> : <>Todas as páginas abrem dentro do recomendado.</>) : undefined}
             tip={slowPages.length ? 'Comprima as imagens (formato WebP) e evite vídeos que tocam sozinhos no topo. Isso costuma resolver a maior parte da lentidão.' : undefined}>
             {bySpeed.length ? (
-              <R.HBars max={maxLoad} rows={bySpeed.map(pg => ({ key: pg.path, label: pg.title || pg.path, value: Number(pg.loadTimeMs || 0), display: <R.Chip tone={speedTone(pg.loadTimeMs)}>{formatSpeed(pg.loadTimeMs)}</R.Chip>, tone: Number(pg.loadTimeMs) > 2500 ? 'pink' : Number(pg.loadTimeMs) > 1800 ? 'pink' : 'green' }))} />
+              <R.HBars max={maxLoad} rows={bySpeed.map(pg => ({ key: pg.path, label: pg.title || pg.path, value: Number(pg.loadTimeMs || 0), display: <R.Chip tone={speedTone(pg.loadTimeMs)}>{formatSpeed(pg.loadTimeMs)}</R.Chip>, tone: Number(pg.loadTimeMs) > 2500 ? 'pink' : Number(pg.loadTimeMs) > 1800 ? 'orange' : 'green' }))} />
             ) : <R.Empty>Ainda não medimos a velocidade das páginas neste período.</R.Empty>}
           </R.Card>
         </div>
@@ -3861,6 +3861,7 @@ function PageHeader({
     'Resultados': { eyebrow: 'CONVERSÃO E LEADS', icon: Target, iconColor: '#10b981' },
     'Insights & Recomendações': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
     'INSIGHTS (IA)': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
+    'Insights': { eyebrow: 'INTELIGÊNCIA ARTIFICIAL', icon: Lightbulb, iconColor: '#eab308' },
     'Configurações': { eyebrow: 'PREFERÊNCIAS DO SISTEMA', icon: SettingsIcon, iconColor: '#8b5cf6' },
     'Fontes de dados': { eyebrow: 'INTEGRAÇÕES E CONEXÕES', icon: Link2, iconColor: '#3b82f6' },
     'Heatmap & Comportamento': { eyebrow: 'COMPORTAMENTO VISUAL', icon: Flame, iconColor: '#f97316' },

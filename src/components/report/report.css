@@ -115,14 +115,14 @@
 .rp-help { position: relative; display: inline-flex; vertical-align: middle; }
 .rp-help > button { border: 0; background: none; padding: 0; cursor: help; display: inline-flex; color: var(--rp-faint); }
 .rp-help > button:hover, .rp-help > button:focus-visible { color: var(--rp-primary); }
-.rp-pop { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: 260px; background: #25272d; color: #e9ebf0; border-radius: 12px; padding: 12px 14px; font-size: 12px; font-weight: 400; line-height: 1.5; box-shadow: 0 16px 34px -12px #000a; opacity: 0; visibility: hidden; transition: opacity .12s; z-index: 50; text-align: left; letter-spacing: 0; white-space: normal; }
+.rp-pop { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: 260px; background: #25272d; color: #e9ebf0; border-radius: 12px; padding: 12px 14px; font-size: 12px; font-weight: 400; line-height: 1.5; box-shadow: 0 16px 34px -12px #000a; display: none; z-index: 50; text-align: left; letter-spacing: 0; white-space: normal; }
 .rp-pop.right { left: auto; right: -10px; transform: none; }
 .rp-pop.left { left: -10px; transform: none; }
 .rp-pop b.t { display: block; color: #fff; font-size: 12.5px; margin-bottom: 6px; }
 .rp-pop p { margin: 0 0 6px; }
 .rp-pop p:last-child { margin: 0; }
 .rp-pop em { font-style: normal; color: #ffb3d7; font-weight: 700; }
-.rp-help:hover .rp-pop, .rp-help:focus-within .rp-pop { opacity: 1; visibility: visible; }
+.rp-help:hover .rp-pop, .rp-help:focus-within .rp-pop { display: block; }
 
 /* ---------- KPI ---------- */
 .rp-kpi { background: var(--rp-surface); border: 1px solid var(--rp-border); border-radius: 14px; padding: 15px 16px 12px; box-shadow: var(--rp-shadow); display: flex; flex-direction: column; min-width: 0; }
@@ -148,6 +148,7 @@
 .rp-trk i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--rp-pink), var(--rp-orange)); min-width: 3px; }
 .rp-trk i.blue { background: linear-gradient(90deg, var(--rp-blue), var(--rp-violet)); }
 .rp-trk i.green { background: linear-gradient(90deg, #22c55e, #15803D); }
+.rp-trk i.orange { background: #FF8A3D; }
 .rp-hb { display: grid; gap: 11px; }
 .rp-hb-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; align-items: baseline; font-size: 13px; }
 .rp-hb-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rp-fg); }
