@@ -667,6 +667,16 @@ function Dashboard() {
   );
 }
 
+/** campanha válida: ignora vazio e os marcadores "(not set)" / "(none)" do GA4 */
+function hasCampaign(campaign?: string) {
+  const c = (campaign || '').trim().toLowerCase();
+  return c.length > 0 && c !== '(not set)' && c !== '(none)' && c !== 'not set';
+}
+/** tráfego pago: mídia de anúncio ou link com campanha UTM */
+function isPaidTraffic(item: { source?: string, medium?: string, campaign?: string }) {
+  return /cpc|ppc|paid|ads|adwords|sponsored/i.test(item.medium || '') || /ads$|adwords/i.test(item.source || '') || hasCampaign(item.campaign);
+}
+
 function Acquisition() {
   const analytics = useAnalytics();
   const [acqTab, setAcqTab] = useState<'source' | 'campaign' | 'content' | 'term'>('source');
@@ -683,7 +693,7 @@ function Acquisition() {
     let topAd: { name: string; channel: string; contacts: number; convRate: number } | null = null;
 
     rawSm.forEach(item => {
-      const isPaid = /cpc|ppc|paid|ads|adwords|meta|sponsored/i.test((item.medium || '') + (item.source || '')) || Boolean(item.campaign && item.campaign.trim().length > 0);
+      const isPaid = isPaidTraffic(item);
       const sess = Number(item.sessions || 0);
       const cont = Number(item.whatsappClicks || item.contactClicks || 0);
 
@@ -695,7 +705,7 @@ function Acquisition() {
         orgContacts += cont;
       }
 
-      if (item.campaign && cont > (topAd?.contacts || 0)) {
+      if (hasCampaign(item.campaign) && cont > (topAd?.contacts || 0)) {
         topAd = {
           name: item.campaign,
           channel: `${item.source} / ${item.medium}`,
@@ -714,7 +724,7 @@ function Acquisition() {
     return {
       organic: { sessions: orgSessions, share: orgShare, contacts: orgContacts, convRate: orgConvRate },
       paid: { sessions: paidSessions, share: paidShare, contacts: paidContacts, convRate: paidConvRate },
-      bestAd: topAd || (rawSm[0]?.campaign ? {
+      bestAd: topAd || (hasCampaign(rawSm[0]?.campaign) ? {
         name: rawSm[0].campaign,
         channel: `${rawSm[0].source} / ${rawSm[0].medium}`,
         contacts: Number(rawSm[0].whatsappClicks || 0),
@@ -739,7 +749,7 @@ function Acquisition() {
     }
     if (acqTab === 'campaign') {
       const map = new Map<string, { key: string; label: string; sub?: string; sessions: number; views: number; users: number; contacts: number }>();
-      rawSm.filter(item => Boolean(item.campaign && item.campaign.trim().length > 0)).forEach(item => {
+      rawSm.filter(item => hasCampaign(item.campaign)).forEach(item => {
         const k = item.campaign;
         const cur = map.get(k) || { key: k, label: k, sub: `${item.source} / ${item.medium}`, sessions: 0, views: 0, users: 0, contacts: 0 };
         cur.sessions += Number(item.sessions || 0);
@@ -762,128 +772,117 @@ function Acquisition() {
   }, [rawSm, acqTab]);
 
   const visibleItems = tableItems.slice(acqPage * ITEMS_PER_PAGE, (acqPage + 1) * ITEMS_PER_PAGE);
+  const maxSessions = Math.max(...tableItems.map(i => i.sessions), 1);
+  const sources = (analytics?.sources ?? []).map(s => ({ name: normalizeOriginName(s.name), value: Number(s.value || 0) }));
+  const srcTotal = sources.reduce((a, s) => a + s.value, 0);
+  const totalSessions = organic.sessions + paid.sessions;
+  const orgRate = organic.sessions ? (organic.contacts / organic.sessions) * 100 : 0;
+  const paidRate = paid.sessions ? (paid.contacts / paid.sessions) * 100 : 0;
+  const channelRates = useMemo(() => {
+    const map = new Map<string, { key: string, label: string, sub: string, paid: boolean, sessions: number, contacts: number }>();
+    rawSm.forEach(item => {
+      const k = `${item.source || '(direto)'}|${item.medium || '(nenhum)'}`;
+      const cur = map.get(k) || { key: k, label: normalizeOriginName(item.source), sub: formatMediumName(item.medium), paid: isPaidTraffic(item), sessions: 0, contacts: 0 };
+      cur.sessions += Number(item.sessions || 0);
+      cur.contacts += Number(item.whatsappClicks || item.contactClicks || 0);
+      map.set(k, cur);
+    });
+    return Array.from(map.values()).filter(c => c.sessions >= 10).map(c => ({ ...c, rate: (c.contacts / c.sessions) * 100 })).sort((a, b) => b.rate - a.rate).slice(0, 7);
+  }, [rawSm]);
+  const avgRate = totalSessions ? ((organic.contacts + paid.contacts) / totalSessions) * 100 : 0;
+  const bestChannel = channelRates[0];
+  const tabHelp: Record<typeof acqTab, string> = {
+    source: 'Cada linha é uma combinação de origem (de onde veio) e mídia (tipo de tráfego).',
+    campaign: 'Só o tráfego que veio com nome de campanha no link (parâmetro utm_campaign).',
+    content: 'Variações de anúncio ou criativo, quando o link tem o parâmetro utm_content.',
+    term: 'Palavras-chave das campanhas, quando o link tem o parâmetro utm_term.',
+  };
 
   return (
     <>
-      <PageHeader
-        title="Aquisição & Campanhas"
-        subtitle="Descubra como os visitantes encontram o seu site e quais anúncios, criativos e canais geram mais contatos."
-      />
+      <PageHeader report title="Aquisição & Campanhas" subtitle="Como as pessoas encontram o seu site e quais canais, anúncios e criativos trazem mais contatos."
+        guide={<><b>Como ler esta tela:</b> <b>espontâneo</b> é quem chegou sozinho (pesquisa no Google, redes sociais sem anúncio, quem digitou o endereço). <b>Pago</b> é quem veio de anúncios. O que importa não é só o volume, mas <b>quantos viram contato</b>.</>} />
       <AnalyticsFilters analytics={analytics} />
-      <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />RASTREADOR ANALIZI ATIVO</span>
-      </div>
-
-      <section className="metrics">
-        <DualMetricCard
-          title="Tráfego Orgânico vs. Pago"
-          organicSessions={organic.sessions.toLocaleString('pt-BR')}
-          organicShare={`${organic.share} do tráfego`}
-          organicContacts={organic.contacts}
-          organicConvRate={organic.convRate}
-          paidSessions={paid.sessions.toLocaleString('pt-BR')}
-          paidShare={`${paid.share} do tráfego`}
-          paidContacts={paid.contacts}
-          paidConvRate={paid.convRate}
-        />
-        <MetricCard
-          title="Origem principal"
-          value={topSource?.name ? normalizeOriginName(topSource.name) : '—'}
-          note={topSource ? `${topSource.value} acessos` : 'sem dados'}
-        />
-        <MetricCard
-          title="Melhor anúncio / criativo"
-          value={bestAd?.name || '—'}
-          subtitle={bestAd ? bestAd.channel : 'nenhuma campanha ativa'}
-          compactText={Boolean(bestAd?.name)}
-          note={bestAd ? `${bestAd.contacts} contatos (${bestAd.convRate.toFixed(1).replace('.', ',')}%)` : undefined}
-        />
-      </section>
-
-      <div className="dashboard-split" style={{ marginTop: 24 }}>
-        <OriginChart analytics={analytics} />
-
-        <article className="table-card compact-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Layers size={17} style={{ color: '#FF3CAC' }} />
-                <h3 style={{ margin: 0 }}>Desempenho por canal e criativo</h3>
-              </div>
-              <p className="chart-header-caption">Sessões, cliques e conversões por parâmetro de aquisição</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={acqTab === 'source' ? 'active' : ''}
-                onClick={() => { setAcqTab('source'); setAcqPage(0); }}
-              >
-                Source / Medium
-              </button>
-              <button
-                type="button"
-                className={acqTab === 'campaign' ? 'active' : ''}
-                onClick={() => { setAcqTab('campaign'); setAcqPage(0); }}
-              >
-                Campanhas
-              </button>
-              <button
-                type="button"
-                className={acqTab === 'content' ? 'active' : ''}
-                onClick={() => { setAcqTab('content'); setAcqPage(0); }}
-              >
-                Criativos
-              </button>
-              <button
-                type="button"
-                className={acqTab === 'term' ? 'active' : ''}
-                onClick={() => { setAcqTab('term'); setAcqPage(0); }}
-              >
-                Termos
-              </button>
-            </div>
+      <div className="rp">
+        <div className="rp-grid rp-g2">
+          <R.Card title="Tráfego espontâneo × pago" subtitle="Visitas que chegaram sozinhas comparadas às que vieram de anúncios"
+            help={{ what: 'Separa as visitas que vieram de anúncios (Google Ads, Meta Ads, links com campanha) das que chegaram de forma natural.', why: 'Mostra quanto o seu site depende de anúncio para ter movimento.' }}
+            read={totalSessions ? (paid.sessions && organic.sessions
+              ? <>Os anúncios trazem <b>{Math.round(R.share(paid.sessions, totalSessions))}%</b> das visitas e convertem <b>{R.fmtPct(paidRate)}</b>, contra <b>{R.fmtPct(orgRate)}</b> do tráfego espontâneo.</>
+              : paid.sessions ? <>Todo o tráfego do período veio de anúncios.</> : <>Nenhuma visita veio de anúncios neste período. Todo o movimento foi espontâneo.</>) : undefined}
+            tip={paid.sessions && organic.sessions ? (paidRate > orgRate * 1.2 ? 'Os anúncios trazem gente mais decidida. Vale manter as campanhas que mais convertem e pausar as que só trazem visitas.' : 'O tráfego espontâneo converte tão bem quanto o pago. Invista em conteúdo e no seu perfil do Google para crescer sem depender de anúncio.') : 'Para medir anúncios, use links com parâmetros UTM (utm_source, utm_medium e utm_campaign).'}>
+            {totalSessions ? (
+              <>
+                <div className="rp-split">
+                  {organic.sessions > 0 && <div style={{ width: `${R.share(organic.sessions, totalSessions)}%`, background: 'linear-gradient(100deg,#3B82F6,#7C5CF0)' }}>Espontâneo {Math.round(R.share(organic.sessions, totalSessions))}%</div>}
+                  {paid.sessions > 0 && <div style={{ flex: 1, background: 'linear-gradient(100deg,#FF3CAC,#FF8A3D)' }}>Pago {Math.round(R.share(paid.sessions, totalSessions))}%</div>}
+                </div>
+                <div className="rp-grid rp-g2e" style={{ marginTop: 12, gap: 12 }}>
+                  <div className="rp-mini"><span className="t">Espontâneo</span><b className="num">{R.fmt(organic.sessions)} visitas</b><small>{R.fmt(organic.contacts)} contatos · conversão {organic.convRate}</small></div>
+                  <div className="rp-mini"><span className="t">Pago (anúncios)</span><b className="num">{R.fmt(paid.sessions)} visitas</b><small>{R.fmt(paid.contacts)} contatos · conversão {paid.convRate}</small></div>
+                </div>
+              </>
+            ) : <R.Empty>Ainda não há visitas neste período.</R.Empty>}
+          </R.Card>
+          <div className="rp-grid rp-g2e" style={{ marginTop: 0 }}>
+            <R.Kpi label="Origem principal" text value={topSource?.name ? normalizeOriginName(topSource.name) : '—'}
+              desc={topSource && srcTotal ? `${Math.round(R.share(Number(topSource.value), srcTotal))}% dos acessos · ${R.fmt(topSource.value)} acessos` : 'Sem dados no período'}
+              help={{ what: 'O canal que mais trouxe visitas no período.', tip: 'Se um único canal traz quase tudo, vale diversificar para não depender dele.' }} />
+            <R.Kpi label="Melhor campanha" text value={bestAd?.name || '—'}
+              desc={bestAd ? `${bestAd.channel} · ${bestAd.contacts} contatos (${R.fmtPct(bestAd.convRate)})` : 'Nenhuma campanha com UTM no período'}
+              help={{ what: 'A campanha (utm_campaign) que mais gerou contatos.', why: 'Mostra onde o dinheiro de anúncio está rendendo mais.' }} />
+            <R.Kpi label="Canais ativos" value={R.fmt(channelRates.length || new Set(rawSm.map(i => `${i.source}|${i.medium}`)).size)} desc="Combinações de origem e mídia com visitas"
+              help={{ what: 'Quantas fontes diferentes (Google, Instagram, anúncios…) trouxeram visitas.' }} />
+            <R.Kpi label="Contatos de anúncios" value={R.fmt(paid.contacts)}
+              desc={organic.contacts + paid.contacts ? `${Math.round(R.share(paid.contacts, organic.contacts + paid.contacts))}% de todos os contatos` : 'Sem contatos no período'}
+              help={{ what: 'Contatos (WhatsApp e formulários) de quem chegou por anúncio.' }} />
           </div>
+        </div>
 
-          <div className="table-head" style={{ gridTemplateColumns: '1.4fr 80px 80px 90px 80px' }}>
-            <span>Origem / Dimensão</span>
-            <span>Sessões</span>
-            <span>Usuários</span>
-            <span>WhatsApp</span>
-            <span>Taxa Conv.</span>
-          </div>
+        <div className="rp-grid rp-g2e">
+          <R.Card title="Origens dos acessos" subtitle="Quantos acessos vieram de cada canal"
+            help={{ what: '"Direto" é quem digitou o endereço, usou um favorito ou abriu o link por um aplicativo que não informa a origem (como o WhatsApp).' }}
+            read={sources[0] ? <><b>{sources[0].name}</b> responde por {Math.round(R.share(sources[0].value, srcTotal))}% dos acessos{sources[1] ? <>, seguido por <b>{sources[1].name}</b> ({Math.round(R.share(sources[1].value, srcTotal))}%)</> : null}.</> : undefined}>
+            <R.HBars rows={sources.map(s => ({ key: s.name, label: s.name, value: s.value, display: <>{R.fmt(s.value)} <small style={{ color: 'var(--rp-muted)', fontWeight: 400 }}>{Math.round(R.share(s.value, srcTotal))}%</small></> }))} />
+          </R.Card>
+          <R.Card title="Qual canal converte melhor" subtitle="De cada 100 visitas de cada canal, quantas viraram contato"
+            help={{ what: 'Taxa de conversão = contatos ÷ visitas de cada canal. Só mostramos canais com pelo menos 10 visitas, para evitar números enganosos.', why: 'Um canal com poucas visitas e muita conversão pode valer mais que um canal grande que não converte.' }}
+            read={bestChannel ? <><b>{bestChannel.label}</b> ({bestChannel.sub}) converte <b>{R.fmtPct(bestChannel.rate)}</b>. A média do site é {R.fmtPct(avgRate)}.</> : undefined}
+            tip={bestChannel ? 'Coloque mais energia nos canais do topo desta lista. São eles que trazem gente pronta para falar com você.' : undefined}>
+            {channelRates.length ? (
+              <R.HBars max={Math.max(...channelRates.map(c => c.rate), 0.1)} rows={channelRates.map(c => ({
+                key: c.key, tone: c.paid ? 'pink' : 'blue', value: c.rate, display: R.fmtPct(c.rate),
+                label: <>{c.label} <R.Chip tone={c.paid ? 'brand' : 'neutral'}>{c.paid ? 'anúncio' : 'espontâneo'}</R.Chip></>,
+                sub: `${R.fmt(c.sessions)} visitas`,
+              }))} />
+            ) : <R.Empty>Ainda não há canais com visitas suficientes para comparar.</R.Empty>}
+          </R.Card>
+        </div>
 
-          {visibleItems.map(item => {
-            const conv = item.sessions > 0 ? ((item.contacts / item.sessions) * 100).toFixed(1).replace('.', ',') : '0,0';
-            return (
-              <div className="page-row" key={item.key} style={{ gridTemplateColumns: '1.4fr 80px 80px 90px 80px' }}>
-                <span>
-                  <b>{item.label}</b>
-                  {item.sub && <small style={{ color: 'var(--muted-foreground)' }}>{item.sub}</small>}
-                </span>
-                <span>{item.sessions.toLocaleString('pt-BR')}</span>
-                <span>{item.users.toLocaleString('pt-BR')}</span>
-                <span>
-                  <b style={{ color: item.contacts > 0 ? '#10b981' : undefined }}>
-                    {item.contacts.toLocaleString('pt-BR')}
-                  </b>
-                </span>
-                <span>
-                  <span className={`badge-pill ${Number(conv.replace(',', '.')) >= 3 ? 'good' : 'brand'}`}>
-                    {conv}%
-                  </span>
-                </span>
-              </div>
-            );
-          })}
-
-          {!visibleItems.length && (
-            <p className="empty-state">
-              Nenhum dado de aquisição registrado para o filtro e aba selecionados.
-            </p>
-          )}
-
-          <TablePagination page={acqPage} total={tableItems.length} setPage={setAcqPage} />
-        </article>
+        <div className="rp-grid">
+          <R.Card title="Desempenho por canal e criativo" subtitle={tabHelp[acqTab]}
+            help={{ what: 'UTM são etiquetas que você coloca no final dos links dos anúncios e posts (ex.: ?utm_source=instagram&utm_campaign=promo). Com elas, o Analizi sabe exatamente de onde veio cada visita.', tip: 'Use o mesmo padrão de nomes em todas as campanhas para comparar com facilidade.' }}
+            actions={<R.Tabs label="Agrupar tabela" value={acqTab} onChange={(v) => { setAcqTab(v); setAcqPage(0); }} options={[{ value: 'source', label: 'Origem / Mídia' }, { value: 'campaign', label: 'Campanhas' }, { value: 'content', label: 'Criativos' }, { value: 'term', label: 'Termos' }]} />}>
+            {visibleItems.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Canal / campanha</th><th>Sessões</th><th className="r">Usuários</th><th className="r">Contatos</th><th className="r">Conversão <Help align="right" title="Conversão" what="Contatos ÷ sessões do canal." tip="Verde: acima de 3%. Laranja: abaixo de 1%." /></th></tr></thead>
+                <tbody>{visibleItems.map(item => {
+                  const conv = item.sessions > 0 ? (item.contacts / item.sessions) * 100 : 0;
+                  return (
+                    <tr key={item.key}>
+                      <td className="pg"><b>{item.label}</b>{item.sub && <small>{item.sub}</small>}</td>
+                      <td><R.CellBar value={item.sessions} max={maxSessions} /></td>
+                      <td className="r num">{R.fmt(item.users)}</td>
+                      <td className="r num"><b>{R.fmt(item.contacts)}</b></td>
+                      <td className="r"><R.Chip tone={conv >= 3 ? 'good' : conv >= 1 ? 'neutral' : 'warn'}>{R.fmtPct(conv)}</R.Chip></td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            ) : <R.Empty>{acqTab === 'campaign' ? 'Nenhuma campanha com UTM no período. Adicione utm_campaign nos links dos seus anúncios para vê-las aqui.' : 'Nenhum dado de aquisição para os filtros e a aba selecionados.'}</R.Empty>}
+            <R.Pager page={acqPage} total={tableItems.length} perPage={ITEMS_PER_PAGE} setPage={setAcqPage} />
+          </R.Card>
+        </div>
       </div>
     </>
   );
@@ -941,7 +940,7 @@ function formatMediumName(raw?: string): string {
 function Audience() {
   const analytics = useAnalytics();
   const [sourcePage, setSourcePage] = useState(0);
-  const [sourceTab, setSourceTab] = useState<'all' | 'top'>('all');
+  const [sourceTab, setSourceTab] = useState<'all' | 'top'>('top');
   const [devicePage, setDevicePage] = useState(0);
   const [deviceTab, setDeviceTab] = useState<'devices' | 'browsers'>('devices');
   const [locationPage, setLocationPage] = useState(0);
@@ -1071,199 +1070,173 @@ function Audience() {
     ? `${topLocation.region && topLocation.region !== 'Não identificado' ? `${topLocation.region} · ` : ''}${formatCountryName(topLocation.country)}`
     : undefined;
 
+  const totals = analytics?.totals;
+  const users = Number(totals?.users || 0), newUsers = Number(totals?.newUsers || 0);
+  const returning = Math.max(users - newUsers, 0);
+  const devAgg = aggregateDevices(rawDevices);
+  const devTotal = devAgg.reduce((a, d) => a + d.sessions, 0);
+  const mobile = devAgg.find(d => d.key === 'mobile');
+  const sources = (analytics?.sources ?? []).map(s => ({ name: normalizeOriginName(s.name), value: Number(s.value || 0) }));
+  const srcTotal = sources.reduce((a, s) => a + s.value, 0);
+  const locTotal = rawLocations.reduce((a, l) => a + Number(l.views || 0), 0);
+  const regionsAgg = new Map<string, number>();
+  rawLocations.forEach(l => { const k = l.region || 'Não identificado'; regionsAgg.set(k, (regionsAgg.get(k) || 0) + Number(l.views || 0)); });
+  const topRegionEntry = Array.from(regionsAgg.entries()).sort((a, b) => b[1] - a[1])[0];
+  // matriz canal × página (top 4 canais e top 5 páginas)
+  const matrix = useMemo(() => {
+    const byChannel = new Map<string, number>(), byPage = new Map<string, number>(), cell = new Map<string, number>();
+    sourcePages.forEach(item => {
+      const ch = normalizeOriginName(item.source); const v = Number(item.views || 0);
+      byChannel.set(ch, (byChannel.get(ch) || 0) + v); byPage.set(item.path, (byPage.get(item.path) || 0) + v);
+      cell.set(`${ch}|${item.path}`, (cell.get(`${ch}|${item.path}`) || 0) + v);
+    });
+    const channels = Array.from(byChannel.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4).map(e => e[0]);
+    const paths = Array.from(byPage.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+    const max = Math.max(...Array.from(cell.values()), 1);
+    return { channels, paths, cell, max };
+  }, [sourcePages]);
+  const pageTitle = (path: string) => analytics?.pages?.find(pg => pg.path === path)?.title || (path === '/' ? 'Página inicial' : path);
+  const maxDevSessions = Math.max(...aggregatedDevices.map(d => d.sessions), 1);
+  const maxLocViews = Math.max(...aggregatedLocations.map(l => l.views), 1);
+  const instagramTop = matrix.channels.includes('Instagram') ? matrix.paths.reduce<{ path: string, v: number } | null>((best, path) => { const v = matrix.cell.get(`Instagram|${path}`) || 0; return !best || v > best.v ? { path, v } : best; }, null) : null;
+
   return (
     <>
-      <PageHeader title="Seu público" subtitle="Entenda de onde vêm as pessoas que chegam ao seu site." />
+      <PageHeader report title="Seu público" subtitle="Quem são, de onde vêm e como acessam o seu site."
+        guide={<><b>Como ler esta tela:</b> <b>sessões</b> são visitas e <b>usuários</b> são pessoas. Uma pessoa que entrou 3 vezes conta 1 usuário e 3 sessões. Use esta tela para saber <b>em qual aparelho testar o site</b> e <b>onde anunciar</b>.</>} />
       <AnalyticsFilters analytics={analytics}/>
-      <div className="period">
-        <span className="source-badge"><span className="source-badge-dot" />{analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}</span>
-      </div>
-      <section className="metrics">
-        <MetricCard title="Sessões" value={String(analytics?.totals.sessions ?? '—')} {...comparison(analytics?.totals.sessions, p?.sessions)} />
-        <MetricCard title="Usuários" value={String(analytics?.totals.users ?? '—')} {...comparison(analytics?.totals.users, p?.users)} />
-        <MetricCard title="Novos usuários" value={String(analytics?.totals.newUsers ?? '—')} {...comparison(analytics?.totals.newUsers, p?.newUsers)} />
-        <MetricCard title="Origem principal" value={topSource?.name ? normalizeOriginName(topSource.name) : '—'} note={topSource ? `${topShare} do tráfego` : 'sem dados'} />
-        <MetricCard title="Localização principal" value={topLocationLabel} subtitle={topLocationSub} note={topLocation ? `${topLocation.views} visualizações` : 'sem dados'} />
-      </section>
-      <div className="audience-split">
-        <OriginChart analytics={analytics}/>
-        <article className="table-card compact-table source-pages-table">
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <Compass size={17} style={{ color: '#ff3cac' }} />
-                <h3 style={{ margin: 0 }}>Origem por página</h3>
-              </div>
-              <p>Onde o tráfego de cada canal desembarcou</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={sourceTab === 'all' ? 'active' : ''}
-                onClick={() => { setSourceTab('all'); setSourcePage(0); }}
-              >
-                Todos os canais
-              </button>
-              <button
-                type="button"
-                className={sourceTab === 'top' ? 'active' : ''}
-                onClick={() => { setSourceTab('top'); setSourcePage(0); }}
-              >
-                Top 10 páginas
-              </button>
-            </div>
-          </div>
-          <div className="source-pages-head">
-            <span>Canal</span>
-            <span>Página de destino</span>
-            <span>Visualizações</span>
-            <span>Usuários</span>
-          </div>
-          {visibleSources.map(item => (
-            <div className="source-pages-row" key={`${item.source}-${item.path}`}>
-              <span><b>{normalizeOriginName(item.source)}</b></span>
-              <span><code className="path-code">{item.path}</code></span>
-              <span><b>{Number(item.views || 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(item.users || 0).toLocaleString('pt-BR')}</span>
-            </div>
-          ))}
-          {!filteredSources.length && <p className="empty-state">Ainda não recebemos dados de origens de tráfego.</p>}
-          <TablePagination page={sourcePage} total={filteredSources.length} setPage={setSourcePage}/>
-        </article>
-      </div>
-
-      <article className="table-card compact-table devices-table" style={{ marginTop: 18 }}>
-        <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <Monitor size={17} style={{ color: '#3b82f6' }} />
-              <h3 style={{ margin: 0 }}>Dispositivos e navegadores</h3>
-            </div>
-            <p>Quais aparelhos e navegadores as pessoas utilizam para acessar o seu site</p>
-          </div>
-          <div className="heatmap-segmented-control">
-            <button
-              type="button"
-              className={deviceTab === 'devices' ? 'active' : ''}
-              onClick={() => { setDeviceTab('devices'); setDevicePage(0); }}
-            >
-              Por Dispositivo
-            </button>
-            <button
-              type="button"
-              className={deviceTab === 'browsers' ? 'active' : ''}
-              onClick={() => { setDeviceTab('browsers'); setDevicePage(0); }}
-            >
-              Dispositivo + Navegador
-            </button>
-          </div>
+      <div className="rp">
+        <div className="rp-grid rp-g5">
+          <R.Kpi label="Sessões" value={R.fmt(totals?.sessions)} delta={R.change(totals?.sessions, p?.sessions)} desc="Visitas recebidas no período"
+            help={{ what: 'Cada vez que alguém abre o site conta uma sessão. A mesma pessoa pode ter várias.', why: 'Mede o movimento total do site.' }} />
+          <R.Kpi label="Usuários" value={R.fmt(users)} delta={R.change(users, p?.users)} desc="Pessoas diferentes"
+            help={{ what: 'Pessoas diferentes que visitaram o site no período.' }} />
+          <R.Kpi label="Novos usuários" value={R.fmt(newUsers)} delta={R.change(newUsers, p?.newUsers)} desc="Primeira visita ao site"
+            help={{ what: 'Pessoas que entraram no site pela primeira vez.', tip: 'Se a maioria é nova, foque em fazer o primeiro contato fácil (WhatsApp visível).' }} />
+          <R.Kpi label="Origem principal" text value={topSource?.name ? normalizeOriginName(topSource.name) : '—'} desc={topSource ? `${topShare} do tráfego` : 'Sem dados'}
+            help={{ what: 'Canal que mais trouxe visitas. Veja detalhes em Aquisição & Campanhas.' }} />
+          <R.Kpi label="Localização principal" text value={topLocationLabel} desc={topLocation ? `${topLocationSub ?? ''} · ${R.fmt(topLocation.views)} visualizações` : 'Sem dados'}
+            help={{ what: 'Cidade de onde vem a maior parte dos acessos, identificada pela conexão de internet.', why: 'Ajuda a escolher a região dos anúncios.' }} />
         </div>
-        <div className="devices-head">
-          <span>Dispositivo</span>
-          <span>Navegador</span>
-          <span>Sessões</span>
-          <span>Visualizações</span>
-          <span>Usuários</span>
-          <span>Novos usuários</span>
-          <span>Participação</span>
-        </div>
-        {visibleDevices.map((dev) => {
-          const share = totalDeviceViews > 0 ? `${Math.round((dev.views / totalDeviceViews) * 100)}%` : '0%';
-          const isMobile = dev.device.toLowerCase().includes('mobile');
-          const isTablet = dev.device.toLowerCase().includes('tablet');
-          const DevIcon = isMobile ? Smartphone : isTablet ? Tablet : Monitor;
-          return (
-            <div className="devices-row" key={dev.key}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <DevIcon size={14} style={{ color: isMobile ? '#ff3cac' : '#3b82f6', flexShrink: 0 }} />
-                <b>{dev.device}</b>
-              </span>
-              <span>{dev.browser}</span>
-              <span>{Number(dev.sessions || 0).toLocaleString('pt-BR')}</span>
-              <span><b>{Number(dev.views || 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(dev.users || 0).toLocaleString('pt-BR')}</span>
-              <span>{Number(dev.newUsers || 0).toLocaleString('pt-BR')}</span>
-              <span><b>{share}</b></span>
-            </div>
-          );
-        })}
-        {!aggregatedDevices.length && (
-          <p className="empty-state">
-            Ainda não recebemos dados de dispositivos para os filtros selecionados neste período.
-          </p>
-        )}
-        <TablePagination page={devicePage} total={aggregatedDevices.length} setPage={setDevicePage} />
-      </article>
 
-      <div className="geo-map-split" style={{ marginTop: 18 }}>
-        <BrazilGeoMap locations={analytics?.locations} />
-
-        <article className="table-card compact-table geo-locations-table" style={{ margin: 0 }}>
-          <div className="section-heading" style={{ flexWrap: 'wrap', gap: 12 }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                <MapPin size={17} style={{ color: '#ff3cac' }} />
-                <h3 style={{ margin: 0 }}>Localização geográfica (Cidade, Estado e País)</h3>
+        <div className="rp-grid rp-g3">
+          <R.Card title="Novos × recorrentes" subtitle="Quem veio pela primeira vez e quem voltou"
+            help={{ what: 'Recorrentes são pessoas que já tinham visitado o site antes deste período ou dentro dele.', why: 'Quem volta costuma estar mais perto de virar cliente.' }}
+            read={users ? <>A cada 10 pessoas, <b>{Math.round(R.share(returning, users) / 10)}</b> já conheciam o site.</> : undefined}
+            tip={users && R.share(returning, users) < 20 ? 'Poucos voltam. Ofereça um motivo para retornar: blog, novidades ou um lembrete pelo WhatsApp.' : users ? 'Boa lembrança de marca. Mantenha o site atualizado para quem volta encontrar novidades.' : undefined}>
+            {users ? (
+              <div className="rp-dn">
+                <R.Donut center={R.fmt(users)} centerLabel="pessoas" segments={[{ value: newUsers, color: '#3B82F6' }, { value: returning, color: '#FF3CAC' }]} />
+                <ul className="rp-list" style={{ flex: 1, minWidth: 0 }}>
+                  <li><i style={{ background: '#3B82F6' }} />Novos<b>{R.fmt(newUsers)}</b><small>{Math.round(R.share(newUsers, users))}% · primeira visita</small></li>
+                  <li><i style={{ background: '#FF3CAC' }} />Voltaram<b>{R.fmt(returning)}</b><small>{Math.round(R.share(returning, users))}% · já conheciam</small></li>
+                </ul>
               </div>
-              <p>De quais cidades, estados e países seus visitantes estão acessando o site</p>
-            </div>
-            <div className="heatmap-segmented-control">
-              <button
-                type="button"
-                className={locationTab === 'cities' ? 'active' : ''}
-                onClick={() => { setLocationTab('cities'); setLocationPage(0); }}
-              >
-                Cidades
-              </button>
-              <button
-                type="button"
-                className={locationTab === 'regions' ? 'active' : ''}
-                onClick={() => { setLocationTab('regions'); setLocationPage(0); }}
-              >
-                Estados / Regiões
-              </button>
-              <button
-                type="button"
-                className={locationTab === 'countries' ? 'active' : ''}
-                onClick={() => { setLocationTab('countries'); setLocationPage(0); }}
-              >
-                Países
-              </button>
-            </div>
-          </div>
-          <div className="geo-locations-head">
-            <span>Cidade</span>
-            <span>Estado / Região</span>
-            <span>País</span>
-            <span>Visualizações</span>
-            <span>Usuários</span>
-            <span>Contatos</span>
-          </div>
-          {visibleLocations.map((loc) => (
-            <div className="geo-locations-row" key={loc.key}>
-              <span><b>{loc.city}</b></span>
-              <span>{loc.region}</span>
-              <span>{loc.country}</span>
-              <span><b>{Number(loc.views || 0).toLocaleString('pt-BR')}</b></span>
-              <span>{Number(loc.users || 0).toLocaleString('pt-BR')}</span>
-              <span>
-                <b style={{ color: Number(loc.conversions || 0) > 0 ? '#10b981' : undefined }}>
-                  {Number(loc.conversions || 0).toLocaleString('pt-BR')}
-                </b>
-              </span>
-            </div>
-          ))}
-          {!aggregatedLocations.length && (
-            <p className="empty-state">
-              Ainda não há dados geográficos consolidados neste período. Novos acessos já estão sendo registrados com Cidade, Estado e País.
-            </p>
-          )}
-          <TablePagination page={locationPage} total={aggregatedLocations.length} setPage={setLocationPage} />
-        </article>
+            ) : <R.Empty>Ainda não há visitantes neste período.</R.Empty>}
+          </R.Card>
+          <R.Card title="Aparelhos" subtitle="Por onde as pessoas acessam"
+            read={mobile && devTotal ? <><b>{Math.round(R.share(mobile.sessions, devTotal))}%</b> das visitas são pelo celular.</> : undefined}
+            tip={mobile && R.share(mobile.sessions, devTotal) > 50 ? 'A maioria usa celular. Sempre teste o site no telefone e deixe o botão de WhatsApp fácil de tocar.' : devTotal ? 'Boa parte usa computador. Capriche em fotos e textos mais completos.' : undefined}>
+            {devTotal ? (
+              <>
+                <R.StackBar height={18} segments={devAgg.map(d => ({ value: d.sessions, color: DEVICE_COLOR[d.key] || '#9CA3AF', label: d.label }))} />
+                <ul className="rp-list" style={{ marginTop: 10 }}>
+                  {devAgg.map(d => <li key={d.key}><i style={{ background: DEVICE_COLOR[d.key] || '#9CA3AF' }} />{d.label}<b>{Math.round(R.share(d.sessions, devTotal))}%</b><small>{R.fmt(d.sessions)} sessões · {R.fmt(d.conversions)} contatos</small></li>)}
+                </ul>
+              </>
+            ) : <R.Empty>Ainda não há dados de aparelhos neste período.</R.Empty>}
+          </R.Card>
+          <R.Card title="Origens dos acessos" subtitle="Canais de onde seu público chegou"
+            read={sources[0] ? <><b>{sources[0].name}</b> traz {Math.round(R.share(sources[0].value, srcTotal))}% dos acessos.</> : undefined}>
+            <R.HBars rows={sources.slice(0, 6).map(s => ({ key: s.name, label: s.name, value: s.value }))} />
+          </R.Card>
+        </div>
+
+        <div className="rp-grid rp-g2e">
+          <R.Card title="Onde estão" subtitle="Acessos por estado no mapa e ranking ao lado"
+            help={{ what: 'A localização vem da conexão de internet. Pode indicar a cidade da operadora em vez da cidade exata.', why: 'Mostra se você está alcançando a região onde atende.' }}
+            read={topRegionEntry && locTotal ? <><b>{Math.round(R.share(topRegionEntry[1], locTotal))}%</b> dos acessos vêm de <b>{topRegionEntry[0]}</b>.</> : undefined}
+            tip={topRegionEntry ? 'Se você atende só uma região, limite os anúncios a ela para não pagar por cliques de longe.' : undefined}>
+            <BrazilGeoMap locations={analytics?.locations} />
+          </R.Card>
+          <R.Card title="Ranking de localização" subtitle="Cidades, estados e países com mais acessos"
+            actions={<R.Tabs label="Agrupar localização" value={locationTab} onChange={(v) => { setLocationTab(v); setLocationPage(0); }} options={[{ value: 'cities', label: 'Cidades' }, { value: 'regions', label: 'Estados' }, { value: 'countries', label: 'Países' }]} />}>
+            {visibleLocations.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>{locationTab === 'cities' ? 'Cidade' : locationTab === 'regions' ? 'Estado' : 'País'}</th><th>Visualizações</th><th className="r">Usuários</th><th className="r">Contatos</th></tr></thead>
+                <tbody>{visibleLocations.map(loc => (
+                  <tr key={loc.key}>
+                    <td className="pg"><b>{locationTab === 'cities' ? loc.city : locationTab === 'regions' ? loc.region : loc.country}</b><small>{locationTab === 'cities' ? `${loc.region} · ${loc.country}` : locationTab === 'regions' ? loc.country : ''}</small></td>
+                    <td><R.CellBar value={loc.views} max={maxLocViews} /></td>
+                    <td className="r num">{R.fmt(loc.users)}</td>
+                    <td className="r">{loc.conversions > 0 ? <R.Chip tone="good">{R.fmt(loc.conversions)}</R.Chip> : <span className="num">0</span>}</td>
+                  </tr>
+                ))}</tbody>
+              </table></div>
+            ) : <R.Empty>Ainda não há dados geográficos neste período. Os novos acessos já são registrados com cidade, estado e país.</R.Empty>}
+            <R.Pager page={locationPage} total={aggregatedLocations.length} perPage={ITEMS_PER_PAGE} setPage={setLocationPage} />
+          </R.Card>
+        </div>
+
+        <div className="rp-grid rp-g2e">
+          <R.Card title="Origem por página" subtitle="Por qual página cada canal entra no site. Quanto mais forte a cor, mais visualizações."
+            help={{ what: 'Cruza o canal de origem com a primeira página vista (página de entrada).', why: 'Mostra se cada canal está levando as pessoas para a página certa.' }}
+            actions={<R.Tabs label="Formato" value={sourceTab} onChange={(v) => { setSourceTab(v); setSourcePage(0); }} options={[{ value: 'top', label: 'Mapa de calor' }, { value: 'all', label: 'Lista completa' }]} />}
+            read={instagramTop && instagramTop.v > 0 ? <>Quem vem do <b>Instagram</b> entra mais por <b>{pageTitle(instagramTop.path)}</b>.</> : undefined}
+            tip="Nos links de bio, anúncios e posts, aponte direto para a página do serviço anunciado, não só para a página inicial.">
+            {sourceTab === 'top' ? (matrix.channels.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Canal ↓ · Página →</th>{matrix.paths.map(path => <th key={path} className="r" title={path}>{pageTitle(path).length > 16 ? `${pageTitle(path).slice(0, 15)}…` : pageTitle(path)}</th>)}</tr></thead>
+                <tbody>{matrix.channels.map(ch => (
+                  <tr key={ch}><td><b>{ch}</b></td>{matrix.paths.map(path => {
+                    const v = matrix.cell.get(`${ch}|${path}`) || 0; const f = v / matrix.max;
+                    return <td key={path} className="r num heat" style={{ background: R.heatColor(f * 0.9), color: f > 0.5 ? '#fff' : undefined, fontWeight: f > 0.5 ? 700 : undefined }}>{R.fmt(v)}</td>;
+                  })}</tr>
+                ))}</tbody>
+              </table></div>
+            ) : <R.Empty>Ainda não recebemos dados de origem por página.</R.Empty>) : (
+              <>
+                {visibleSources.length ? (
+                  <div className="rp-tw"><table className="rp-t">
+                    <thead><tr><th>Canal</th><th>Página de entrada</th><th className="r">Visualizações</th><th className="r">Usuários</th></tr></thead>
+                    <tbody>{visibleSources.map(item => (
+                      <tr key={`${item.source}-${item.path}`}><td><b>{normalizeOriginName(item.source)}</b></td><td><code>{item.path}</code></td><td className="r num"><b>{R.fmt(item.views)}</b></td><td className="r num">{R.fmt(item.users)}</td></tr>
+                    ))}</tbody>
+                  </table></div>
+                ) : <R.Empty>Ainda não recebemos dados de origem por página.</R.Empty>}
+                <R.Pager page={sourcePage} total={filteredSources.length} perPage={ITEMS_PER_PAGE} setPage={setSourcePage} />
+              </>
+            )}
+          </R.Card>
+          <R.Card title="Dispositivos e navegadores" subtitle="Detalhe por aparelho e navegador"
+            help={{ what: 'Navegador é o programa usado para abrir o site (Chrome, Safari…).', tip: 'Se um navegador tem muitas visitas e poucos contatos, teste o site nele: pode haver algo quebrado.' }}
+            actions={<R.Tabs label="Agrupar aparelhos" value={deviceTab} onChange={(v) => { setDeviceTab(v); setDevicePage(0); }} options={[{ value: 'devices', label: 'Por aparelho' }, { value: 'browsers', label: 'Aparelho + navegador' }]} />}>
+            {visibleDevices.length ? (
+              <div className="rp-tw"><table className="rp-t">
+                <thead><tr><th>Aparelho</th>{deviceTab === 'browsers' && <th>Navegador</th>}<th>Sessões</th><th className="r">Novos</th><th className="r">Participação</th></tr></thead>
+                <tbody>{visibleDevices.map(dev => {
+                  const isMobile = dev.device.toLowerCase().includes('mobile'); const isTablet = dev.device.toLowerCase().includes('tablet');
+                  const DevIcon = isMobile ? Smartphone : isTablet ? Tablet : Monitor;
+                  return (
+                    <tr key={dev.key}>
+                      <td><b style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><DevIcon size={14} style={{ color: 'var(--rp-muted)' }} />{DEVICE_LABEL[deviceKey(dev.key.split('-')[0])] || dev.device}</b></td>
+                      {deviceTab === 'browsers' && <td>{dev.browser}</td>}
+                      <td><R.CellBar value={dev.sessions} max={maxDevSessions} /></td>
+                      <td className="r num">{R.fmt(dev.newUsers)}</td>
+                      <td className="r"><b>{totalDeviceViews > 0 ? `${Math.round((dev.views / totalDeviceViews) * 100)}%` : '0%'}</b></td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            ) : <R.Empty>Ainda não recebemos dados de dispositivos para os filtros selecionados.</R.Empty>}
+            <R.Pager page={devicePage} total={aggregatedDevices.length} perPage={ITEMS_PER_PAGE} setPage={setDevicePage} />
+          </R.Card>
+        </div>
       </div>
     </>
   );
 }
+
 function isLeadClick(item: { intent?: string, isContactLead?: number, label: string, destination?: string }): boolean {
   if (item.isContactLead === 1) return true;
   if (item.intent && item.intent !== 'geral' && item.intent !== 'outro' && item.intent !== 'download' && item.intent !== 'link_externo') return true;
