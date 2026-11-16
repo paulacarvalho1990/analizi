@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, SlidersHorizontal, BookOpen, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArrowLeft, TrendingUp, Eye, SlidersHorizontal, BookOpen, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard, DualMetricCard } from './components/Metrics'
@@ -1711,96 +1711,79 @@ function Insights() {
   ];
 
   const activeInsights = insights.length > 0 ? insights : defaultInsights;
+  const isExample = insights.length === 0;
+  const [insTab, setInsTab] = useState<'all' | 'neutral' | 'warning' | 'positive' | 'done'>('all');
+  const keyOf = (item: GeneratedInsight) => item.key || item.title;
+  const counts = {
+    open: activeInsights.filter(i => !readKeys.includes(keyOf(i))).length,
+    neutral: activeInsights.filter(i => i.status === 'neutral').length,
+    warning: activeInsights.filter(i => i.status === 'warning').length,
+    positive: activeInsights.filter(i => i.status === 'positive').length,
+  };
+  const shown = activeInsights.filter(i => insTab === 'all' ? true : insTab === 'done' ? readKeys.includes(keyOf(i)) : i.status === insTab);
+  const tone = (s: GeneratedInsight['status']) => s === 'warning' ? { color: '#FF8A3D', chip: 'warn' as const, Icon: AlertTriangle, label: 'Alerta' } : s === 'positive' ? { color: '#15803D', chip: 'good' as const, Icon: CircleCheck, label: 'Ponto positivo' } : { color: '#3B82F6', chip: 'neutral' as const, Icon: Sparkles, label: 'Oportunidade' };
 
   return (
     <>
-      <div className="insights-header-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <PageHeader
-            title="Insights"
-            subtitle={`Diagnósticos inteligentes consolidados para o seu site (${scopeLabel}).`}
-          />
-          <span className="badge-ia" style={{ marginTop: -18 }}>
-            <Sparkles size={13} /> IA
-          </span>
-        </div>
-        <div className="insights-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="source-badge">
-            <span className="source-badge-dot"></span>
-            RASTREADOR ANALIZI ATIVO
-          </span>
-        </div>
-      </div>
-
+      <PageHeader report title="Insights" subtitle={`Descobertas sobre o seu site, com o que fazer a seguir. Análise ${scopeLabel} gerada por IA a partir dos seus dados.`}
+        guide={<><b>Como usar:</b> leia cada cartão da esquerda para a direita: <b>o que os dados mostram</b>, <b>o que fazer</b> e <b>o resultado esperado</b>. Depois de aplicar a sugestão, clique em <b>Marcar como feito</b> para acompanhar o que já resolveu.</>} />
       <AnalyticsFilters analytics={analytics} />
+      <div className="rp">
+        {isExample && !loadingAI && (
+          <div className="rp-guide" role="status" style={{ marginTop: 4 }}>
+            <Info size={16} />
+            <span><b>Estes são exemplos.</b> Ainda não conseguimos gerar a análise do seu site, normalmente porque há poucos dados no período. Tente um período maior (30D) ou clique em <b>Gerar nova análise</b>.</span>
+          </div>
+        )}
+        <div className="rp-isum">
+          <div><Sparkles size={20} style={{ color: 'var(--rp-primary)' }} /><b>{counts.open}</b><span>{counts.open === 1 ? 'insight em aberto' : 'insights em aberto'}</span></div>
+          <div><Sparkles size={20} style={{ color: '#3B82F6' }} /><b>{counts.neutral}</b><span>{counts.neutral === 1 ? 'oportunidade' : 'oportunidades'}</span></div>
+          <div><AlertTriangle size={20} style={{ color: '#FF8A3D' }} /><b>{counts.warning}</b><span>{counts.warning === 1 ? 'alerta' : 'alertas'}</span></div>
+          <div><CircleCheck size={20} style={{ color: '#15803D' }} /><b>{counts.positive}</b><span>{counts.positive === 1 ? 'ponto positivo' : 'pontos positivos'}</span></div>
+        </div>
+        <div className="rp-fbar" style={{ marginTop: 14 }}>
+          <R.Tabs label="Filtrar insights" value={insTab} onChange={setInsTab} options={[{ value: 'all', label: 'Todos' }, { value: 'neutral', label: 'Oportunidades' }, { value: 'warning', label: 'Alertas' }, { value: 'positive', label: 'Pontos positivos' }, { value: 'done', label: `Feitos (${activeInsights.filter(i => readKeys.includes(keyOf(i))).length})` }]} />
+          <span className="rp-cmp">{modelLabel}{cachedNotice ? ' · análise salva desta semana' : ''} <Help align="right" title="De onde vêm os insights" what="A IA cruza os números do seu site com o seu segmento de negócio e aponta o que mais pode fazer diferença." tip="Os insights são sugestões. Use seu conhecimento do negócio para decidir o que aplicar." /></span>
+          <button type="button" className="rp-btn" onClick={() => void fetchInsights()} disabled={loadingAI || !analytics}>
+            <Sparkles size={15} className={loadingAI ? 'spin' : ''} />{loadingAI ? 'Analisando…' : 'Gerar nova análise'}
+          </button>
+        </div>
 
-      {loadingAI && !insights.length ? (
-        <section className="insights-loading-state" style={{ padding: 40, textAlign: 'center' }}>
-          <Sparkles size={32} className="spin" style={{ color: '#ff3cac', marginBottom: 12 }} />
-          <p style={{ fontSize: 14 }}>O Analizi está cruzando o comportamento do seu público com o seu segmento...</p>
-        </section>
-      ) : (
-        <section className="insights-modern-grid">
-          {activeInsights.map((item) => {
-            const read = readKeys.includes(item.key || item.title);
-            const isPos = item.status === 'positive';
-            const isWarn = item.status === 'warning';
-            const badgeType = isWarn ? 'warning' : isPos ? 'success' : 'opportunity';
-
-            return (
-              <article
-                className={`insight-card-system ${read ? 'viewed' : ''}`}
-                key={item.key || item.title}
-              >
-                <div className={`insight-icon-box ${badgeType}`}>
-                  {isWarn ? (
-                    <AlertTriangle size={22} />
-                  ) : isPos ? (
-                    <CircleCheck size={22} />
-                  ) : (
-                    <Sparkles size={22} />
-                  )}
+        {loadingAI && !insights.length ? (
+          <div className="rp-card" style={{ marginTop: 14, alignItems: 'center', textAlign: 'center', padding: 40 }}>
+            <Sparkles size={32} className="spin" style={{ color: 'var(--rp-pink)', marginBottom: 12 }} />
+            <p style={{ margin: 0, color: 'var(--rp-muted)' }}>O Analizi está cruzando o comportamento do seu público com o seu segmento. Isso leva alguns segundos…</p>
+          </div>
+        ) : shown.length ? shown.map(item => {
+          const done = readKeys.includes(keyOf(item));
+          const tn = tone(item.status);
+          return (
+            <article className={`rp-ins ${done ? 'done' : ''}`} key={keyOf(item)}>
+              <i style={{ background: tn.color }} />
+              <div className="rp-ins-body">
+                <div className="rp-ins-top">
+                  <tn.Icon size={16} style={{ color: tn.color }} />
+                  <R.Chip tone={tn.chip}>{item.badge || tn.label}</R.Chip>
+                  {isExample && <R.Chip tone="brand">Exemplo</R.Chip>}
+                  <span>avaliado em {date}</span>
+                  {done && <R.Chip tone="good">✓ Feito</R.Chip>}
                 </div>
-
-                <div className="insight-content-system">
-                  <div className="insight-meta-row">
-                    <span className={`insight-badge-pill ${badgeType}`}>{item.badge}</span>
-                    <span className="insight-date-stamp">Avaliado em {date}</span>
-                  </div>
-
-                  <h3>{item.title}</h3>
-
-                  <div className="insight-box-block">
-                    <strong style={{ display: 'block', marginBottom: 4, color: 'var(--foreground)' }}>O que os dados mostram:</strong>
-                    <span>{item.finding}</span>
-                  </div>
-
-                  <div className="insight-action-grid">
-                    <div className="insight-sub-box">
-                      <span className="insight-sub-box-title">Recomendação prática:</span>
-                      <p>{item.action}</p>
-                    </div>
-
-                    <div className="insight-sub-box">
-                      <span className="insight-sub-box-title">Projeção esperada:</span>
-                      <p>{item.projection}</p>
-                    </div>
-                  </div>
+                <h3>{item.title}</h3>
+                <div className="rp-ins-cols">
+                  <div><h4><Eye size={13} />O que os dados mostram</h4>{item.finding}</div>
+                  <div><h4><Lightbulb size={13} />O que fazer</h4>{item.action}</div>
+                  <div><h4><TrendingUp size={13} />Resultado esperado</h4><b>{item.projection}</b></div>
                 </div>
-
-                <button
-                  className="insight-read"
-                  onClick={() => toggleRead(item.key || item.title)}
-                  title={read ? 'Marcar como não lido' : 'Marcar como resolvido'}
-                  style={{ alignSelf: 'flex-start', marginTop: 4 }}
-                >
-                  <span />
-                </button>
-              </article>
-            );
-          })}
-        </section>
-      )}
+                <div className="rp-ins-act">
+                  <button type="button" className="rp-btn ghost" onClick={() => toggleRead(keyOf(item))}>
+                    {done ? <><RefreshCw size={14} />Reabrir</> : <><Check size={14} />Marcar como feito</>}
+                  </button>
+                </div>
+              </div>
+            </article>
+          );
+        }) : <div className="rp-card" style={{ marginTop: 14 }}><R.Empty>{insTab === 'done' ? 'Você ainda não marcou nenhum insight como feito.' : 'Nenhum insight deste tipo no momento.'}</R.Empty></div>}
+      </div>
     </>
   );
 }
