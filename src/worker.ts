@@ -1509,7 +1509,7 @@ async function generateWeeklyReport(env: Env, siteId: string, kind: ReportKind, 
   const res = await analytics(siteId, env, new URLSearchParams({ start: week.start, end: week.end, group: 'day' }))
   if (!res.ok) throw new Error(`analytics ${res.status}`)
   const data = await res.json() as ReportData
-  const { insights, model } = await buildReportInsights(kind, derive(data, normalizeOriginName), business || {}, env.DEEPINFRA_API_KEY)
+  const { insights, model } = await buildReportInsights(kind, derive(data, normalizeOriginName), business || {}, env)
   const stmt = env.ANALIZI_EVENTS.prepare(`
     insert into weekly_site_reports (tracker_site_id, week_start, week_end, report_kind, data_json, insights_json, model, created_at)
     values (?, ?, ?, ?, ?, ?, ?, ?)

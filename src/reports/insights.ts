@@ -2,6 +2,7 @@
 // Cada objetivo tem um roteiro fixo de "ângulos" que conversam com as figuras do relatório.
 // O código escolhe os ângulos com dados e calcula os números; a IA só escreve as frases.
 
+import { chatJSON, hasLLM, type LLMEnv } from '../insights/llm'
 import { CONTACT_LABEL, WEEKDAYS, exitPct, fmt, inTen, n, type Derived, type ReportKind } from './derive'
 
 export type ReportInsight = {
@@ -207,10 +208,10 @@ function valid(r: Partial<ReportInsight>, allowed: Set<string>) {
 }
 
 /** Gera 2–3 insights para o relatório. Sem chave de IA (ou se ela falhar), devolve o texto padrão. */
-export async function buildReportInsights(kind: ReportKind, x: Derived, business: BusinessInfo, apiKey?: string): Promise<{ insights: ReportInsight[], model: string }> {
+export async function buildReportInsights(kind: ReportKind, x: Derived, business: BusinessInfo, llm: LLMEnv = {}): Promise<{ insights: ReportInsight[], model: string }> {
   const picked = BLUEPRINTS[kind].angles.map(a => ({ a, r: a.build(x) })).filter(v => v.r).slice(0, 3) as Array<{ a: Angle, r: NonNullable<ReturnType<Angle['build']>> }>
   const fallback = picked.map(({ a, r }) => ({ key: a.key, ...r.fallback }))
-  if (!apiKey || picked.length === 0) return { insights: fallback, model: 'IZI INTELLIGENCE (regras)' }
+  if (!hasLLM(llm) || picked.length === 0) return { insights: fallback, model: 'IZI INTELLIGENCE (regras)' }
 
   const negocio = [business.name, business.segment, business.subsegment, business.segmentDetail].filter(Boolean).join(' · ') || 'pequeno negócio'
   const cards = picked.map(({ a, r }) => ({ id: a.key, intencao: a.intent, fatos: r.facts }))
@@ -234,19 +235,9 @@ ${JSON.stringify(cards)}
 Responda só JSON: {"insights":[{"id":"","title":"","finding":"","action":""}]}`
 
   try {
-    const res = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'meta-llama/Llama-3.3-70B-Instruct',
-        messages: [{ role: 'system', content: 'Responda APENAS JSON válido.' }, { role: 'user', content: prompt }],
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
-      }),
-    })
-    if (!res.ok) return { insights: fallback, model: 'IZI INTELLIGENCE (regras)' }
-    const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> }
-    const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}') as { insights?: Array<Partial<ReportInsight> & { id?: string }> }
+    const raw = await chatJSON(llm, [{ role: 'system', content: 'Responda APENAS JSON válido.' }, { role: 'user', content: prompt }])
+    if (!raw) return { insights: fallback, model: 'IZI INTELLIGENCE (regras)' }
+    const parsed = JSON.parse(raw) as { insights?: Array<Partial<ReportInsight> & { id?: string }> }
     const byId = new Map((parsed.insights || []).map(r => [r.id, r]))
     const insights = picked.map(({ a, r }, i) => {
       const allowed = new Set(Object.values(r.facts).flatMap(v => numbersIn(String(v))))
