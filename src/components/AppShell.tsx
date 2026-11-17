@@ -4,7 +4,7 @@ import { BrandLogo } from './BrandLogo'
 import { WorkspaceSelector, NewSiteModal } from './WorkspaceSelector'
 import { APP_VERSION } from '../lib/version'
 
-export type Page = 'dashboard' | 'acquisition' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
+export type Page = 'dashboard' | 'acquisition' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup' | 'report-geral' | 'report-contatos' | 'report-visitas' | 'report-regiao'
 
 export const PAGE_TITLES: Record<Page, string> = {
   dashboard: 'Visão Geral | Analizi',
@@ -19,6 +19,10 @@ export const PAGE_TITLES: Record<Page, string> = {
   'data-sources': 'Fontes de Dados | Analizi',
   'ga4-setup': 'Conectar Google Analytics | Analizi',
   'tracker-setup': 'Instalar Rastreador | Analizi',
+  'report-geral': 'Relatório da semana | Analizi',
+  'report-contatos': 'Relatório de contatos | Analizi',
+  'report-visitas': 'Relatório de visitas | Analizi',
+  'report-regiao': 'Relatório por região | Analizi',
 }
 
 const nav = [
@@ -32,7 +36,7 @@ const nav = [
 ] as const
 
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
-  const paths: Partial<Record<Page, string>> = { dashboard: '/painel', acquisition: '/aquisicao', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics' }
+  const paths: Partial<Record<Page, string>> = { dashboard: '/painel', acquisition: '/aquisicao', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics', 'report-geral': '/relatorios/geral', 'report-contatos': '/relatorios/contatos', 'report-visitas': '/relatorios/visitas', 'report-regiao': '/relatorios/regiao' }
   const navigate = (next: Page) => {
     const path = paths[next];
     if (path && window.location.pathname !== path) {

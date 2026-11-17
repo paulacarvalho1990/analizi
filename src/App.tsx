@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowLeft, BookOpen, SlidersHorizontal, Eye, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users, Activity, CreditCard, Mail, Search, Minus, UserMinus, TrendingDown, X } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
+import { WeeklyReport, type ReportKind, type ReportData } from './components/reports/WeeklyReport'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard, DualMetricCard } from './components/Metrics'
 import { Button } from './components/ui/Button'
@@ -2034,7 +2035,7 @@ interface AnalyticsFilter {
   browser?: string
 }
 
-function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights') return 'insights'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
+function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights') return 'insights'; if (path === '/relatorios/geral') return 'report-geral'; if (path === '/relatorios/contatos') return 'report-contatos'; if (path === '/relatorios/visitas') return 'report-visitas'; if (path === '/relatorios/regiao') return 'report-regiao'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
 function dateString(date: Date) { return date.toISOString().slice(0, 10) }
 function shiftDays(base: string, offset: number) { const d = new Date(`${base}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + offset); return dateString(d) }
 function shiftMonths(base: string, offset: number) { const d = new Date(`${base.slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + offset); return dateString(d) }
@@ -2066,6 +2067,13 @@ function readAnalyticsFilter(): AnalyticsFilter {
   };
 }
 function selectedDays() { const filter = readAnalyticsFilter(); return Math.floor((Date.parse(`${filter.end}T00:00:00Z`) - Date.parse(`${filter.start}T00:00:00Z`)) / 86_400_000) + 1 }
+
+// Relatórios semanais one-page (ainda fora do menu): /relatorios/geral|contatos|visitas|regiao
+function Report({ kind }: { kind: ReportKind }) {
+  const analytics = useAnalytics();
+  const filter = readAnalyticsFilter();
+  return <WeeklyReport kind={kind} data={analytics as unknown as ReportData | null} start={filter.start} end={filter.end} normalizeSource={normalizeOriginName} />;
+}
 
 function useAnalytics() {
   const { currentSite } = useBusiness();
@@ -4087,7 +4095,11 @@ export function App() {
     team: <TeamSettings setPage={setPage}/>,
     'data-sources': <DataSources setPage={setPage}/>,
     'ga4-setup': GA4_ENABLED ? <GA4Setup setPage={setPage}/> : <GA4ComingSoon setPage={setPage}/>,
-    'tracker-setup': <TrackerSetup setPage={setPage}/>
+    'tracker-setup': <TrackerSetup setPage={setPage}/>,
+    'report-geral': <Report kind="geral"/>,
+    'report-contatos': <Report kind="contatos"/>,
+    'report-visitas': <Report kind="visitas"/>,
+    'report-regiao': <Report kind="regiao"/>
   };
 
   return (
