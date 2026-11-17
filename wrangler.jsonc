@@ -8,6 +8,7 @@
     "directory": "./dist",
     "not_found_handling": "single-page-application"
   },
+  "ai": { "binding": "AI" },
   "triggers": {
     "crons": ["0 3 * * *", "15 3 * * MON"]
   },
@@ -22,6 +23,7 @@
   "env": {
     "staging": {
       "name": "analizi",
+      "ai": { "binding": "AI" },
       "triggers": {
         "crons": ["0 3 * * *", "15 3 * * MON"]
       },
@@ -35,6 +37,7 @@
       ]
     },
     "preview": {
+      "ai": { "binding": "AI" },
       "triggers": {
         "crons": ["0 3 * * *", "15 3 * * MON"]
       },

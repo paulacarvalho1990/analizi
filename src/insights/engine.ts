@@ -5,6 +5,8 @@
 // A IA só reescreve o texto desses cards, sem poder inventar números;
 // se ela errar o formato, usamos o card do próprio motor.
 
+import { chatJSON, hasLLM, type LLMEnv } from './llm'
+
 interface D1Statement {
   bind(...values: unknown[]): D1Statement
 }
@@ -342,7 +344,7 @@ function validRewrite(c: Candidate, r: Partial<AIInsight>): boolean {
   })
 }
 
-async function rewriteWithAI(apiKey: string, business: BusinessContext, cands: Candidate[]): Promise<AIInsight[] | null> {
+async function rewriteWithAI(llm: LLMEnv, business: BusinessContext, cands: Candidate[]): Promise<AIInsight[] | null> {
   const negocio = [business.name, business.segment, business.subsegment, business.segmentDetail].filter(Boolean).join(' · ') || 'pequeno negócio'
   const payload = cands.map((c) => ({ id: c.key, title: c.title, finding: c.finding, action: c.action, projection: c.projection, fatos: c.facts }))
   const prompt = `Você revisa cards de insight para o dono de um ${negocio}, que não entende de analytics.
@@ -363,22 +365,12 @@ ${JSON.stringify(payload)}
 Responda só JSON: {"insights":[{"id":"","title":"","finding":"","action":"","projection":""}]}`
 
   try {
-    const res = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model: 'meta-llama/Llama-3.3-70B-Instruct',
-        messages: [
-          { role: 'system', content: 'Responda APENAS JSON válido.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.2,
-        response_format: { type: 'json_object' }
-      })
-    })
-    if (!res.ok) return null
-    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}') as { insights?: Array<Partial<AIInsight> & { id?: string }> }
+    const raw = await chatJSON(llm, [
+      { role: 'system', content: 'Responda APENAS JSON válido.' },
+      { role: 'user', content: prompt }
+    ], 0.2)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { insights?: Array<Partial<AIInsight> & { id?: string }> }
     const byId = new Map((parsed.insights || []).map((r) => [r.id, r]))
     return cands.map((c) => {
       const r = byId.get(c.key)
@@ -404,12 +396,12 @@ export async function buildWeeklyInsights(
   siteId: string,
   window: { start: string; end: string; prevStart: string; prevEnd: string },
   business: BusinessContext,
-  apiKey?: string
+  llm: LLMEnv = {}
 ): Promise<{ insights: AIInsight[]; model: string }> {
   const data = await collect(db, siteId, window)
   const cands = buildCandidates(data)
-  if (apiKey && cands[0]?.key !== 'low_data') {
-    const rewritten = await rewriteWithAI(apiKey, business, cands)
+  if (hasLLM(llm) && cands[0]?.key !== 'low_data') {
+    const rewritten = await rewriteWithAI(llm, business, cands)
     if (rewritten) return { insights: rewritten, model: 'IZI INTELLIGENCE' }
   }
   return { insights: cands.map(strip), model: 'IZI INTELLIGENCE (regras)' }
