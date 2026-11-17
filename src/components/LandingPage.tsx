@@ -47,10 +47,10 @@ export function LandingPage({ onStartTrial, onLogin }: LandingPageProps) {
     },
     {
       q: 'Já utilizo o Google Analytics no meu site. Posso usar o Analizi?',
-      a: 'Sim! Você pode conectar sua conta do Google Analytics 4 existente com apenas um clique. O Analizi importa os dados automaticamente e os traduz para uma interface infinitamente mais limpa, compreensível e focada em resultados comerciais.',
+      a: 'Sim! O Analizi funciona como o Google Analytics: coleta as visitas, origens e conversões do seu site com o Rastreador Analizi. A diferença é que mostra as métricas de forma simplificada e fácil de acompanhar, sem a complexidade do GA4. Basta adicionar uma linha de código ao seu site.',
     },
     {
-      q: 'Como instalo o Analizi se eu não tiver o Google Analytics?',
+      q: 'Como instalo o Analizi no meu site?',
       a: 'Disponibilizamos o Rastreador Analizi: uma única linha de código simples. Basta colar no cabeçalho do seu site (WordPress, Wix, Shopify, Nuvemshop ou código próprio). Se preferir, nossa equipe e tutoriais passo a passo ajudam você na configuração em menos de 2 minutos.',
     },
     {
@@ -444,7 +444,7 @@ export function LandingPage({ onStartTrial, onLogin }: LandingPageProps) {
                   </li>
                   <li>
                     <CheckCircle2 size={18} className="list-icon-positive" />
-                    <span><strong>Instalação em 2 minutos</strong>: conecte seu Google Analytics existente ou adicione 1 linha de código.</span>
+                    <span><strong>Instalação em 2 minutos</strong>: adicione 1 linha de código ao seu site.</span>
                   </li>
                   <li>
                     <CheckCircle2 size={18} className="list-icon-positive" />
@@ -574,7 +574,7 @@ export function LandingPage({ onStartTrial, onLogin }: LandingPageProps) {
                 <div className="step-number-badge">02</div>
                 <h3>Conecte seu site</h3>
                 <p>
-                  Se já possui Google Analytics, faça a conexão com apenas um clique. Se não possui, cole uma linha de código simples na sua página.
+                  Cole uma linha de código simples na sua página e pronto.
                 </p>
               </div>
 
@@ -638,7 +638,7 @@ export function LandingPage({ onStartTrial, onLogin }: LandingPageProps) {
                   </li>
                   <li>
                     <Check size={18} className="feature-check-icon" />
-                    <span>Conexão direta com Google Analytics ou Rastreador Analizi</span>
+                    <span>Rastreador Analizi leve, compatível com qualquer site</span>
                   </li>
                   <li>
                     <Check size={18} className="feature-check-icon" />

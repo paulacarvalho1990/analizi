@@ -1404,16 +1404,51 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
     }
   }
 
-  // Insights são produzidos apenas pelo cron semanal. A leitura da tela nunca
-  // gera ou substitui uma análise, evitando relatórios diferentes no mesmo ciclo.
+  // Nenhuma análise para o ciclo atual (site novo ou cron que não cobriu o site):
+  // gera UMA vez a partir das métricas enviadas e congela no D1 para a semana.
+  // Próximas aberturas da tela leem o cache acima, sem regenerar.
+  const scope = determineTemporalScope(
+    metrics?.periodDays || 7,
+    metrics?.totals || {},
+    metrics?.previousTotals || {}
+  )
+  let generated: AIInsight[] | null = null
+  if (env.DEEPINFRA_API_KEY) {
+    generated = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, business || {}, metrics || {}, scope)
+  }
+  const finalInsights = generated || buildRuleBasedFallback(business || {}, metrics || {}, scope)
+  const nowIso = new Date().toISOString()
+
+  if (safeSiteId && finalInsights.length) {
+    try {
+      await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare(`
+          insert into site_insights (id, tracker_site_id, week_cycle, temporal_scope, insights_json, model, metadata_json, created_at)
+          values (?, ?, ?, ?, ?, 'IZI INTELLIGENCE', ?, ?)
+          on conflict(tracker_site_id, week_cycle) do nothing
+        `).bind(
+          `ins_${safeSiteId}_${currentWeek}`,
+          safeSiteId,
+          currentWeek,
+          scope,
+          JSON.stringify(finalInsights),
+          JSON.stringify({ businessSegment: business?.segment, subsegment: business?.subsegment, origin: 'first_view' }),
+          nowIso
+        )
+      ])
+    } catch (saveErr) {
+      console.error('Falha ao persistir insights no D1:', saveErr)
+    }
+  }
+
   return json({
-    insights: [],
+    insights: finalInsights,
     model: 'IZI INTELLIGENCE',
-    scope: 'semanal',
+    scope,
     weekCycle: currentWeek,
     cached: false,
-    nextUpdate: 'segunda-feira'
-  }, 202)
+    generatedAt: nowIso
+  })
 }
 
 async function runScheduledWeeklyInsights(env: Env): Promise<void> {
