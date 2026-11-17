@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relatório resumido</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Tokens copiados de src/brand-tokens.css + src/components/report/report.css (develop v0.0.38) */
+:root{
+  --analizi-blue:#3B82F6;--analizi-orange:#FF8A3D;--analizi-pink:#FF3CAC;--analizi-navy:#0B1F4B;
+  --background:#F9FAFB;--surface:#FFFFFF;--foreground:#111827;--muted:#6B7280;--faint:#9CA3AF;
+  --border:#E5E7EB;--track:#F1F3F7;--soft:#F7F8FA;--primary:#D61F83;
+  --good:#15803D;--good-bg:#E8F6EE;--warn:#B45309;--warn-bg:#FFF3E6;--bad:#B4235E;--bad-bg:#FDEAF3;
+  --tip-bg:#FFF7FB;--tip-border:#FAD3E7;
+  --shadow:0 1px 2px #1118270a,0 8px 24px -16px #11182726;--radius:14px;
+}
+[data-theme="dark"]{
+  --background:#1E2025;--surface:#292C33;--foreground:#F9FAFB;--muted:#A3AEC2;--faint:#7D8798;
+  --border:#3D414A;--track:#33363e;--soft:#24272d;--primary:#FF3CAC;
+  --good:#4ADE80;--good-bg:#1f3b2b;--warn:#FDBA74;--warn-bg:#3d2a20;--bad:#FF8CC6;--bad-bg:#45213a;
+  --tip-bg:#33202c;--tip-border:#5a2b46;--shadow:none;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background);color:var(--foreground);font-family:Inter,ui-sans-serif,system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
+
+.wrap{max-width:960px;margin:0 auto;padding:28px 16px 64px}
+
+/* topo */
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.top h1{margin:0;font-size:22px;font-weight:600;letter-spacing:-.03em}
+.top p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--border);background:var(--surface);color:var(--foreground);border-radius:10px;padding:8px 13px;font-weight:600;font-size:13px;cursor:pointer;display:inline-flex;gap:7px;align-items:center}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.weeknav{display:inline-flex;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:10px}
+.weeknav button{border:0;background:none;padding:7px 10px;color:var(--muted);cursor:pointer;font-size:15px}
+.weeknav span{font-weight:600;font-size:13px;padding:0 4px}
+
+/* a carta: o momento marcante */
+.letter{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:20px;overflow:hidden;box-shadow:var(--shadow)}
+.letter::before{content:"";display:block;height:6px;background:linear-gradient(115deg,#3B82F6 0%,#FF3CAC 55%,#FF8A3D 100%)}
+.letter-body{padding:32px 36px 28px;display:grid;grid-template-columns:1fr 240px;gap:32px;align-items:end}
+.greet{color:var(--muted);font-size:14px;margin:0 0 10px}
+.headline{margin:0;font-size:clamp(26px,3.6vw,38px);line-height:1.12;letter-spacing:-.035em;font-weight:700;max-width:22ch;text-wrap:balance}
+.lede{margin:14px 0 0;color:var(--muted);font-size:15px;max-width:58ch}
+.lede b{color:var(--foreground);font-weight:600}
+.score{border-left:1px solid var(--border);padding-left:28px}
+.score small{display:block;color:var(--muted);font-size:12.5px}
+.score strong{display:block;font-size:56px;font-weight:800;letter-spacing:-.05em;line-height:1;margin:6px 0 4px}
+.delta{display:inline-flex;align-items:center;gap:4px;font-weight:700;font-size:12.5px;border-radius:999px;padding:2px 9px}
+.delta.up{color:var(--good);background:var(--good-bg)}
+.delta.down{color:var(--bad);background:var(--bad-bg)}
+.delta.flat{color:var(--muted);background:var(--track)}
+
+/* números da semana */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--border)}
+.kpi{padding:18px 22px;border-right:1px solid var(--border)}
+.kpi:last-child{border-right:0}
+.kpi small{color:var(--muted);font-size:12.5px;display:block}
+.kpi b{display:block;font-size:24px;font-weight:700;letter-spacing:-.03em;margin:2px 0 6px}
+.spark{display:block;width:100%;height:28px;margin-top:10px}
+
+/* seções */
+h2{font-size:16px;font-weight:600;letter-spacing:-.02em;margin:36px 0 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px}
+.card h3{margin:0 0 4px;font-size:14px;font-weight:600}
+.card .read{margin:0 0 14px;color:var(--muted);font-size:13px}
+.card .read b{color:var(--foreground)}
+
+/* dias */
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:140px;padding-top:8px}
+.day{display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.day .bars{display:flex;gap:3px;align-items:flex-end;height:100%;width:100%;justify-content:center}
+.day .bar{width:38%;border-radius:5px 5px 2px 2px}
+.bar.now{background:var(--analizi-blue)}
+.bar.prev{background:var(--track)}
+.day.best .bar.now{background:var(--analizi-pink)}
+.day span{font-size:11.5px;color:var(--muted)}
+.day.best span{color:var(--foreground);font-weight:700}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
+/* listas ranqueadas */
+.rank{list-style:none;margin:0;padding:0;display:grid;gap:11px}
+.rank li{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px}
+.rank .name{font-weight:600}
+.rank .val{font-weight:700;text-align:right}
+.rank .track{grid-column:1/-1;height:6px;border-radius:99px;background:var(--track);overflow:hidden}
+.rank .track i{display:block;height:100%;border-radius:99px;background:var(--analizi-blue)}
+.rank .chg{font-weight:600;font-size:12px;margin-left:6px}
+.chg.up{color:var(--good)}.chg.down{color:var(--bad)}
+
+/* destaques */
+.highs{display:grid;gap:10px}
+.high{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px}
+.high .ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center}
+.high.good .ico{background:var(--good-bg);color:var(--good)}
+.high.warn .ico{background:var(--warn-bg);color:var(--warn)}
+.high.bad .ico{background:var(--bad-bg);color:var(--bad)}
+.high p{margin:0;font-size:14px}
+.high p+p{color:var(--muted);font-size:13px;margin-top:2px}
+
+/* próxima ação */
+.next{margin-top:14px;background:var(--tip-bg);border:1px solid var(--tip-border);border-radius:var(--radius);padding:18px 20px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.next p{margin:0;max-width:62ch}
+.next p:first-child{font-weight:600}
+.next p+p{color:var(--muted);font-size:13px;margin-top:3px}
+
+.foot{margin-top:28px;color:var(--faint);font-size:12px;text-align:center}
+
+@media (max-width:760px){
+  .letter-body{grid-template-columns:1fr;padding:24px 20px 20px;gap:20px}
+  .score{border-left:0;padding-left:0;border-top:1px solid var(--border);padding-top:16px}
+  .kpis{grid-template-columns:1fr 1fr}
+  .kpi:nth-child(2){border-right:0}
+  .kpi:nth-child(-n+2){border-bottom:1px solid var(--border)}
+  .grid2{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:no-preference){
+  .day .bar.now{transform-origin:bottom;animation:grow .7s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes grow{from{transform:scaleY(0)}}
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Relatório resumido</h1>
+      <p>Os destaques da semana do seu site, comparados com a semana anterior.</p>
+    </div>
+    <div class="actions">
+      <div class="weeknav" role="group" aria-label="Escolher semana">
+        <button aria-label="Semana anterior">‹</button>
+        <span class="num">9 a 15 de nov</span>
+        <button aria-label="Próxima semana" disabled style="opacity:.35">›</button>
+      </div>
+      <button class="btn" id="theme" aria-label="Alternar tema">◐</button>
+      <button class="btn">Ver por e-mail</button>
+      <button class="btn primary">Baixar PDF</button>
+    </div>
+  </header>
+
+  <article class="letter" aria-labelledby="hl">
+    <div class="letter-body">
+      <div>
+        <p class="greet">Semana de 9 a 15 de novembro · Clínica Sorriso Leve</p>
+        <h2 id="hl" class="headline" style="margin:0">Sua melhor semana de contatos em dois meses.</h2>
+        <p class="lede">O site recebeu <b>3.412 visitas</b> e gerou <b>87 contatos</b> pelo WhatsApp. Quem mais trouxe gente foi o <b>Instagram</b>, e a página <b>Clareamento</b> foi a que mais converteu.</p>
+      </div>
+      <div class="score">
+        <small>Contatos na semana</small>
+        <strong class="num">87</strong>
+        <span class="delta up num">▲ 31% vs. semana anterior</span>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><small>Visitas</small><b class="num">3.412</b><span class="delta up num">▲ 12%</span><svg class="spark" data-s="38,42,40,51,58,49,44" data-c="#3B82F6"></svg></div>
+      <div class="kpi"><small>Visitantes únicos</small><b class="num">2.106</b><span class="delta up num">▲ 8%</span><svg class="spark" data-s="30,31,29,36,40,35,33" data-c="#3B82F6"></svg></div>
+      <div class="kpi"><small>Taxa de contato</small><b class="num">2,6%</b><span class="delta up num">▲ 0,4 p.p.</span><svg class="spark" data-s="2.1,2.2,2.4,2.9,3.1,2.5,2.4" data-c="#FF3CAC"></svg></div>
+      <div class="kpi"><small>Tempo na página</small><b class="num">1m 42s</b><span class="delta down num">▼ 6%</span><svg class="spark" data-s="110,108,104,99,101,97,95" data-c="#FF8A3D"></svg></div>
+    </div>
+  </article>
+
+  <h2>O que aconteceu</h2>
+  <div class="highs">
+    <div class="high good"><span class="ico" aria-hidden="true">▲</span><div><p>Quinta-feira teve o maior número de contatos da semana: <b>21</b>.</p><p>Coincide com o post de clareamento no Instagram, publicado às 18h.</p></div></div>
+    <div class="high warn"><span class="ico" aria-hidden="true">!</span><div><p>A página <b>Agendar consulta</b> está demorando 4,1s para abrir no celular.</p><p>Metade das pessoas sai antes do carregamento terminar.</p></div></div>
+    <div class="high bad"><span class="ico" aria-hidden="true">▼</span><div><p>Visitas vindas do Google caíram <b>18%</b>.</p><p>A queda se concentra na busca por “dentista Pinheiros”.</p></div></div>
+  </div>
+
+  <div class="grid2" style="margin-top:14px">
+    <section class="card">
+      <h3>Visitas por dia</h3>
+      <p class="read">Quinta foi o pico, e o fim de semana segurou acima da semana anterior.</p>
+      <div class="days" id="days"></div>
+      <div class="legend"><span><i style="background:var(--analizi-blue)"></i>Esta semana</span><span><i style="background:var(--track)"></i>Semana anterior</span></div>
+    </section>
+    <section class="card">
+      <h3>De onde vieram as visitas</h3>
+      <p class="read">O <b>Instagram</b> passou o Google pela primeira vez.</p>
+      <ul class="rank" id="channels"></ul>
+    </section>
+    <section class="card">
+      <h3>Páginas que mais geraram contato</h3>
+      <p class="read">Contatos pelo WhatsApp iniciados em cada página.</p>
+      <ul class="rank" id="pages"></ul>
+    </section>
+    <section class="card">
+      <h3>Botões mais clicados</h3>
+      <p class="read">O botão do topo da página inicial lidera com folga.</p>
+      <ul class="rank" id="buttons"></ul>
+    </section>
+  </div>
+
+  <div class="next">
+    <div>
+      <p>Para a próxima semana: deixe a página Agendar consulta mais leve.</p>
+      <p>Ela é a segunda que mais gera contatos. Abrir em menos de 2s pode recuperar cerca de 10 contatos por semana.</p>
+    </div>
+    <button class="btn primary">Ver detalhes da página</button>
+  </div>
+
+  <p class="foot">Dados do Google Analytics e do rastreador Analizi · atualizados em 16 de nov, 06:00</p>
+</main>
+
+<script>
+const days=[['Seg',412,380],['Ter',455,401],['Qua',438,420],['Qui',612,470],['Sex',540,488],['Sáb',497,410],['Dom',458,402]];
+const max=Math.max(...days.flatMap(d=>[d[1],d[2]])),best=Math.max(...days.map(d=>d[1]));
+document.getElementById('days').innerHTML=days.map(([d,n,p],i)=>`<div class="day${n===best?' best':''}" title="${d}: ${n} visitas (antes ${p})"><div class="bars"><i class="bar prev" style="height:${p/max*100}%"></i><i class="bar now" style="height:${n/max*100}%;animation-delay:${i*60}ms"></i></div><span>${d}</span></div>`).join('');
+const fmt=n=>n.toLocaleString('pt-BR');
+function rank(id,rows,color){const m=Math.max(...rows.map(r=>r[1]));document.getElementById(id).innerHTML=rows.map(([n,v,c])=>`<li><span class="name">${n}</span><span class="val num">${fmt(v)}${c!=null?`<span class="chg ${c>=0?'up':'down'}">${c>=0?'+':''}${c}%</span>`:''}</span><span class="track"><i style="width:${v/m*100}%;background:${color}"></i></span></li>`).join('')}
+rank('channels',[['Instagram',1204,42],['Google (busca)',1088,-18],['Direto',671,4],['Facebook',302,9],['Outros',147,-2]],'var(--analizi-blue)');
+rank('pages',[['Clareamento',31,55],['Agendar consulta',24,-8],['Página inicial',19,12],['Aparelho invisível',13,30]],'var(--analizi-pink)');
+rank('buttons',[['“Falar no WhatsApp” (topo)',58],['“Agendar avaliação”',19],['Ícone flutuante',10]],'var(--analizi-orange)');
+document.querySelectorAll('.spark').forEach(s=>{const v=s.dataset.s.split(',').map(Number),mn=Math.min(...v),mx=Math.max(...v),w=100,h=28;const pts=v.map((y,i)=>[i/(v.length-1)*w,h-3-((y-mn)/(mx-mn||1))*(h-6)]);s.setAttribute('viewBox',`0 0 ${w} ${h}`);s.setAttribute('preserveAspectRatio','none');s.setAttribute('aria-hidden','true');s.innerHTML=`<polyline points="${pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${s.dataset.c}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>`});
+document.getElementById('theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'};
+</script>
+</body>
+</html>
