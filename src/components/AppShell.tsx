@@ -22,7 +22,7 @@ export const PAGE_TITLES: Record<Page, string> = {
 }
 
 const nav = [
-  { id: 'dashboard', label: 'Início', shortLabel: 'Início', icon: BarChart3, badge: undefined },
+  { id: 'dashboard', label: 'Visão Geral', shortLabel: 'Visão Geral', icon: BarChart3, badge: undefined },
   { id: 'acquisition', label: 'Aquisição & Campanhas', shortLabel: 'Aquisição', icon: Compass, badge: undefined },
   { id: 'audience', label: 'Público', shortLabel: 'Público', icon: Users, badge: undefined },
   { id: 'pages', label: 'Páginas', shortLabel: 'Páginas', icon: FileText, badge: undefined },
@@ -53,7 +53,7 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <button className="brand" aria-label="Ir para o início" onClick={() => navigate('dashboard')}>
+        <button className="brand" aria-label="Ir para a Visão Geral" onClick={() => navigate('dashboard')}>
           <BrandLogo inverse />
         </button>
         <WorkspaceSelector onNavigateSettings={() => navigate('data-sources')} />

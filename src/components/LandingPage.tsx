@@ -52,7 +52,7 @@ const MOCK = {
 } as const
 
 const APP_NAV = [
-  { label: 'Início', icon: BarChart3, active: true },
+  { label: 'Visão Geral', icon: BarChart3, active: true },
   { label: 'Aquisição & Campanhas', icon: Compass },
   { label: 'Público', icon: Users },
   { label: 'Páginas', icon: FileText },
@@ -532,7 +532,7 @@ export function LandingPage({ onStartTrial, onLogin }: LandingPageProps) {
                 <button type="button" className="lp-btn lp-btn-outline lp-btn-block" onClick={onStartTrial}>Começar teste grátis</button>
                 <ul>
                   <li><Check size={16} /> 1 site</li>
-                  <li><Check size={16} /> Início, Aquisição, Público, Páginas e Resultados</li>
+                  <li><Check size={16} /> Visão Geral, Aquisição, Público, Páginas e Resultados</li>
                   <li><Check size={16} /> Contagem automática de cliques no WhatsApp</li>
                   <li><Check size={16} /> Insights semanais com IA</li>
                 </ul>
