@@ -126,15 +126,20 @@ button{font:inherit}
 .tip .do b{color:var(--primary)}
 
 /* fatos */
-.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
-.fact{margin:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px 20px 20px;display:flex;flex-direction:column;gap:14px}
-.fact svg{width:120px;height:64px}
-.fact figcaption{font-size:15px;line-height:1.45;color:var(--muted)}
-.fact figcaption b{color:var(--foreground)}
-.next{margin-top:28px;border-radius:var(--radius);padding:20px 22px;background:var(--tip-bg);border:1px solid var(--tip-border)}
-.next p{margin:0;font-size:15px;max-width:64ch}
-.next .t{font-weight:700;color:var(--primary);margin-bottom:4px}
-@media (max-width:760px){.facts{grid-template-columns:1fr}.fact{flex-direction:row;align-items:center}.fact svg{flex:none;width:90px;height:48px}}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
+.fact{margin:0;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:10px;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.fact .stage{--tint:var(--tip-bg);background:var(--tint);border-radius:12px;height:132px;display:grid;place-items:center}
+.fact .t-blue{--tint:#EEF4FF}.fact .t-orange{--tint:#FFF4EC}.fact .t-good{--tint:var(--good-bg)}.fact .t-bad{--tint:var(--bad-bg)}
+[data-theme="dark"] .fact .t-blue{--tint:#1f2a40}[data-theme="dark"] .fact .t-orange{--tint:#3a2a1f}
+.fact svg{width:168px;height:90px;overflow:visible}
+.fact figcaption{padding:14px 10px 10px;font-size:15.5px;line-height:1.45;color:var(--foreground);opacity:.82}
+.fact figcaption b{opacity:1;font-weight:700}
+.next{margin-top:28px;border-radius:18px;padding:20px 22px;background:var(--tip-bg);border:1px solid var(--tip-border);display:grid;grid-template-columns:44px 1fr;gap:4px 16px;align-items:center}
+.next::before{content:"";grid-row:span 2;width:44px;height:44px;border-radius:12px;background:var(--primary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z'/%3E%3C/svg%3E") center/22px no-repeat}
+.next p{margin:0;font-size:15.5px;max-width:64ch}
+.next .t{font-weight:700;color:var(--primary);font-size:13px}
+.q h2{font-size:20px}
+@media (max-width:760px){.facts{grid-template-columns:1fr}.fact{flex-direction:row;align-items:center}.fact .stage{flex:none;width:112px;height:96px}.fact svg{width:96px;height:52px}}
 
 /* glossário */
 details{margin-top:34px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 20px}
@@ -160,6 +165,7 @@ dd{margin:0;color:var(--muted)}
 </style>
 </head>
 <body>
+
 <main class="wrap">
   <header class="top">
     <div><h1>Relatório por região</h1><p>De onde são as pessoas que visitam o seu site.</p></div>
@@ -180,17 +186,17 @@ dd{margin:0;color:var(--muted)}
     <h2>Os destaques da semana</h2>
     <div class="facts">
       <!-- fonte: locations[].city -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><ellipse cx="60" cy="56" rx="26" ry="5" fill="var(--track)"/><path d="M60 8c-11 0-19 8-19 18 0 13 19 30 19 30s19-17 19-30c0-10-8-18-19-18z" fill="var(--orange)"/><circle cx="60" cy="26" r="7" fill="var(--surface)"/></svg><figcaption>A cidade que mais visitou foi <b>São Paulo</b>, com 1.422 pessoas.</figcaption></figure>
+      <figure class="fact"><div class="stage t-orange"><svg viewBox="0 0 120 64" aria-hidden="true"><ellipse cx="60" cy="56" rx="26" ry="5" fill="var(--track)"/><path d="M60 8c-11 0-19 8-19 18 0 13 19 30 19 30s19-17 19-30c0-10-8-18-19-18z" fill="var(--orange)"/><circle cx="60" cy="26" r="7" fill="var(--surface)"/></svg></div><figcaption>A cidade que mais visitou foi <b>São Paulo</b>, com 1.422 pessoas.</figcaption></figure>
       <!-- fonte: locations[].city -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><path d="M20 30c8-18 30-24 50-20s34 14 32 28-20 22-42 20S12 46 20 30z" fill="var(--track)"/><circle cx="48" cy="32" r="12" fill="var(--orange)" opacity="0.9"/><circle cx="66" cy="24" r="7" fill="var(--orange)" opacity="0.7"/><circle cx="36" cy="40" r="5" fill="var(--orange)" opacity="0.6"/><circle cx="74" cy="40" r="4" fill="var(--orange)" opacity="0.5"/></svg><figcaption>Depois vêm <b>Guarulhos</b>, <b>Osasco</b> e <b>Santo André</b>.</figcaption></figure>
+      <figure class="fact"><div class="stage t-orange"><svg viewBox="0 0 120 64" aria-hidden="true"><path d="M20 30c8-18 30-24 50-20s34 14 32 28-20 22-42 20S12 46 20 30z" fill="var(--track)"/><circle cx="48" cy="32" r="12" fill="var(--orange)" opacity="0.9"/><circle cx="66" cy="24" r="7" fill="var(--orange)" opacity="0.7"/><circle cx="36" cy="40" r="5" fill="var(--orange)" opacity="0.6"/><circle cx="74" cy="40" r="4" fill="var(--orange)" opacity="0.5"/></svg></div><figcaption>Depois vêm <b>Guarulhos</b>, <b>Osasco</b> e <b>Santo André</b>.</figcaption></figure>
       <!-- fonte: locations[].conversions -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><circle cx="12" cy="22" r="5" fill="var(--orange)"/><path d="M6 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--orange)"/><circle cx="24" cy="22" r="5" fill="var(--track)"/><path d="M18 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="36" cy="22" r="5" fill="var(--track)"/><path d="M30 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="48" cy="22" r="5" fill="var(--track)"/><path d="M42 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="60" cy="22" r="5" fill="var(--track)"/><path d="M54 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="72" cy="22" r="5" fill="var(--track)"/><path d="M66 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="84" cy="22" r="5" fill="var(--track)"/><path d="M78 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="96" cy="22" r="5" fill="var(--track)"/><path d="M90 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="108" cy="22" r="5" fill="var(--track)"/><path d="M102 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/></svg><figcaption>Em <b>Guarulhos</b>, 1 em cada 10 visitantes pediu contato. É a cidade que mais chama.</figcaption></figure>
+      <figure class="fact"><div class="stage t-orange"><svg viewBox="0 0 120 64" aria-hidden="true"><circle cx="12" cy="22" r="5" fill="var(--orange)"/><path d="M6 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--orange)"/><circle cx="24" cy="22" r="5" fill="var(--track)"/><path d="M18 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="36" cy="22" r="5" fill="var(--track)"/><path d="M30 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="48" cy="22" r="5" fill="var(--track)"/><path d="M42 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="60" cy="22" r="5" fill="var(--track)"/><path d="M54 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="72" cy="22" r="5" fill="var(--track)"/><path d="M66 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="84" cy="22" r="5" fill="var(--track)"/><path d="M78 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="96" cy="22" r="5" fill="var(--track)"/><path d="M90 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="108" cy="22" r="5" fill="var(--track)"/><path d="M102 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/></svg></div><figcaption>Em <b>Guarulhos</b>, 1 em cada 10 visitantes pediu contato. É a cidade que mais chama.</figcaption></figure>
       <!-- fonte: locations[].region -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><rect x="34" y="6" width="34" height="52" rx="4" fill="none" stroke="var(--border)" stroke-width="2.5"/><path d="M58 32h40m-9-9 9 9-9 9" fill="none" stroke="var(--bad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg><figcaption>Quem é de <b>fora do estado</b> quase nunca pede contato: 2 em 190 visitantes.</figcaption></figure>
+      <figure class="fact"><div class="stage t-bad"><svg viewBox="0 0 120 64" aria-hidden="true"><rect x="34" y="6" width="34" height="52" rx="4" fill="none" stroke="var(--border)" stroke-width="2.5"/><path d="M58 32h40m-9-9 9 9-9 9" fill="none" stroke="var(--bad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div><figcaption>Quem é de <b>fora do estado</b> quase nunca pede contato: 2 em 190 visitantes.</figcaption></figure>
       <!-- fonte: locations[].conversions -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><path d="M30 10h60a8 8 0 0 1 8 8v22a8 8 0 0 1-8 8H56l-14 10v-10H30a8 8 0 0 1-8-8V18a8 8 0 0 1 8-8z" fill="var(--good-bg)" stroke="var(--good)" stroke-width="2.5"/><circle cx="46" cy="29" r="3.5" fill="var(--good)"/><circle cx="60" cy="29" r="3.5" fill="var(--good)"/><circle cx="74" cy="29" r="3.5" fill="var(--good)"/></svg><figcaption><b>São Paulo</b> trouxe 61 dos 87 contatos da semana.</figcaption></figure>
+      <figure class="fact"><div class="stage t-good"><svg viewBox="0 0 120 64" aria-hidden="true"><path d="M30 10h60a8 8 0 0 1 8 8v22a8 8 0 0 1-8 8H56l-14 10v-10H30a8 8 0 0 1-8-8V18a8 8 0 0 1 8-8z" fill="var(--good-bg)" stroke="var(--good)" stroke-width="2.5"/><circle cx="46" cy="29" r="3.5" fill="var(--good)"/><circle cx="60" cy="29" r="3.5" fill="var(--good)"/><circle cx="74" cy="29" r="3.5" fill="var(--good)"/></svg></div><figcaption><b>São Paulo</b> trouxe 61 dos 87 contatos da semana.</figcaption></figure>
       <!-- fonte: locations[] vs semana anterior -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><circle cx="12" cy="22" r="5" fill="var(--blue)"/><path d="M6 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--blue)"/><circle cx="24" cy="22" r="5" fill="var(--track)"/><path d="M18 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="36" cy="22" r="5" fill="var(--track)"/><path d="M30 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="48" cy="22" r="5" fill="var(--track)"/><path d="M42 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="60" cy="22" r="5" fill="var(--track)"/><path d="M54 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="72" cy="22" r="5" fill="var(--track)"/><path d="M66 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="84" cy="22" r="5" fill="var(--track)"/><path d="M78 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="96" cy="22" r="5" fill="var(--track)"/><path d="M90 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="108" cy="22" r="5" fill="var(--track)"/><path d="M102 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/></svg><figcaption><b>Campinas</b> apareceu pela primeira vez, com 42 visitantes.</figcaption></figure>
+      <figure class="fact"><div class="stage t-blue"><svg viewBox="0 0 120 64" aria-hidden="true"><circle cx="12" cy="22" r="5" fill="var(--blue)"/><path d="M6 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--blue)"/><circle cx="24" cy="22" r="5" fill="var(--track)"/><path d="M18 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="36" cy="22" r="5" fill="var(--track)"/><path d="M30 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="48" cy="22" r="5" fill="var(--track)"/><path d="M42 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="60" cy="22" r="5" fill="var(--track)"/><path d="M54 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="72" cy="22" r="5" fill="var(--track)"/><path d="M66 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="84" cy="22" r="5" fill="var(--track)"/><path d="M78 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="96" cy="22" r="5" fill="var(--track)"/><path d="M90 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="108" cy="22" r="5" fill="var(--track)"/><path d="M102 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/></svg></div><figcaption><b>Campinas</b> apareceu pela primeira vez, com 42 visitantes.</figcaption></figure>
     </div>
   </section>
   <section class="next"><p class="t">Para a próxima semana</p><p>Se você atende em Guarulhos, cite a cidade no site e nos posts. Quem é de lá já está procurando e chamando.</p></section>

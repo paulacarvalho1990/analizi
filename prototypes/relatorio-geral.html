@@ -126,15 +126,20 @@ button{font:inherit}
 .tip .do b{color:var(--primary)}
 
 /* fatos */
-.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
-.fact{margin:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px 20px 20px;display:flex;flex-direction:column;gap:14px}
-.fact svg{width:120px;height:64px}
-.fact figcaption{font-size:15px;line-height:1.45;color:var(--muted)}
-.fact figcaption b{color:var(--foreground)}
-.next{margin-top:28px;border-radius:var(--radius);padding:20px 22px;background:var(--tip-bg);border:1px solid var(--tip-border)}
-.next p{margin:0;font-size:15px;max-width:64ch}
-.next .t{font-weight:700;color:var(--primary);margin-bottom:4px}
-@media (max-width:760px){.facts{grid-template-columns:1fr}.fact{flex-direction:row;align-items:center}.fact svg{flex:none;width:90px;height:48px}}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
+.fact{margin:0;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:10px;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.fact .stage{--tint:var(--tip-bg);background:var(--tint);border-radius:12px;height:132px;display:grid;place-items:center}
+.fact .t-blue{--tint:#EEF4FF}.fact .t-orange{--tint:#FFF4EC}.fact .t-good{--tint:var(--good-bg)}.fact .t-bad{--tint:var(--bad-bg)}
+[data-theme="dark"] .fact .t-blue{--tint:#1f2a40}[data-theme="dark"] .fact .t-orange{--tint:#3a2a1f}
+.fact svg{width:168px;height:90px;overflow:visible}
+.fact figcaption{padding:14px 10px 10px;font-size:15.5px;line-height:1.45;color:var(--foreground);opacity:.82}
+.fact figcaption b{opacity:1;font-weight:700}
+.next{margin-top:28px;border-radius:18px;padding:20px 22px;background:var(--tip-bg);border:1px solid var(--tip-border);display:grid;grid-template-columns:44px 1fr;gap:4px 16px;align-items:center}
+.next::before{content:"";grid-row:span 2;width:44px;height:44px;border-radius:12px;background:var(--primary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z'/%3E%3C/svg%3E") center/22px no-repeat}
+.next p{margin:0;font-size:15.5px;max-width:64ch}
+.next .t{font-weight:700;color:var(--primary);font-size:13px}
+.q h2{font-size:20px}
+@media (max-width:760px){.facts{grid-template-columns:1fr}.fact{flex-direction:row;align-items:center}.fact .stage{flex:none;width:112px;height:96px}.fact svg{width:96px;height:52px}}
 
 /* glossário */
 details{margin-top:34px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 20px}
@@ -160,6 +165,7 @@ dd{margin:0;color:var(--muted)}
 </style>
 </head>
 <body>
+
 <main class="wrap">
   <header class="top">
     <div><h1>Relatório da semana</h1><p>Como foi a semana do seu site, explicado sem termos técnicos.</p></div>
@@ -180,17 +186,17 @@ dd{margin:0;color:var(--muted)}
     <h2>Os destaques da semana</h2>
     <div class="facts">
       <!-- fonte: sources[] -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><circle cx="12" cy="22" r="5" fill="var(--pink)"/><path d="M6 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--pink)"/><circle cx="24" cy="22" r="5" fill="var(--pink)"/><path d="M18 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--pink)"/><circle cx="36" cy="22" r="5" fill="var(--pink)"/><path d="M30 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--pink)"/><circle cx="48" cy="22" r="5" fill="var(--track)"/><path d="M42 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="60" cy="22" r="5" fill="var(--track)"/><path d="M54 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="72" cy="22" r="5" fill="var(--track)"/><path d="M66 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="84" cy="22" r="5" fill="var(--track)"/><path d="M78 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="96" cy="22" r="5" fill="var(--track)"/><path d="M90 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="108" cy="22" r="5" fill="var(--track)"/><path d="M102 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/></svg><figcaption><b>1 em cada 3 visitas</b> veio do <b>Instagram</b>, o lugar que mais trouxe gente.</figcaption></figure>
+      <figure class="fact"><div class="stage t-pink"><svg viewBox="0 0 120 64" aria-hidden="true"><circle cx="12" cy="22" r="5" fill="var(--pink)"/><path d="M6 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--pink)"/><circle cx="24" cy="22" r="5" fill="var(--pink)"/><path d="M18 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--pink)"/><circle cx="36" cy="22" r="5" fill="var(--pink)"/><path d="M30 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--pink)"/><circle cx="48" cy="22" r="5" fill="var(--track)"/><path d="M42 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="60" cy="22" r="5" fill="var(--track)"/><path d="M54 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="72" cy="22" r="5" fill="var(--track)"/><path d="M66 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="84" cy="22" r="5" fill="var(--track)"/><path d="M78 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="96" cy="22" r="5" fill="var(--track)"/><path d="M90 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/><circle cx="108" cy="22" r="5" fill="var(--track)"/><path d="M102 44c0-7 3-12 6-12s6 5 6 12z" fill="var(--track)"/></svg></div><figcaption><b>1 em cada 3 visitas</b> veio do <b>Instagram</b>, o lugar que mais trouxe gente.</figcaption></figure>
       <!-- fonte: locations[] -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><ellipse cx="60" cy="56" rx="26" ry="5" fill="var(--track)"/><path d="M60 8c-11 0-19 8-19 18 0 13 19 30 19 30s19-17 19-30c0-10-8-18-19-18z" fill="var(--orange)"/><circle cx="60" cy="26" r="7" fill="var(--surface)"/></svg><figcaption>A cidade que mais visitou foi <b>São Paulo</b>, com 2 em cada 3 pessoas.</figcaption></figure>
+      <figure class="fact"><div class="stage t-orange"><svg viewBox="0 0 120 64" aria-hidden="true"><ellipse cx="60" cy="56" rx="26" ry="5" fill="var(--track)"/><path d="M60 8c-11 0-19 8-19 18 0 13 19 30 19 30s19-17 19-30c0-10-8-18-19-18z" fill="var(--orange)"/><circle cx="60" cy="26" r="7" fill="var(--surface)"/></svg></div><figcaption>A cidade que mais visitou foi <b>São Paulo</b>, com 2 em cada 3 pessoas.</figcaption></figure>
       <!-- fonte: peakHours[] -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><circle cx="60" cy="32" r="26" fill="var(--tip-bg)" stroke="var(--tip-border)" stroke-width="2"/><path d="M60 32 L60 6 A26 26 0 0 0 37.5 19 Z" fill="var(--pink)" opacity=".35"/><line x1="60" y1="32" x2="45" y2="23" stroke="var(--primary)" stroke-width="3.5" stroke-linecap="round"/><line x1="60" y1="32" x2="60" y2="12" stroke="var(--foreground)" stroke-width="2.5" stroke-linecap="round"/><circle cx="60" cy="32" r="3" fill="var(--foreground)"/></svg><figcaption>O melhor horário foi <b>quinta, das 19h às 21h</b>: foi quando mais gente chamou você.</figcaption></figure>
+      <figure class="fact"><div class="stage t-pink"><svg viewBox="0 0 120 64" aria-hidden="true"><circle cx="60" cy="32" r="26" fill="var(--tip-bg)" stroke="var(--tip-border)" stroke-width="2"/><path d="M60 32 L60 6 A26 26 0 0 0 37.5 19 Z" fill="var(--pink)" opacity=".35"/><line x1="60" y1="32" x2="45" y2="23" stroke="var(--primary)" stroke-width="3.5" stroke-linecap="round"/><line x1="60" y1="32" x2="60" y2="12" stroke="var(--foreground)" stroke-width="2.5" stroke-linecap="round"/><circle cx="60" cy="32" r="3" fill="var(--foreground)"/></svg></div><figcaption>O melhor horário foi <b>quinta, das 19h às 21h</b>: foi quando mais gente chamou você.</figcaption></figure>
       <!-- fonte: devices[] -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><rect x="46" y="4" width="28" height="56" rx="6" fill="none" stroke="var(--blue)" stroke-width="3"/><rect x="51" y="11" width="18" height="38" rx="2" fill="var(--blue)" opacity=".18"/><circle cx="60" cy="54" r="2" fill="var(--blue)"/></svg><figcaption><b>8 em cada 10 pessoas</b> usaram o celular. Vale sempre conferir o site no celular.</figcaption></figure>
+      <figure class="fact"><div class="stage t-blue"><svg viewBox="0 0 120 64" aria-hidden="true"><rect x="46" y="4" width="28" height="56" rx="6" fill="none" stroke="var(--blue)" stroke-width="3"/><rect x="51" y="11" width="18" height="38" rx="2" fill="var(--blue)" opacity=".18"/><circle cx="60" cy="54" r="2" fill="var(--blue)"/></svg></div><figcaption><b>8 em cada 10 pessoas</b> usaram o celular. Vale sempre conferir o site no celular.</figcaption></figure>
       <!-- fonte: pageConversionResults[] -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><rect x="40" y="4" width="40" height="54" rx="5" fill="var(--surface)" stroke="var(--border)" stroke-width="2"/><rect x="47" y="13" width="26" height="4" rx="2" fill="var(--faint)"/><rect x="47" y="22" width="20" height="4" rx="2" fill="var(--track)"/><rect x="47" y="30" width="23" height="4" rx="2" fill="var(--track)"/><rect x="47" y="42" width="26" height="9" rx="4.5" fill="var(--primary)"/><circle cx="82" cy="10" r="9" fill="var(--good)"/><path d="M78 10l3 3 5-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><figcaption>A página que mais trouxe contatos foi <b>Clareamento</b>: 31 dos 87.</figcaption></figure>
+      <figure class="fact"><div class="stage t-pink"><svg viewBox="0 0 120 64" aria-hidden="true"><rect x="40" y="4" width="40" height="54" rx="5" fill="var(--surface)" stroke="var(--border)" stroke-width="2"/><rect x="47" y="13" width="26" height="4" rx="2" fill="var(--faint)"/><rect x="47" y="22" width="20" height="4" rx="2" fill="var(--track)"/><rect x="47" y="30" width="23" height="4" rx="2" fill="var(--track)"/><rect x="47" y="42" width="26" height="9" rx="4.5" fill="var(--primary)"/><circle cx="82" cy="10" r="9" fill="var(--good)"/><path d="M78 10l3 3 5-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div><figcaption>A página que mais trouxe contatos foi <b>Clareamento</b>: 31 dos 87.</figcaption></figure>
       <!-- fonte: daily[] -->
-      <figure class="fact"><svg viewBox="0 0 120 64" aria-hidden="true"><rect x="8" y="26" width="10" height="30" rx="3" fill="var(--track)"/><rect x="23" y="23" width="10" height="33" rx="3" fill="var(--track)"/><rect x="38" y="25" width="10" height="31" rx="3" fill="var(--track)"/><rect x="53" y="12" width="10" height="44" rx="3" fill="var(--pink)"/><rect x="68" y="17" width="10" height="39" rx="3" fill="var(--track)"/><rect x="83" y="20" width="10" height="36" rx="3" fill="var(--track)"/><rect x="98" y="23" width="10" height="33" rx="3" fill="var(--track)"/><line x1="4" y1="57" x2="116" y2="57" stroke="var(--border)"/></svg><figcaption>O dia mais movimentado foi <b>quinta-feira</b>, com 21 contatos.</figcaption></figure>
+      <figure class="fact"><div class="stage t-pink"><svg viewBox="0 0 120 64" aria-hidden="true"><rect x="8" y="26" width="10" height="30" rx="3" fill="var(--track)"/><rect x="23" y="23" width="10" height="33" rx="3" fill="var(--track)"/><rect x="38" y="25" width="10" height="31" rx="3" fill="var(--track)"/><rect x="53" y="12" width="10" height="44" rx="3" fill="var(--pink)"/><rect x="68" y="17" width="10" height="39" rx="3" fill="var(--track)"/><rect x="83" y="20" width="10" height="36" rx="3" fill="var(--track)"/><rect x="98" y="23" width="10" height="33" rx="3" fill="var(--track)"/><line x1="4" y1="57" x2="116" y2="57" stroke="var(--border)"/></svg></div><figcaption>O dia mais movimentado foi <b>quinta-feira</b>, com 21 contatos.</figcaption></figure>
     </div>
   </section>
   <section class="next"><p class="t">Para a próxima semana</p><p>Coloque o link da página de <b>Clareamento</b> no próximo post do Instagram. Ela é a que mais transforma visitas em contatos.</p></section>
