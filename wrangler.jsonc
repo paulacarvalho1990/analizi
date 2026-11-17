@@ -9,6 +9,7 @@
     "not_found_handling": "single-page-application"
   },
   "ai": { "binding": "AI" },
+  "vars": { "AI_GATEWAY_ID": "analizi" },
   "triggers": {
     "crons": ["0 3 * * *", "15 3 * * MON"]
   },
@@ -24,6 +25,7 @@
     "staging": {
       "name": "analizi",
       "ai": { "binding": "AI" },
+      "vars": { "AI_GATEWAY_ID": "analizi" },
       "triggers": {
         "crons": ["0 3 * * *", "15 3 * * MON"]
       },
@@ -38,6 +40,7 @@
     },
     "preview": {
       "ai": { "binding": "AI" },
+      "vars": { "AI_GATEWAY_ID": "analizi" },
       "triggers": {
         "crons": ["0 3 * * *", "15 3 * * MON"]
       },
