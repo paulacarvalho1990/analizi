@@ -464,8 +464,9 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   const requestedEnd = query.get('end')
   const requestedStart = query.get('start')
   const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
-  // Consolidado inclui o dia atual (parcial, atualizado pelo cron intradiário)
-  const end = validDate(requestedEnd) && requestedEnd! <= today ? requestedEnd! : today
+  // Os dados são consolidados uma vez por dia (00h de Brasília), então os relatórios vão até ontem (D-1).
+  const yesterday = shiftDate(today, -1)
+  const end = validDate(requestedEnd) && requestedEnd! <= yesterday ? requestedEnd! : yesterday
   let start = validDate(requestedStart) ? requestedStart! : shiftDate(end, -requestedDays + 1)
   if (start > end) start = end
   const rawDays = Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1
@@ -1547,8 +1548,10 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
 async function runDailyConsolidationAndCleanup(env: Env, intraday = false): Promise<void> {
   // intraday: reconsolida só ontem + hoje (parcial) e não executa limpeza.
   // diário (03h UTC): reconsolida toda a janela de eventos até hoje e limpa.
-  const rangeSql = intraday ? "between date('now', '-3 hours', '-1 day') and date('now', '-3 hours')" : "<= date('now', '-3 hours')"
-  console.log(intraday ? 'Consolidação intradiária (ontem + hoje)...' : 'Iniciando consolidação diária até o dia atual...')
+  // diário (00h de Brasília): reconsolida os últimos 3 dias fechados (D-1 a D-3), cobrindo eventos atrasados
+  // sem reler a janela inteira de eventos a cada execução.
+  const rangeSql = intraday ? "between date('now', '-3 hours', '-1 day') and date('now', '-3 hours')" : "between date('now', '-3 hours', '-3 days') and date('now', '-3 hours', '-1 day')"
+  console.log(intraday ? 'Consolidação intradiária (ontem + hoje)...' : 'Iniciando consolidação diária (D-1 a D-3)...')
   try {
     // 1. Consolida métricas gerais do dia anterior (D-1) com os conceitos do GA4:
     // - average_engagement_seconds = soma(engagement_time_ms) / 1000 / usuários ativos
@@ -2875,9 +2878,6 @@ export default {
     const isDaily = event.cron === '0 3 * * *'
     // Na Cloudflare o dia 1 da semana é domingo; MON garante a execução na segunda.
     const isWeekly = event.cron === '15 3 * * MON'
-    if (event.cron === '*/30 * * * *') {
-      jobs.push(runDailyConsolidationAndCleanup(env, true))
-    }
     if (isDaily) {
       jobs.push(runDailyConsolidationAndCleanup(env), runScheduledGa4Sync(env))
     }
