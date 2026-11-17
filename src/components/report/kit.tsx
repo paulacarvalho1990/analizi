@@ -378,7 +378,7 @@ export function PeakGrid({ peakHours }: { peakHours: PeakCell[] }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Jornada do visitante (faixa de destaque do Início)                  */
+/* Jornada do visitante (faixa de destaque da Visão Geral)                  */
 /* ------------------------------------------------------------------ */
 export function Journey({ period, users, usersDelta, newUsers, newUsersDelta, views, viewsDelta, attention, attentionDelta, contacts, contactsDelta, whatsapp, signups, exitRate }: {
   period: string, users: number, usersDelta: number | null, newUsers: number, newUsersDelta: number | null,

@@ -1,5 +1,8 @@
 import { chatJSON, type WorkersAI } from './insights/llm'
 import { buildWeeklyInsights, lastClosedWeek, type AIInsight, type BusinessContext } from './insights/engine'
+import { derive, REPORT_KINDS, type ReportData, type ReportKind } from './reports/derive'
+import { buildReportInsights } from './reports/insights'
+import { normalizeOriginName } from './lib/origin'
 interface D1Statement {
   bind(...values: unknown[]): D1Statement
 }
@@ -1477,6 +1480,102 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
   })
 }
 
+/** Tipos de relatório escolhidos para cada site (report_settings no Supabase). Sem configuração, gera o geral. */
+async function reportKindsBySite(env: Env): Promise<Map<string, Set<ReportKind>>> {
+  const out = new Map<string, Set<ReportKind>>()
+  const key = env.SUPABASE_SERVICE_ROLE_KEY
+  if (!env.SUPABASE_URL || !key) return out
+  try {
+    const headers = { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json' }
+    // Mudanças de objetivo feitas durante a semana passam a valer agora, no relatório de segunda.
+    await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/promote_next_report_kinds`, { method: 'POST', headers, body: '{}' })
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/report_settings?select=report_kind,sites!inner(tracker_site_id)`, { headers })
+    if (!res.ok) return out
+    const rows = await res.json() as Array<{ report_kind: string, sites?: { tracker_site_id?: string } }>
+    for (const r of rows) {
+      const id = r.sites?.tracker_site_id
+      if (!id || !REPORT_KINDS.includes(r.report_kind as ReportKind)) continue
+      if (!out.has(id)) out.set(id, new Set())
+      out.get(id)!.add(r.report_kind as ReportKind)
+    }
+  } catch (err) {
+    console.error('Falha ao ler configurações de relatório:', err)
+  }
+  return out
+}
+
+/** Gera (ou regera) o relatório de uma semana fechada para um site e um objetivo. */
+async function generateWeeklyReport(env: Env, siteId: string, kind: ReportKind, week: { start: string, end: string }, business: BusinessContext | null) {
+  const res = await analytics(siteId, env, new URLSearchParams({ start: week.start, end: week.end, group: 'day' }))
+  if (!res.ok) throw new Error(`analytics ${res.status}`)
+  const data = await res.json() as ReportData
+  const { insights, model } = await buildReportInsights(kind, derive(data, normalizeOriginName), business || {}, env)
+  const stmt = env.ANALIZI_EVENTS.prepare(`
+    insert into weekly_site_reports (tracker_site_id, week_start, week_end, report_kind, data_json, insights_json, model, created_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?)
+    on conflict(tracker_site_id, week_start, report_kind) do update set
+      week_end = excluded.week_end, data_json = excluded.data_json, insights_json = excluded.insights_json,
+      model = excluded.model, created_at = excluded.created_at
+  `).bind(siteId, week.start, week.end, kind, JSON.stringify(data), JSON.stringify(insights), model, new Date().toISOString())
+  await env.ANALIZI_EVENTS.batch([stmt])
+}
+
+/** GET /v1/weekly-report?siteId=&kind=&week= — relatório gerado (dados + insights).
+ *  Sem relatório da última semana fechada (ex.: primeira vez), gera na hora. */
+async function weeklyReport(request: Request, env: Env, query: URLSearchParams): Promise<Response> {
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Faça login para ver o relatório.' }, 401)
+  const kind = query.get('kind') as ReportKind
+  if (!REPORT_KINDS.includes(kind)) return json({ error: 'Tipo de relatório inválido.' }, 400)
+  const site = await ownedSite(query.get('siteId') || '', user, env, query.get('trackerSiteId') || '')
+  if (!site?.tracker_site_id) return json({ error: 'Site não encontrado.' }, 404)
+  const sId = site.tracker_site_id
+  const week = lastClosedWeek(isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE), shiftDate)
+  const requested = validDate(query.get('week')) ? query.get('week')! : week.start
+  type Row = { week_start: string, week_end: string, report_kind: string, data_json: string, insights_json: string, model: string, created_at: string }
+  const read = async () => ((await env.ANALIZI_EVENTS.batch([
+    env.ANALIZI_EVENTS.prepare('select * from weekly_site_reports where tracker_site_id = ? and report_kind = ? and week_start = ? limit 1').bind(sId, kind, requested),
+    env.ANALIZI_EVENTS.prepare('select week_start, week_end from weekly_site_reports where tracker_site_id = ? and report_kind = ? order by week_start desc limit 12').bind(sId, kind)
+  ])) as [{ results?: Row[] }, { results?: Array<{ week_start: string, week_end: string }> }])
+  let [current, weeks] = await read()
+  if (!current.results?.[0] && requested === week.start) {
+    try {
+      await generateWeeklyReport(env, sId, kind, week, await fetchBusinessContext(env, sId))
+      ;[current, weeks] = await read()
+    } catch (err) {
+      console.error('Falha ao gerar relatório sob demanda:', err)
+    }
+  }
+  const row = current.results?.[0]
+  if (!row) return json({ error: 'Relatório ainda não disponível.' }, 404)
+  return json({
+    weekStart: row.week_start, weekEnd: row.week_end, kind: row.report_kind, model: row.model, createdAt: row.created_at,
+    data: JSON.parse(row.data_json), insights: JSON.parse(row.insights_json), weeks: weeks.results ?? []
+  })
+}
+
+/** Toda segunda (00h15 de Brasília): relatório da semana fechada (seg–dom) para cada site e objetivo escolhido. */
+async function runScheduledWeeklyReports(env: Env): Promise<void> {
+  const week = lastClosedWeek(isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE), shiftDate)
+  const kinds = await reportKindsBySite(env)
+  const sites = ((await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select tracker_site_id from tracker_sites where is_active = 1')])) as Array<{ results?: Array<{ tracker_site_id: string }> }>)[0]?.results ?? []
+  for (const { tracker_site_id: sId } of sites) {
+    const wanted = kinds.get(sId) ?? new Set<ReportKind>(['geral'])
+    const business = await fetchBusinessContext(env, sId)
+    for (const kind of wanted) {
+      try {
+        const check = (await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select 1 from weekly_site_reports where tracker_site_id = ? and week_start = ? and report_kind = ? limit 1').bind(sId, week.start, kind)])) as Array<{ results?: unknown[] }>
+        if (check[0]?.results?.length) continue
+        await generateWeeklyReport(env, sId, kind, week, business)
+      } catch (e) {
+        console.error(`Erro ao gerar relatório ${kind} do site ${sId}:`, e)
+      }
+    }
+  }
+}
+
+// Suspenso: substituído por runScheduledWeeklyReports. Mantido para reativação, se necessário.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function runScheduledWeeklyInsights(env: Env): Promise<void> {
   const currentWeek = getWeekCycle()
   // O relatório de segunda usa a última semana fechada (segunda a domingo),
@@ -2829,7 +2928,7 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
-    if (request.method === 'OPTIONS' && url.pathname.startsWith('/v1/ga4/')) {
+    if (request.method === 'OPTIONS' && (url.pathname.startsWith('/v1/ga4/') || url.pathname === '/v1/weekly-report')) {
       return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' } })
     }
     if (url.pathname === '/v1/events' || url.pathname === '/v1/sync' || url.pathname === '/v1/collect') {
@@ -2848,6 +2947,7 @@ export default {
     if (url.pathname === '/v1/ga4/connect' && request.method === 'POST') return ga4Connect(request, env)
     if (url.pathname === '/v1/ga4/disconnect' && request.method === 'POST') return ga4Disconnect(request, env)
     if (url.pathname === '/v1/ga4/analytics' && request.method === 'GET') return ga4Analytics(request, env, url.searchParams)
+    if (url.pathname === '/v1/weekly-report' && request.method === 'GET') return weeklyReport(request, env, url.searchParams)
     const statusMatch = url.pathname.match(/^\/v1\/tracker-sites\/(ANLZ[A-Z0-9]{5}-A)\/status$/i)
     if (statusMatch) return trackerStatus(statusMatch[1], env)
     const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)
@@ -2866,7 +2966,9 @@ export default {
       jobs.push(runDailyConsolidationAndCleanup(env), runScheduledGa4Sync(env))
     }
     if (isWeekly || !event.cron) {
-      jobs.push(runMonthlyConsolidationAndRetention(env), runScheduledWeeklyInsights(env))
+      // O cron antigo de insights (runScheduledWeeklyInsights) está suspenso:
+      // os insights agora fazem parte do relatório semanal.
+      jobs.push(runMonthlyConsolidationAndRetention(env), runScheduledWeeklyReports(env))
     }
     ctx.waitUntil(Promise.all(jobs))
   },

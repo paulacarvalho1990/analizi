@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowLeft, BookOpen, SlidersHorizontal, Eye, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users, Activity, CreditCard, Mail, Search, Minus, UserMinus, TrendingDown, X } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
+import { normalizeOriginName } from './lib/origin'
+import { WeeklyReport, type ReportKind, type ReportData } from './components/reports/WeeklyReport'
+import { WeeklyReportPage } from './components/reports/WeeklyReportPage'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard, DualMetricCard } from './components/Metrics'
 import { Button } from './components/ui/Button'
@@ -232,54 +235,7 @@ function MetricChart({ analytics }: { analytics: AnalyticsData | null }) {
   );
 }
 
-export function normalizeOriginName(raw?: string): string {
-  if (!raw) return 'Direto';
-  const s = raw.toLowerCase().trim().replace(/^www\./, '');
-  if (s === 'direto' || s === '(direct)' || s === 'direct' || s === 'none' || s === 'null' || s === '') return 'Direto';
-
-  // 1. WhatsApp
-  if (s === 'l.wl.co' || s === 'wl.co' || s === 'wa.me' || s === 'whatsapp' || /(?:^|\.)whatsapp\.com$/i.test(s)) return 'WhatsApp';
-  // 2. Facebook
-  if (s === 'facebook' || s === 'fb.me' || s === 'fb.com' || /(?:^|\.)facebook\.com$/i.test(s)) return 'Facebook';
-  // 3. Instagram
-  if (s === 'instagram' || s === 'ig' || s === 'ig.me' || /(?:^|\.)instagram\.com$/i.test(s)) return 'Instagram';
-  // 4. Google
-  if (s === 'google' || s === 'google-play' || /(?:^|\.)google\.(?:com|com\.br|co\.[a-z]+|[a-z]{2})$/i.test(s)) return 'Google';
-  // 5. TikTok
-  if (s === 'tiktok' || /(?:^|\.)tiktok\.com$/i.test(s)) return 'TikTok';
-  // 6. YouTube
-  if (s === 'youtube' || s === 'youtu.be' || /(?:^|\.)youtube\.com$/i.test(s)) return 'YouTube';
-  // 7. X (Twitter)
-  if (s === 'twitter' || s === 'x' || s === 't.co' || /(?:^|\.)twitter\.com$/i.test(s) || s === 'x.com') return 'X (Twitter)';
-  // 8. LinkedIn
-  if (s === 'linkedin' || s === 'lnkd.in' || /(?:^|\.)linkedin\.com$/i.test(s)) return 'LinkedIn';
-  // 9. Pinterest
-  if (s === 'pinterest' || s === 'pin.it' || /(?:^|\.)pinterest\.com$/i.test(s)) return 'Pinterest';
-  // 10. Telegram
-  if (s === 'telegram' || s === 't.me' || /(?:^|\.)telegram\.(?:org|me)$/i.test(s)) return 'Telegram';
-  // 11. Threads
-  if (s === 'threads' || /(?:^|\.)threads\.net$/i.test(s)) return 'Threads';
-  // 12. Mercado Livre
-  if (s === 'mercadolivre' || /(?:^|\.)mercadolivre\.com(?:\.br)?$/i.test(s) || /(?:^|\.)mercadolibre\.com$/i.test(s)) return 'Mercado Livre';
-  // 13. Shopee
-  if (s === 'shopee' || s === 'shp.ee' || /(?:^|\.)shopee\.com(?:\.br)?$/i.test(s)) return 'Shopee';
-  // 14. Bing
-  if (s === 'bing' || /(?:^|\.)bing\.com$/i.test(s)) return 'Bing';
-  // 15. Yahoo
-  if (s === 'yahoo' || /(?:^|\.)yahoo\.com(?:\.br)?$/i.test(s)) return 'Yahoo';
-  // 16. DuckDuckGo
-  if (s === 'duckduckgo' || /(?:^|\.)duckduckgo\.com$/i.test(s)) return 'DuckDuckGo';
-  // 17. Kwai
-  if (s === 'kwai' || /(?:^|\.)kwai\.(?:com|app)$/i.test(s)) return 'Kwai';
-  // 18. Reddit
-  if (s === 'reddit' || s === 'redd.it' || /(?:^|\.)reddit\.com$/i.test(s)) return 'Reddit';
-  // 19. Globo
-  if (s === 'globo' || /(?:^|\.)globo\.com$/i.test(s)) return 'Globo';
-  // 20. UOL
-  if (s === 'uol' || /(?:^|\.)uol\.com\.br$/i.test(s)) return 'UOL';
-
-  return raw;
-}
+export { normalizeOriginName } from './lib/origin';
 
 function OriginChart({ analytics }: { analytics: AnalyticsData | null }) {
   const aggregatedSources = (analytics?.sources ?? []).reduce<Array<{ name: string; value: number }>>((acc, curr) => {
@@ -2034,7 +1990,7 @@ interface AnalyticsFilter {
   browser?: string
 }
 
-function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights') return 'insights'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
+function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights' || path === '/relatorio-semanal') return 'weekly-report'; if (path === '/relatorios/geral') return 'report-geral'; if (path === '/relatorios/contatos') return 'report-contatos'; if (path === '/relatorios/visitas') return 'report-visitas'; if (path === '/relatorios/regiao') return 'report-regiao'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
 function dateString(date: Date) { return date.toISOString().slice(0, 10) }
 function shiftDays(base: string, offset: number) { const d = new Date(`${base}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + offset); return dateString(d) }
 function shiftMonths(base: string, offset: number) { const d = new Date(`${base.slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + offset); return dateString(d) }
@@ -2066,6 +2022,13 @@ function readAnalyticsFilter(): AnalyticsFilter {
   };
 }
 function selectedDays() { const filter = readAnalyticsFilter(); return Math.floor((Date.parse(`${filter.end}T00:00:00Z`) - Date.parse(`${filter.start}T00:00:00Z`)) / 86_400_000) + 1 }
+
+// Relatórios semanais one-page (ainda fora do menu): /relatorios/geral|contatos|visitas|regiao
+function Report({ kind }: { kind: ReportKind }) {
+  const analytics = useAnalytics();
+  const filter = readAnalyticsFilter();
+  return <WeeklyReport kind={kind} data={analytics as unknown as ReportData | null} start={filter.start} end={filter.end} normalizeSource={normalizeOriginName} />;
+}
 
 function useAnalytics() {
   const { currentSite } = useBusiness();
@@ -3822,7 +3785,7 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
             <button type="button" className="z-btn pri" onClick={() => void testInstallation()} disabled={!siteId || verify === 'wait'}>{verify === 'wait' ? 'Verificando…' : verify === 'fail' || verify === 'error' ? 'Verificar de novo' : 'Verificar instalação'}</button>
             {verify === 'wait' && <div className="z-res wait" role="status"><span className="z-pulse pink" />Procurando dados de {domain || 'seu site'}…</div>}
             {verify === 'ok' && (
-              <div className="z-res ok" role="status"><CircleCheck size={20} /><div><b>Pronto, recebemos dados do seu site.</b><div className="z-res-sub">Os relatórios começam a aparecer nos próximos minutos.</div><div style={{ marginTop: 10 }} className="z-row-8"><button type="button" className="z-btn sec sm" onClick={() => setPage('dashboard')}>Ir para o Início</button><button type="button" className="z-btn ghost sm" onClick={() => setPage('heatmap')}>Ver heatmap e rolagem</button></div></div></div>
+              <div className="z-res ok" role="status"><CircleCheck size={20} /><div><b>Pronto, recebemos dados do seu site.</b><div className="z-res-sub">Os relatórios começam a aparecer nos próximos minutos.</div><div style={{ marginTop: 10 }} className="z-row-8"><button type="button" className="z-btn sec sm" onClick={() => setPage('dashboard')}>Ir para a Visão Geral</button><button type="button" className="z-btn ghost sm" onClick={() => setPage('heatmap')}>Ver heatmap e rolagem</button></div></div></div>
             )}
             {verify === 'fail' && (
               <div className="z-res fail" role="status"><AlertTriangle size={20} /><div><b>Ainda não recebemos dados de {domain || 'seu site'}.</b> Confira:<ul><li>se o código foi salvo e o site publicado;</li><li>se você abriu o site depois de publicar;</li><li>se algum bloqueador de anúncios está ligado no seu navegador.</li></ul></div></div>
@@ -4083,11 +4046,16 @@ export function App() {
     results: <Results/>,
     heatmap: <Heatmap/>,
     insights: <Insights setPage={setPage}/>,
+    'weekly-report': <WeeklyReportPage/>,
     settings: <Settings setPage={setPage}/>,
     team: <TeamSettings setPage={setPage}/>,
     'data-sources': <DataSources setPage={setPage}/>,
     'ga4-setup': GA4_ENABLED ? <GA4Setup setPage={setPage}/> : <GA4ComingSoon setPage={setPage}/>,
-    'tracker-setup': <TrackerSetup setPage={setPage}/>
+    'tracker-setup': <TrackerSetup setPage={setPage}/>,
+    'report-geral': <Report kind="geral"/>,
+    'report-contatos': <Report kind="contatos"/>,
+    'report-visitas': <Report kind="visitas"/>,
+    'report-regiao': <Report kind="regiao"/>
   };
 
   return (
