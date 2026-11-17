@@ -1,39 +1,13 @@
 import type { ReactNode } from 'react'
-import { WEEKDAYS } from '../report/kit'
 import './weekly-report.css'
 
 /* Relatórios one-page para leigos: poucas figuras, uma frase cada.
    Só usa campos que já existem em AnalyticsData (src/App.tsx). */
 
-export type ReportKind = 'geral' | 'contatos' | 'visitas' | 'regiao'
+import { CONTACT_LABEL, WEEKDAYS, derive, exitPct, fmt, inTen, n, views, weekdayOf, type Derived, type ReportData, type ReportKind } from '../../reports/derive'
+export type { ReportData, ReportKind }
 
-type Totals = { pageViews?: number, views?: number, users: number, newUsers?: number, contactClicks: number, whatsappClicks: number }
-export type ReportData = {
-  totals: Totals,
-  previousTotals?: Totals,
-  sources: Array<{ name: string, value: string | number }>,
-  pages: Array<{ path: string, views: string | number, title?: string, exitRate?: number }>,
-  daily: Array<{ date: string, pageViews: number, users: number, contacts: number }>,
-  locations?: Array<{ country: string, region: string, city: string, users: number, conversions: number }>,
-  devices?: Array<{ device: string, users: number, sessions: number }>,
-  sourceMediumResults?: Array<{ source: string, contactClicks: number }>,
-  pageConversionResults?: Array<{ path: string, sessions: number, whatsappClicks: number, contactSessions: number }>,
-  contactDetails?: Array<{ type: string, contacts: number }>,
-  peakHours?: Array<{ dayOfWeek: number, hourOfDay: number, views: number, contacts: number }>,
-}
-
-const n = (v: unknown) => Number(v || 0)
-const fmt = (v: number) => Math.round(v).toLocaleString('pt-BR')
-const views = (t?: Totals) => n(t?.pageViews ?? t?.views)
 const dateBR = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('.', '')
-const weekdayOf = (d: string) => WEEKDAYS[new Date(`${d}T12:00:00Z`).getUTCDay()]
-
-/** "3 em cada 10" — cai para porcentagem quando arredonda para zero. */
-function inTen(part: number, total: number) {
-  if (!total) return '0'
-  const k = Math.round((part / total) * 10)
-  return k >= 1 ? `${k} em cada 10` : `${Math.round((part / total) * 100)}%`
-}
 
 function Delta({ now, before, unit = '%' }: { now: number, before?: number, unit?: '%' | 'abs' }) {
   if (before === undefined || (!before && !now)) return null
@@ -75,65 +49,20 @@ type Fact = { tone: Tone, figure: ReactNode, text: ReactNode }
 type Step = { value: string, what: string, explain: string, delta?: ReactNode, hero?: boolean }
 type Model = { title: string, subtitle: string, headline: string, steps: Step[], plain?: ReactNode, facts: Fact[], tip?: ReactNode }
 
-/* ---------- cálculos compartilhados ---------- */
-function derive(d: ReportData, normalizeSource: (s: string) => string, pageTitle: (path: string) => string) {
-  const t = d.totals, p = d.previousTotals
-  const contacts = n(t.contactClicks), users = n(t.users), pv = views(t)
-  const sources = new Map<string, number>()
-  d.sources.forEach(s => { const k = normalizeSource(s.name); sources.set(k, (sources.get(k) || 0) + n(s.value)) })
-  const sourceList = [...sources.entries()].sort((a, b) => b[1] - a[1])
-  const sourceTotal = sourceList.reduce((a, s) => a + s[1], 0)
-  const srcContacts = new Map<string, number>()
-  ;(d.sourceMediumResults ?? []).forEach(r => { const k = normalizeSource(r.source); srcContacts.set(k, (srcContacts.get(k) || 0) + n(r.contactClicks)) })
-  const topContactSource = [...srcContacts.entries()].sort((a, b) => b[1] - a[1])[0]
-  const pageContacts = [...(d.pageConversionResults ?? [])].map(r => ({ path: r.path, c: n(r.contactSessions || r.whatsappClicks), s: n(r.sessions) })).sort((a, b) => b.c - a.c)
-  const topPages = [...d.pages].sort((a, b) => n(b.views) - n(a.views))
-  const leak = d.pages.filter(pg => n(pg.views) >= 20 && n(pg.exitRate) > 0).sort((a, b) => n(b.exitRate) * n(b.views) - n(a.exitRate) * n(a.views))[0]
-  const devices = new Map<string, number>()
-  ;(d.devices ?? []).forEach(r => { const k = (r.device || '').toLowerCase(); devices.set(k, (devices.get(k) || 0) + n(r.users || r.sessions)) })
-  const devTotal = [...devices.values()].reduce((a, b) => a + b, 0)
-  const mobile = devices.get('mobile') || devices.get('celular') || 0
-  const peak = [...(d.peakHours ?? [])].sort((a, b) => n(b.contacts) - n(a.contacts) || n(b.views) - n(a.views))[0]
-  const daily = d.daily
-  const bestViews = daily.reduce<ReportData['daily'][number] | null>((b, x) => !b || n(x.pageViews) > n(b.pageViews) ? x : b, null)
-  const bestContacts = daily.reduce<ReportData['daily'][number] | null>((b, x) => !b || n(x.contacts) > n(b.contacts) ? x : b, null)
-  const cities = new Map<string, { users: number, conv: number, region: string }>()
-  ;(d.locations ?? []).forEach(l => { if (!l.city || l.city === '(not set)') return; const c = cities.get(l.city) || { users: 0, conv: 0, region: l.region }; c.users += n(l.users); c.conv += n(l.conversions); cities.set(l.city, c) })
-  const cityList = [...cities.entries()].sort((a, b) => b[1].users - a[1].users)
-  const regions = new Map<string, number>()
-  ;(d.locations ?? []).forEach(l => { const k = l.region || ''; if (k) regions.set(k, (regions.get(k) || 0) + n(l.users)) })
-  const regionList = [...regions.entries()].sort((a, b) => b[1] - a[1])
-  const locTotal = regionList.reduce((a, r) => a + r[1], 0)
-  const contactTypes = new Map<string, number>()
-  ;(d.contactDetails ?? []).forEach(c => { const k = c.type || 'outro'; contactTypes.set(k, (contactTypes.get(k) || 0) + n(c.contacts)) })
-  return { t, p, contacts, users, pv, sourceList, sourceTotal, topContactSource, pageContacts, topPages, leak, devTotal, mobile, peak, daily, bestViews, bestContacts, cityList, regionList, locTotal, contactTypes, pageTitle }
-}
-type D = ReturnType<typeof derive>
-
-const CONTACT_LABEL: Record<string, [string, string]> = {
-  whatsapp: ['pelo WhatsApp', 'Clicaram no botão do WhatsApp.'],
-  form_submit: ['pelo formulário', 'Enviaram o formulário do site.'],
-  phone: ['por telefone', 'Clicaram no número para ligar.'],
-  tel: ['por telefone', 'Clicaram no número para ligar.'],
-  phone_click: ['por telefone', 'Clicaram no número para ligar.'],
-  email: ['por e-mail', 'Clicaram no endereço de e-mail.'],
-  email_click: ['por e-mail', 'Clicaram no endereço de e-mail.'],
-}
-
 /* ---------- figuras reutilizadas entre relatórios ---------- */
 const fact = {
-  topSource: (x: D): Fact | null => { const s = x.sourceList[0]; return s && x.sourceTotal ? { tone: 'pink', figure: <People on={Math.max(1, Math.round(s[1] / x.sourceTotal * 9))} color="var(--wr-pink)" />, text: <><b>{inTen(s[1], x.sourceTotal)} visitas</b> vieram de <b>{s[0]}</b>, o lugar que mais trouxe gente.</> } : null },
-  topCity: (x: D): Fact | null => { const c = x.cityList[0]; return c ? { tone: 'orange', figure: <Pin />, text: <>A cidade que mais visitou foi <b>{c[0]}</b>, com {fmt(c[1].users)} pessoas.</> } : null },
-  peak: (x: D): Fact | null => x.peak && (n(x.peak.contacts) || n(x.peak.views)) ? { tone: 'pink', figure: <Clock hour={x.peak.hourOfDay} />, text: n(x.peak.contacts) ? <>O melhor horário foi <b>{WEEKDAYS[x.peak.dayOfWeek]}, das {x.peak.hourOfDay}h às {x.peak.hourOfDay + 1}h</b>: foi quando mais gente chamou você.</> : <>O horário mais movimentado foi <b>{WEEKDAYS[x.peak.dayOfWeek]}, das {x.peak.hourOfDay}h às {x.peak.hourOfDay + 1}h</b>.</> } : null,
-  mobile: (x: D): Fact | null => x.devTotal ? { tone: 'blue', figure: <Phone />, text: <><b>{inTen(x.mobile, x.devTotal)} pessoas</b> usaram o celular.{x.mobile / x.devTotal >= 0.5 ? ' Vale sempre conferir o site no celular.' : ''}</> } : null,
-  topContactPage: (x: D): Fact | null => { const pg = x.pageContacts[0]; return pg && pg.c ? { tone: 'pink', figure: <PageCheck />, text: <>A página que mais trouxe contatos foi <b>{x.pageTitle(pg.path)}</b>: {fmt(pg.c)} de {fmt(x.contacts)}.</> } : null },
-  bestViewsDay: (x: D, color = 'var(--wr-blue)'): Fact | null => x.bestViews && n(x.bestViews.pageViews) ? { tone: color.includes('pink') ? 'pink' : 'blue', figure: <Week values={x.daily.map(r => n(r.pageViews))} color={color} />, text: <>O dia com mais visitas foi <b>{weekdayOf(x.bestViews.date)}</b>, com {fmt(n(x.bestViews.pageViews))}.</> } : null,
-  bestContactsDay: (x: D): Fact | null => x.bestContacts && n(x.bestContacts.contacts) ? { tone: 'pink', figure: <Week values={x.daily.map(r => n(r.contacts))} color="var(--wr-pink)" />, text: <>O dia com mais contatos foi <b>{weekdayOf(x.bestContacts.date)}</b>, com {fmt(n(x.bestContacts.contacts))}.</> } : null,
-  leak: (x: D): Fact | null => x.leak ? { tone: 'bad', figure: <Exit />, text: <><b>{inTen(n(x.leak.exitRate) > 1 ? n(x.leak.exitRate) : n(x.leak.exitRate) * 100, 100)} pessoas</b> saem da página <b>{x.pageTitle(x.leak.path)}</b> sem fazer mais nada.</> } : null,
+  topSource: (x: Derived): Fact | null => { const s = x.sourceList[0]; return s && x.sourceTotal ? { tone: 'pink', figure: <People on={Math.max(1, Math.round(s[1] / x.sourceTotal * 9))} color="var(--wr-pink)" />, text: <><b>{inTen(s[1], x.sourceTotal)} visitas</b> vieram de <b>{s[0]}</b>, o lugar que mais trouxe gente.</> } : null },
+  topCity: (x: Derived): Fact | null => { const c = x.cityList[0]; return c ? { tone: 'orange', figure: <Pin />, text: <>A cidade que mais visitou foi <b>{c[0]}</b>, com {fmt(c[1].users)} pessoas.</> } : null },
+  peak: (x: Derived): Fact | null => x.peak && (n(x.peak.contacts) || n(x.peak.views)) ? { tone: 'pink', figure: <Clock hour={x.peak.hourOfDay} />, text: n(x.peak.contacts) ? <>O melhor horário foi <b>{WEEKDAYS[x.peak.dayOfWeek]}, das {x.peak.hourOfDay}h às {x.peak.hourOfDay + 1}h</b>: foi quando mais gente chamou você.</> : <>O horário mais movimentado foi <b>{WEEKDAYS[x.peak.dayOfWeek]}, das {x.peak.hourOfDay}h às {x.peak.hourOfDay + 1}h</b>.</> } : null,
+  mobile: (x: Derived): Fact | null => x.devTotal ? { tone: 'blue', figure: <Phone />, text: <><b>{inTen(x.mobile, x.devTotal)} pessoas</b> usaram o celular.{x.mobile / x.devTotal >= 0.5 ? ' Vale sempre conferir o site no celular.' : ''}</> } : null,
+  topContactPage: (x: Derived): Fact | null => { const pg = x.pageContacts[0]; return pg && pg.c ? { tone: 'pink', figure: <PageCheck />, text: <>A página que mais trouxe contatos foi <b>{x.pageTitle(pg.path)}</b>: {fmt(pg.c)} de {fmt(x.contacts)}.</> } : null },
+  bestViewsDay: (x: Derived, color = 'var(--wr-blue)'): Fact | null => x.bestViews && n(x.bestViews.pageViews) ? { tone: color.includes('pink') ? 'pink' : 'blue', figure: <Week values={x.daily.map(r => n(r.pageViews))} color={color} />, text: <>O dia com mais visitas foi <b>{weekdayOf(x.bestViews.date)}</b>, com {fmt(n(x.bestViews.pageViews))}.</> } : null,
+  bestContactsDay: (x: Derived): Fact | null => x.bestContacts && n(x.bestContacts.contacts) ? { tone: 'pink', figure: <Week values={x.daily.map(r => n(r.contacts))} color="var(--wr-pink)" />, text: <>O dia com mais contatos foi <b>{weekdayOf(x.bestContacts.date)}</b>, com {fmt(n(x.bestContacts.contacts))}.</> } : null,
+  leak: (x: Derived): Fact | null => x.leak ? { tone: 'bad', figure: <Exit />, text: <><b>{inTen(exitPct(x.leak.exitRate), 100)} pessoas</b> saem da página <b>{x.pageTitle(x.leak.path)}</b> sem fazer mais nada.</> } : null,
 }
 
 /* ---------- os 4 relatórios ---------- */
-function build(kind: ReportKind, x: D): Model {
+function build(kind: ReportKind, x: Derived): Model {
   const { t, p } = x
   const rate = x.users ? (x.contacts / x.users) * 100 : 0
   const prevRate = p && n(p.users) ? (n(p.contactClicks) / n(p.users)) * 100 : undefined
@@ -187,7 +116,7 @@ function build(kind: ReportKind, x: D): Model {
   if (kind === 'regiao') {
     const [c1, c2, c3, c4] = x.cityList
     const topRegion = x.regionList[0]
-    const bestConv = x.cityList.filter(([, c]) => c.users >= 10).sort((a, b) => b[1].conv / b[1].users - a[1].conv / a[1].users)[0]
+    const bestConv = x.bestConvCity
     const outside = topRegion ? x.locTotal - topRegion[1] : 0
     const contactsTopCity = c1 ? c1[1].conv : 0
     return {
@@ -229,8 +158,7 @@ function build(kind: ReportKind, x: D): Model {
 }
 
 export function WeeklyReport({ kind, data, start, end, normalizeSource }: { kind: ReportKind, data: ReportData | null, start: string, end: string, normalizeSource: (s: string) => string }) {
-  const pageTitle = (path: string) => data?.pages.find(pg => pg.path === path)?.title || (path === '/' ? 'Página inicial' : path)
-  const model = data ? build(kind, derive(data, normalizeSource, pageTitle)) : null
+  const model = data ? build(kind, derive(data, normalizeSource)) : null
   const period = `${dateBR(start)} a ${dateBR(end)}`
   return (
     <div className="wr">
