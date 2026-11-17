@@ -1535,6 +1535,40 @@ async function generateWeeklyReport(env: Env, siteId: string, kind: ReportKind, 
   await env.ANALIZI_EVENTS.batch([stmt])
 }
 
+/** GET /v1/weekly-report?siteId=&kind=&week= — relatório gerado (dados + insights).
+ *  Sem relatório da última semana fechada (ex.: primeira vez), gera na hora. */
+async function weeklyReport(request: Request, env: Env, query: URLSearchParams): Promise<Response> {
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Faça login para ver o relatório.' }, 401)
+  const kind = query.get('kind') as ReportKind
+  if (!REPORT_KINDS.includes(kind)) return json({ error: 'Tipo de relatório inválido.' }, 400)
+  const site = await ownedSite(query.get('siteId') || '', user, env, query.get('trackerSiteId') || '')
+  if (!site?.tracker_site_id) return json({ error: 'Site não encontrado.' }, 404)
+  const sId = site.tracker_site_id
+  const week = lastClosedWeek(isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE), shiftDate)
+  const requested = validDate(query.get('week')) ? query.get('week')! : week.start
+  type Row = { week_start: string, week_end: string, report_kind: string, data_json: string, insights_json: string, model: string, created_at: string }
+  const read = async () => ((await env.ANALIZI_EVENTS.batch([
+    env.ANALIZI_EVENTS.prepare('select * from weekly_site_reports where tracker_site_id = ? and report_kind = ? and week_start = ? limit 1').bind(sId, kind, requested),
+    env.ANALIZI_EVENTS.prepare('select week_start, week_end from weekly_site_reports where tracker_site_id = ? and report_kind = ? order by week_start desc limit 12').bind(sId, kind)
+  ])) as [{ results?: Row[] }, { results?: Array<{ week_start: string, week_end: string }> }])
+  let [current, weeks] = await read()
+  if (!current.results?.[0] && requested === week.start) {
+    try {
+      await generateWeeklyReport(env, sId, kind, week, await fetchBusinessContext(env, sId))
+      ;[current, weeks] = await read()
+    } catch (err) {
+      console.error('Falha ao gerar relatório sob demanda:', err)
+    }
+  }
+  const row = current.results?.[0]
+  if (!row) return json({ error: 'Relatório ainda não disponível.' }, 404)
+  return json({
+    weekStart: row.week_start, weekEnd: row.week_end, kind: row.report_kind, model: row.model, createdAt: row.created_at,
+    data: JSON.parse(row.data_json), insights: JSON.parse(row.insights_json), weeks: weeks.results ?? []
+  })
+}
+
 /** Toda segunda (00h15 de Brasília): relatório da semana fechada (seg–dom) para cada site e objetivo escolhido. */
 async function runScheduledWeeklyReports(env: Env): Promise<void> {
   const week = lastClosedWeek(isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE), shiftDate)
@@ -2909,7 +2943,7 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
-    if (request.method === 'OPTIONS' && url.pathname.startsWith('/v1/ga4/')) {
+    if (request.method === 'OPTIONS' && (url.pathname.startsWith('/v1/ga4/') || url.pathname === '/v1/weekly-report')) {
       return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' } })
     }
     if (url.pathname === '/v1/events' || url.pathname === '/v1/sync' || url.pathname === '/v1/collect') {
@@ -2928,6 +2962,7 @@ export default {
     if (url.pathname === '/v1/ga4/connect' && request.method === 'POST') return ga4Connect(request, env)
     if (url.pathname === '/v1/ga4/disconnect' && request.method === 'POST') return ga4Disconnect(request, env)
     if (url.pathname === '/v1/ga4/analytics' && request.method === 'GET') return ga4Analytics(request, env, url.searchParams)
+    if (url.pathname === '/v1/weekly-report' && request.method === 'GET') return weeklyReport(request, env, url.searchParams)
     const statusMatch = url.pathname.match(/^\/v1\/tracker-sites\/(ANLZ[A-Z0-9]{5}-A)\/status$/i)
     if (statusMatch) return trackerStatus(statusMatch[1], env)
     const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)

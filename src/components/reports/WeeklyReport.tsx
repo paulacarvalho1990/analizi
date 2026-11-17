@@ -4,6 +4,7 @@ import './weekly-report.css'
 /* Relatórios one-page para leigos: poucas figuras, uma frase cada.
    Só usa campos que já existem em AnalyticsData (src/App.tsx). */
 
+import type { ReportInsight } from '../../reports/insights'
 import { CONTACT_LABEL, WEEKDAYS, derive, exitPct, fmt, inTen, n, views, weekdayOf, type Derived, type ReportData, type ReportKind } from '../../reports/derive'
 export type { ReportData, ReportKind }
 
@@ -47,7 +48,7 @@ const Week = ({ values, color }: { values: number[], color: string }) => {
 
 type Fact = { tone: Tone, figure: ReactNode, text: ReactNode }
 type Step = { value: string, what: string, explain: string, delta?: ReactNode, hero?: boolean }
-type Model = { title: string, subtitle: string, headline: string, steps: Step[], plain?: ReactNode, facts: Fact[], tip?: ReactNode }
+type Model = { title: string, subtitle: string, headline: string, steps: Step[], plain?: ReactNode, facts: Fact[] }
 
 /* ---------- figuras reutilizadas entre relatórios ---------- */
 const fact = {
@@ -85,7 +86,6 @@ function build(kind: ReportKind, x: Derived): Model {
         x.topContactSource && x.topContactSource[1] ? { tone: 'blue', figure: <Search />, text: <>Quem veio de <b>{x.topContactSource[0]}</b> foi quem mais chamou você: {fmt(x.topContactSource[1])} contatos.</> } as Fact : null,
         fact.bestContactsDay(x), fact.leak(x),
       ].filter(Boolean) as Fact[],
-      tip: x.leak ? <>Coloque o botão de contato no topo da página <b>{x.pageTitle(x.leak.path)}</b>. Muita gente chega até ela, mas vai embora sem chamar.</> : undefined,
     }
   }
 
@@ -109,7 +109,6 @@ function build(kind: ReportKind, x: Derived): Model {
         x.topPages[0] ? { tone: 'pink', figure: <PageCheck />, text: <>A página mais vista foi <b>{x.pageTitle(x.topPages[0].path)}</b>, com {fmt(n(x.topPages[0].views))} visitas.</> } as Fact : null,
         fact.bestViewsDay(x),
       ].filter(Boolean) as Fact[],
-      tip: s1 && topContactPage ? <>{s1[0]} é quem mais traz gente. Ao divulgar, mande as pessoas direto para <b>{x.pageTitle(topContactPage.path)}</b>, a página que mais gera contato.</> : undefined,
     }
   }
 
@@ -136,7 +135,6 @@ function build(kind: ReportKind, x: Derived): Model {
         outside ? { tone: 'bad', figure: <Exit />, text: <><b>{fmt(outside)} pessoas</b> vieram de fora de {topRegion![0]}.</> } as Fact : null,
         fact.mobile(x),
       ].filter(Boolean) as Fact[],
-      tip: bestConv && c1 && bestConv[0] !== c1[0] ? <>Se você atende em {bestConv[0]}, cite a cidade no site e nos posts. Quem é de lá já está procurando e chamando.</> : undefined,
     }
   }
 
@@ -153,11 +151,10 @@ function build(kind: ReportKind, x: Derived): Model {
     ],
     plain: per100,
     facts: [fact.topSource(x), fact.topCity(x), fact.peak(x), fact.mobile(x), fact.topContactPage(x), fact.bestContactsDay(x) ?? fact.bestViewsDay(x, 'var(--wr-pink)')].filter(Boolean) as Fact[],
-    tip: topContactPage && x.sourceList[0] ? <>Coloque o link da página <b>{x.pageTitle(topContactPage.path)}</b> no próximo post de {x.sourceList[0][0]}. Ela é a que mais transforma visitas em contatos.</> : undefined,
   }
 }
 
-export function WeeklyReport({ kind, data, start, end, normalizeSource }: { kind: ReportKind, data: ReportData | null, start: string, end: string, normalizeSource: (s: string) => string }) {
+export function WeeklyReport({ kind, data, start, end, normalizeSource, insights, actions }: { kind: ReportKind, data: ReportData | null, start: string, end: string, normalizeSource: (s: string) => string, insights?: ReportInsight[], actions?: ReactNode }) {
   const model = data ? build(kind, derive(data, normalizeSource)) : null
   const period = `${dateBR(start)} a ${dateBR(end)}`
   return (
@@ -166,6 +163,7 @@ export function WeeklyReport({ kind, data, start, end, normalizeSource }: { kind
         <div><h1>{model?.title ?? 'Relatório'}</h1><p>{model?.subtitle ?? 'Carregando os dados do seu site…'}</p></div>
         <div className="wr-actions">
           <span className="wr-period">{period}</span>
+          {actions}
           <button className="wr-btn" onClick={() => window.print()}>Imprimir ou salvar PDF</button>
         </div>
       </header>
@@ -189,7 +187,20 @@ export function WeeklyReport({ kind, data, start, end, normalizeSource }: { kind
             {model.facts.map((f, i) => <figure key={i} className="wr-fact"><div className={`wr-stage t-${f.tone}`}>{f.figure}</div><figcaption>{f.text}</figcaption></figure>)}
           </div>
         </section>}
-        {model.tip && <section className="wr-next"><p className="t">Para a próxima semana</p><p>{model.tip}</p></section>}
+        {insights && insights.length > 0 && <section className="wr-ai" aria-labelledby="wr-ai-title">
+          <div className="wr-ai-head">
+            <h2 id="wr-ai-title">O que fazer na próxima semana</h2>
+            <span className="wr-izi">IZI INTELLIGENCE</span>
+          </div>
+          <p className="wr-ai-note">Criado com IA a partir dos números deste relatório.</p>
+          <ol className="wr-ai-list">
+            {insights.map(i => <li key={i.key}>
+              <p className="wr-ai-title">{i.title}</p>
+              <p className="wr-ai-finding">{i.finding}</p>
+              <p className="wr-ai-action"><b>Sugestão:</b> {i.action}</p>
+            </li>)}
+          </ol>
+        </section>}
       </>}
     </div>
   )
