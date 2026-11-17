@@ -156,13 +156,13 @@ function build(kind: ReportKind, x: Derived): Model {
 
 export function WeeklyReport({ kind, data, start, end, normalizeSource, insights, actions }: { kind: ReportKind, data: ReportData | null, start: string, end: string, normalizeSource: (s: string) => string, insights?: ReportInsight[], actions?: ReactNode }) {
   const model = data ? build(kind, derive(data, normalizeSource)) : null
-  const period = `${dateBR(start)} a ${dateBR(end)}`
+  const period = start && end ? `${dateBR(start)} a ${dateBR(end)}` : ''
   return (
     <div className="wr">
       <header className="wr-top">
         <div><h1>{model?.title ?? 'Relatório'}</h1><p>{model?.subtitle ?? 'Carregando os dados do seu site…'}</p></div>
         <div className="wr-actions">
-          <span className="wr-period">{period}</span>
+          {period && <span className="wr-period">{period}</span>}
           {actions}
           <button className="wr-btn" onClick={() => window.print()}>Imprimir ou salvar PDF</button>
         </div>

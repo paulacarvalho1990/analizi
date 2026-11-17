@@ -4,6 +4,7 @@ import { ArrowLeft, BookOpen, SlidersHorizontal, Eye, ArrowRight, BarChart3, Cal
 import { AppShell, type Page } from './components/AppShell'
 import { normalizeOriginName } from './lib/origin'
 import { WeeklyReport, type ReportKind, type ReportData } from './components/reports/WeeklyReport'
+import { WeeklyReportPage } from './components/reports/WeeklyReportPage'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard, DualMetricCard } from './components/Metrics'
 import { Button } from './components/ui/Button'
@@ -1989,7 +1990,7 @@ interface AnalyticsFilter {
   browser?: string
 }
 
-function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights') return 'insights'; if (path === '/relatorios/geral') return 'report-geral'; if (path === '/relatorios/contatos') return 'report-contatos'; if (path === '/relatorios/visitas') return 'report-visitas'; if (path === '/relatorios/regiao') return 'report-regiao'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
+function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights' || path === '/relatorio-semanal') return 'weekly-report'; if (path === '/relatorios/geral') return 'report-geral'; if (path === '/relatorios/contatos') return 'report-contatos'; if (path === '/relatorios/visitas') return 'report-visitas'; if (path === '/relatorios/regiao') return 'report-regiao'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; return 'dashboard' }
 function dateString(date: Date) { return date.toISOString().slice(0, 10) }
 function shiftDays(base: string, offset: number) { const d = new Date(`${base}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + offset); return dateString(d) }
 function shiftMonths(base: string, offset: number) { const d = new Date(`${base.slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + offset); return dateString(d) }
@@ -4045,6 +4046,7 @@ export function App() {
     results: <Results/>,
     heatmap: <Heatmap/>,
     insights: <Insights setPage={setPage}/>,
+    'weekly-report': <WeeklyReportPage/>,
     settings: <Settings setPage={setPage}/>,
     team: <TeamSettings setPage={setPage}/>,
     'data-sources': <DataSources setPage={setPage}/>,

@@ -1502,9 +1502,10 @@ async function reportKindsBySite(env: Env): Promise<Map<string, Set<ReportKind>>
   const key = env.SUPABASE_SERVICE_ROLE_KEY
   if (!env.SUPABASE_URL || !key) return out
   try {
-    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/report_settings?select=report_kind,sites!inner(tracker_site_id)`, {
-      headers: { apikey: key, authorization: `Bearer ${key}` }
-    })
+    const headers = { apikey: key, authorization: `Bearer ${key}`, 'content-type': 'application/json' }
+    // Mudanças de objetivo feitas durante a semana passam a valer agora, no relatório de segunda.
+    await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/promote_next_report_kinds`, { method: 'POST', headers, body: '{}' })
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/report_settings?select=report_kind,sites!inner(tracker_site_id)`, { headers })
     if (!res.ok) return out
     const rows = await res.json() as Array<{ report_kind: string, sites?: { tracker_site_id?: string } }>
     for (const r of rows) {
