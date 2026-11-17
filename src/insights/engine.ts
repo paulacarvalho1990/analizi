@@ -63,7 +63,9 @@ const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length
 // ---------- coleta ----------
 
 export function lastClosedWeek(today: string, shift: (d: string, days: number) => string) {
-  const end = shift(today, -1)
+  // Última semana fechada: segunda a domingo anterior a hoje (UTC), em qualquer dia da semana.
+  const dow = new Date(`${today}T00:00:00Z`).getUTCDay() || 7
+  const end = shift(today, -dow)
   const start = shift(end, -6)
   return { start, end, prevStart: shift(start, -7), prevEnd: shift(start, -1) }
 }

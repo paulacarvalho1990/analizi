@@ -1420,7 +1420,8 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
   // Nenhuma análise para o ciclo atual (site novo ou cron que não cobriu o site):
   // gera UMA vez a partir das métricas enviadas e congela no D1 para a semana.
   // Próximas aberturas da tela leem o cache acima, sem regenerar.
-  const scope = determineTemporalScope(
+  // Com site identificado o diagnóstico é sempre da última semana fechada.
+  const scope = safeSiteId ? 'semanal' : determineTemporalScope(
     metrics?.periodDays || 7,
     metrics?.totals || {},
     metrics?.previousTotals || {}
@@ -1474,12 +1475,9 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
 
 async function runScheduledWeeklyInsights(env: Env): Promise<void> {
   const currentWeek = getWeekCycle()
-  const today = isoDate(new Date())
   // O relatório de segunda usa a última semana fechada (segunda a domingo),
-  // preservando dados consolidados e evitando analisar um dia ainda em curso.
-  const end7 = shiftDate(today, -1)
-  const start7 = shiftDate(end7, -6)
-  const prevStart7 = shiftDate(start7, -7)
+  // a mesma janela usada quando o diagnóstico é gerado na abertura da tela.
+  const week = lastClosedWeek(isoDate(new Date()), shiftDate)
 
   // Busca todos os sites ativos no D1
   const sitesResult = (await env.ANALIZI_EVENTS.batch([
@@ -1503,7 +1501,7 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
       const { insights: finalInsights } = await buildWeeklyInsights(
         env.ANALIZI_EVENTS,
         sId,
-        { start: start7, end: end7, prevStart: prevStart7, prevEnd: shiftDate(start7, -1) },
+        week,
         (await fetchBusinessContext(env, sId)) || {},
         env.DEEPINFRA_API_KEY
       )
@@ -2864,7 +2862,8 @@ export default {
   async scheduled(event: { cron?: string }, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
     const jobs: Promise<void>[] = []
     const isDaily = event.cron === '0 3 * * *'
-    const isWeekly = event.cron === '15 3 * * 1'
+    // Na Cloudflare o dia 1 da semana é domingo; MON garante a execução na segunda.
+    const isWeekly = event.cron === '15 3 * * MON'
     if (event.cron === '*/30 * * * *') {
       jobs.push(runDailyConsolidationAndCleanup(env, true))
     }
