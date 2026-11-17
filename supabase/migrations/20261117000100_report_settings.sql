@@ -48,3 +48,4 @@ returns void language sql security definer set search_path = public as $$
    where next_report_kind is not null;
 $$;
 revoke all on function public.promote_next_report_kinds() from public, anon, authenticated;
+grant execute on function public.promote_next_report_kinds() to service_role;
