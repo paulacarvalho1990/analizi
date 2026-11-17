@@ -79,6 +79,8 @@ body { background:var(--background); color:var(--foreground); }
 [data-theme="dark"] .connection-status { background:#1b2a24; border-color:#2a453b; color:#a7f3d0; }
 [data-theme="dark"] .connection-status.danger { background:#3a1d1d; border-color:#692a2a; color:#fca5a5; }
 [data-theme="dark"] .connection-status.warning { background:#3b2a1a; border-color:#6d4b26; color:#fed7aa; }
+.connection-status.loading { background:#f5f6f8; border-color:#e3e6ea; color:#5b6472; }
+[data-theme="dark"] .connection-status.loading { background:#1f2329; border-color:#343a42; color:#aab2bd; }
 [data-theme="dark"] .connection-status.success { background:#1e293b; border-color:#334155; color:#93c5fd; }
 @media (max-width:680px) { .team-card { padding:17px; }.team-invite-form { align-items:stretch; grid-template-columns:1fr; } }
 .source-badge { align-items:center; background:#eef3ff; border:1px solid #cad9fa; border-radius:999px; color:#315b9d!important; display:inline-flex; font-size:10px!important; font-weight:800; gap:6px; letter-spacing:.06em; padding:6px 10px; }.source-badge-dot { background:#3b82f6; border-radius:50%; height:7px; width:7px; }.daily-head,.daily-row { align-items:center; border-bottom:1px solid #edf2f0; display:grid; gap:12px; grid-template-columns:1.2fr repeat(3,1fr); padding:12px 0; }.daily-head { color:#7a9089; font-size:11px; font-weight:800; text-transform:uppercase; }.daily-row { color:#365b52; font-size:12px; }.daily-row span:not(:first-child) { text-align:right; }
