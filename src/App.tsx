@@ -2043,8 +2043,10 @@ function readAnalyticsFilter(): AnalyticsFilter {
   const params = new URLSearchParams(window.location.search);
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   const valid = (value: string | null) => Boolean(value && value.length === 10 && value[4] === '-' && value[7] === '-' && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)));
-  let end = valid(params.get('end')) ? params.get('end')! : today;
-  if (end > today) end = today;
+  // Os relatórios vão até ontem (D-1): os dados são consolidados uma vez por dia, à meia-noite.
+  const yesterday = shiftDays(today, -1);
+  let end = valid(params.get('end')) ? params.get('end')! : yesterday;
+  if (end > yesterday) end = yesterday;
   let start = valid(params.get('start')) ? params.get('start')! : shiftDays(end, -6);
   if (start > end) start = end;
   if (start < shiftDays(end, -729)) start = shiftDays(end, -729);
@@ -2476,8 +2478,8 @@ function ConnectionStatus({ compact = false }: { compact?: boolean }) {
     const ga4 = GA4_ENABLED && currentSite?.analytics_source === 'ga4';
     return (
       <span className="rp-status" title={updatedAt ? `Última sincronização: ${updatedAt}` : undefined}>
-        <i />{ga4 ? <>GA4 conectado · dados até <b>ontem</b></> : <>Conectado · dados de hoje, <b>atualizados a cada 30 min</b></>}
-        <Help align="left" title="De quando são os dados" what={ga4 ? 'Os dados do Google Analytics 4 são importados uma vez por dia, então os relatórios vão até ontem.' : 'O rastreador do Analizi consolida as visitas a cada 30 minutos. Os números de hoje vão sendo atualizados ao longo do dia.'} tip={updatedAt ? `Última sincronização: ${updatedAt}.` : undefined} />
+        <i />{ga4 ? <>GA4 conectado · dados até <b>ontem</b></> : <>Conectado · dados até <b>ontem</b>, atualizados à meia-noite</>}
+        <Help align="left" title="De quando são os dados" what={ga4 ? 'Os dados do Google Analytics 4 são importados uma vez por dia, então os relatórios vão até ontem.' : 'O rastreador do Analizi consolida as visitas uma vez por dia, à meia-noite (horário de Brasília). Os relatórios mostram os dados até ontem.'} tip={updatedAt ? `Última sincronização: ${updatedAt}.` : undefined} />
       </span>
     );
   }

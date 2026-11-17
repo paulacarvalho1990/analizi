@@ -464,8 +464,9 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   const requestedEnd = query.get('end')
   const requestedStart = query.get('start')
   const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
-  // Consolidado inclui o dia atual (parcial, atualizado pelo cron intradiário)
-  const end = validDate(requestedEnd) && requestedEnd! <= today ? requestedEnd! : today
+  // Os dados são consolidados uma vez por dia (00h de Brasília), então os relatórios vão até ontem (D-1).
+  const yesterday = shiftDate(today, -1)
+  const end = validDate(requestedEnd) && requestedEnd! <= yesterday ? requestedEnd! : yesterday
   let start = validDate(requestedStart) ? requestedStart! : shiftDate(end, -requestedDays + 1)
   if (start > end) start = end
   const rawDays = Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1
@@ -1547,8 +1548,10 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
 async function runDailyConsolidationAndCleanup(env: Env, intraday = false): Promise<void> {
   // intraday: reconsolida só ontem + hoje (parcial) e não executa limpeza.
   // diário (03h UTC): reconsolida toda a janela de eventos até hoje e limpa.
-  const rangeSql = intraday ? "between date('now', '-3 hours', '-1 day') and date('now', '-3 hours')" : "<= date('now', '-3 hours')"
-  console.log(intraday ? 'Consolidação intradiária (ontem + hoje)...' : 'Iniciando consolidação diária até o dia atual...')
+  // diário (00h de Brasília): reconsolida os últimos 3 dias fechados (D-1 a D-3), cobrindo eventos atrasados
+  // sem reler a janela inteira de eventos a cada execução.
+  const rangeSql = intraday ? "between date('now', '-3 hours', '-1 day') and date('now', '-3 hours')" : "between date('now', '-3 hours', '-3 days') and date('now', '-3 hours', '-1 day')"
+  console.log(intraday ? 'Consolidação intradiária (ontem + hoje)...' : 'Iniciando consolidação diária (D-1 a D-3)...')
   try {
     // 1. Consolida métricas gerais do dia anterior (D-1) com os conceitos do GA4:
     // - average_engagement_seconds = soma(engagement_time_ms) / 1000 / usuários ativos
@@ -1628,61 +1631,53 @@ async function runDailyConsolidationAndCleanup(env: Env, intraday = false): Prom
       // - exits = sessões na página NÃO engajadas (< 10s na sessão, < 2 page_views na sessão e 0 conversões)
       // - exit_rate (Bounce Rate GA4 da página) = 100 * sessões não engajadas / sessões que visitaram a página
       env.ANALIZI_EVENTS.prepare(`
+        -- Sessões engajadas são calculadas uma única vez por site/dia e cruzadas por join,
+        -- em vez de uma subconsulta correlacionada por página (que relia a tabela events
+        -- inteira para cada grupo e estourava a cota diária de leituras do D1).
+        with page_events as (
+          select
+            tracker_site_id,
+            date(occurred_at, '-3 hours') as metric_date,
+            coalesce(page_path, '/') as page_path,
+            page_title, event_name, visitor_id, session_id, is_conversion, engagement_time_ms, load_time_ms
+          from events
+          where date(occurred_at, '-3 hours') ${rangeSql}
+        ),
+        engaged_sessions as (
+          select tracker_site_id, metric_date, session_id
+          from page_events
+          group by tracker_site_id, metric_date, session_id
+          having sum(coalesce(engagement_time_ms, 0)) >= 10000
+              or sum(event_name = 'page_view') >= 2
+              or sum(event_name in ('whatsapp_contact','sign_up') or is_conversion = 1) >= 1
+        ),
+        page_bounces as (
+          select ps.tracker_site_id, ps.metric_date, ps.page_path,
+            count(*) as page_sessions,
+            sum(es.session_id is null) as non_engaged
+          from (select distinct tracker_site_id, metric_date, page_path, session_id from page_events where session_id is not null) ps
+          left join engaged_sessions es
+            on es.tracker_site_id = ps.tracker_site_id and es.metric_date = ps.metric_date and es.session_id = ps.session_id
+          group by ps.tracker_site_id, ps.metric_date, ps.page_path
+        )
         insert into daily_pages (tracker_site_id, metric_date, page_path, page_title, page_views, users, entrances, exits, exit_rate, average_engagement_seconds, average_load_time_ms, conversions)
         select
-          tracker_site_id,
-          date(occurred_at, '-3 hours') as metric_date,
-          coalesce(page_path, '/') as page_path,
-          max(page_title) as page_title,
-          sum(event_name = 'page_view') as page_views,
-          count(distinct visitor_id) as users,
-          count(distinct case when event_name = 'session_start' then session_id end) as entrances,
-          (
-            count(distinct session_id) - (
-              select count(*) from (
-                select s.session_id
-                from events s
-                where s.tracker_site_id = events.tracker_site_id
-                  and date(s.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
-                  and s.session_id in (
-                    select p2.session_id from events p2
-                    where p2.tracker_site_id = events.tracker_site_id
-                      and date(p2.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
-                      and coalesce(p2.page_path, '/') = coalesce(events.page_path, '/')
-                  )
-                group by s.session_id
-                having sum(coalesce(s.engagement_time_ms, 0)) >= 10000
-                    or sum(s.event_name = 'page_view') >= 2
-                    or sum(s.event_name in ('whatsapp_contact','sign_up') or s.is_conversion = 1) >= 1
-              )
-            )
-          ) as exits,
-          round(100.0 * (
-            count(distinct session_id) - (
-              select count(*) from (
-                select s.session_id
-                from events s
-                where s.tracker_site_id = events.tracker_site_id
-                  and date(s.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
-                  and s.session_id in (
-                    select p2.session_id from events p2
-                    where p2.tracker_site_id = events.tracker_site_id
-                      and date(p2.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
-                      and coalesce(p2.page_path, '/') = coalesce(events.page_path, '/')
-                  )
-                group by s.session_id
-                having sum(coalesce(s.engagement_time_ms, 0)) >= 10000
-                    or sum(s.event_name = 'page_view') >= 2
-                    or sum(s.event_name in ('whatsapp_contact','sign_up') or s.is_conversion = 1) >= 1
-              )
-            )
-          ) / nullif(count(distinct session_id), 0), 1) as exit_rate,
-          coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct visitor_id), 0)), 0) as average_engagement_seconds,
-          coalesce(round(sum(coalesce(load_time_ms, 0)) / nullif(sum(case when load_time_ms > 0 then 1 else 0 end), 0)), 0) as average_load_time_ms,
-          count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
-        from events
-        where date(occurred_at, '-3 hours') ${rangeSql}
-        group by tracker_site_id, date(occurred_at, '-3 hours'), coalesce(page_path, '/')
+          pe.tracker_site_id,
+          pe.metric_date,
+          pe.page_path,
+          max(pe.page_title) as page_title,
+          sum(pe.event_name = 'page_view') as page_views,
+          count(distinct pe.visitor_id) as users,
+          count(distinct case when pe.event_name = 'session_start' then pe.session_id end) as entrances,
+          coalesce(max(pb.non_engaged), 0) as exits,
+          round(100.0 * coalesce(max(pb.non_engaged), 0) / nullif(count(distinct pe.session_id), 0), 1) as exit_rate,
+          coalesce(round((sum(coalesce(pe.engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct pe.visitor_id), 0)), 0) as average_engagement_seconds,
+          coalesce(round(sum(coalesce(pe.load_time_ms, 0)) / nullif(sum(case when pe.load_time_ms > 0 then 1 else 0 end), 0)), 0) as average_load_time_ms,
+          count(distinct case when pe.event_name in ('whatsapp_contact','sign_up') or pe.is_conversion = 1 then pe.session_id end) as conversions
+        from page_events pe
+        left join page_bounces pb
+          on pb.tracker_site_id = pe.tracker_site_id and pb.metric_date = pe.metric_date and pb.page_path = pe.page_path
+        group by pe.tracker_site_id, pe.metric_date, pe.page_path
         on conflict(tracker_site_id, metric_date, page_path) do update set
           page_title = excluded.page_title,
           page_views = excluded.page_views,
@@ -2883,9 +2878,6 @@ export default {
     const isDaily = event.cron === '0 3 * * *'
     // Na Cloudflare o dia 1 da semana é domingo; MON garante a execução na segunda.
     const isWeekly = event.cron === '15 3 * * MON'
-    if (event.cron === '*/30 * * * *') {
-      jobs.push(runDailyConsolidationAndCleanup(env, true))
-    }
     if (isDaily) {
       jobs.push(runDailyConsolidationAndCleanup(env), runScheduledGa4Sync(env))
     }
