@@ -21,7 +21,7 @@ type Props = {
   onSourceCreated?: (source: 'ga4' | 'tracker') => void
 }
 type Segment = 'products' | 'services' | 'health'
-export const CONSENT_VERSION = '2026-10-18'
+export const CONSENT_VERSION = '2026-10-29-r3'
 
 const segmentOptions: Record<Segment, string[]> = {
   products: ['Moda e acessórios', 'Beleza e cosméticos', 'Alimentos e bebidas', 'Casa e decoração', 'Eletrônicos', 'Saúde e bem-estar', 'Pet shop', 'Autopeças e acessórios', 'Livros e papelaria', 'Produtos infantis', 'Outros'],
@@ -178,7 +178,7 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
     }
     const { error: consentError } = await supabase!.from('user_consents').insert([
       { user_id: user.id, consent_key: 'service_terms', version: CONSENT_VERSION, source: 'web', terms_snapshot: { title: 'Uso do Analizi', version: CONSENT_VERSION } },
-      { user_id: user.id, consent_key: 'site_data_processing', version: CONSENT_VERSION, source: 'web', terms_snapshot: { title: 'Dados do site e integrações', version: CONSENT_VERSION } },
+      { user_id: user.id, consent_key: 'site_data_processing', version: CONSENT_VERSION, source: 'web', terms_snapshot: { title: 'Dados de tráfego e integrações', version: CONSENT_VERSION } },
     ])
     if (consentError) setError('Não foi possível registrar seus consentimentos. Tente novamente.')
     else setMode('onboarding-business')
@@ -335,25 +335,49 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
         <section className="onboarding-card consent-card">
           <span className="eyebrow">SEUS CONSENTIMENTOS</span>
           <h1>TERMOS DE CONSENTIMENTO</h1>
-          <p>Para usar o Analizi, precisamos do seu aceite nos dois termos abaixo. Você pode recusar; nesse caso, o cadastro será encerrado.</p>
+          <p>Para entrar no serviço, precisamos do seu aceite nos dois termos abaixo. Leia o conteúdo completo, marque as duas opções e continue quando estiver de acordo. Você pode recusar; nesse caso, o cadastro será encerrado.</p>
           <article className="consent-term">
             <h2>1. Uso do Analizi</h2>
-            <p>O Analizi é um serviço em evolução contínua. Podemos atualizar funcionalidades, interfaces, limites, integrações, planos e preços para melhorar ou manter o serviço. Mudanças relevantes serão comunicadas previamente conforme as condições aplicáveis.</p>
-            <p>Você é responsável por manter as credenciais seguras, usar o serviço de forma lícita e fornecer informações verdadeiras. As análises são apoio à decisão e não garantem resultados comerciais, disponibilidade ininterrupta ou compatibilidade permanente com serviços de terceiros.</p>
-            <p>Podemos suspender acessos em caso de fraude, uso indevido, risco de segurança ou descumprimento destes termos. Você pode encerrar a conta conforme as condições do plano, preservadas obrigações legais, de pagamento e retenção previstas em lei.</p>
+            <div className="consent-term-scroll">
+              <p><strong>1.1. Objeto.</strong> O Analizi oferece painéis, relatórios e recomendações para ajudar você a entender o desempenho do seu site e tomar decisões de negócio. O serviço pode incluir coleta de eventos, consolidação de métricas, visualizações e recursos automatizados de análise.</p>
+              <p><strong>1.2. Conta e informações.</strong> Você deve fornecer informações verdadeiras, manter seus dados atualizados e proteger os meios de acesso à conta. Se agir em nome de uma empresa, declara ter autorização para vinculá-la a estes termos. Você é responsável pelas atividades realizadas com sua conta e deve nos avisar imediatamente sobre acesso não autorizado.</p>
+              <p><strong>1.3. Uso permitido.</strong> Você pode usar o serviço para acompanhar sites e negócios sobre os quais tenha autorização. O uso deve respeitar a legislação aplicável, direitos de terceiros e as regras apresentadas no próprio produto. É proibido usar o serviço para fraude, assédio, discriminação, invasão de privacidade, distribuição de código malicioso ou qualquer finalidade ilegal.</p>
+              <p><strong>1.4. Condutas proibidas.</strong> Você não pode tentar obter o código-fonte ou contornar controles de segurança; explorar vulnerabilidades sem autorização; sobrecarregar a infraestrutura; copiar, revender, sublicenciar ou criar serviço concorrente a partir do produto; remover avisos de titularidade; nem usar robôs para acessar áreas que não foram disponibilizadas para esse fim.</p>
+              <p><strong>1.5. Relatórios e recomendações.</strong> Os dados e insights são apoio à decisão e podem conter estimativas, atrasos, limitações de amostragem ou dependências de fontes externas. Eles não constituem aconselhamento jurídico, contábil, financeiro ou garantia de vendas, audiência, conversões ou qualquer resultado específico.</p>
+              <p><strong>1.6. Disponibilidade e mudanças.</strong> O serviço pode ser atualizado, corrigido, descontinuado ou ter recursos, limites e integrações alterados para fins de segurança, manutenção ou evolução do produto. Faremos esforços razoáveis para comunicar mudanças relevantes quando isso for viável, mas não prometemos disponibilidade ininterrupta ou compatibilidade permanente com serviços de terceiros.</p>
+              <p><strong>1.7. Recursos de teste.</strong> Alguns recursos podem ser disponibilizados em teste, com limitações ou sem suporte completo. Nesses casos, podemos alterar ou remover o recurso e não garantimos que os resultados produzidos durante o teste serão preservados.</p>
+              <p><strong>1.8. Suspensão.</strong> Podemos limitar ou suspender o acesso quando houver indício de fraude, risco de segurança, uso que prejudique terceiros ou a infraestrutura, inadimplência ou violação destes termos. Sempre que possível, informaremos o motivo e orientaremos como regularizar a situação.</p>
+              <p><strong>1.9. Propriedade intelectual.</strong> O serviço, sua interface, marca, software, documentação e componentes são protegidos por direitos de propriedade intelectual. Você recebe apenas uma autorização limitada, não exclusiva, intransferível e revogável para usar o serviço durante a vigência da conta. As métricas de tráfego, comportamento e localização geral do seu site continuam vinculadas ao seu negócio, observadas as permissões necessárias para operar o serviço.</p>
+              <p><strong>1.10. Limites de responsabilidade.</strong> Na extensão permitida pela lei, não somos responsáveis por perdas indiretas, lucros cessantes, interrupções causadas por terceiros ou decisões tomadas exclusivamente com base nos relatórios. Nossa responsabilidade total, quando aplicável, fica limitada aos valores pagos pelo serviço nos doze meses anteriores ao evento que originou a reclamação, sem afastar direitos que não possam ser limitados por lei.</p>
+              <p><strong>1.11. Encerramento e alterações.</strong> Você pode deixar de usar o serviço a qualquer momento. Após o encerramento, o acesso poderá ser desativado e os dados serão tratados conforme o termo de dados e os prazos legais aplicáveis. Podemos atualizar estes termos para refletir mudanças no serviço ou na legislação; a nova versão valerá após sua publicação e, quando necessário, solicitaremos novo aceite.</p>
+            </div>
             <label className="consent-check">
               <input type="checkbox" checked={serviceTermsAccepted} onChange={(event) => setServiceTermsAccepted(event.target.checked)} />
               <span>Li e aceito os termos de uso do Analizi — versão {CONSENT_VERSION}.</span>
             </label>
           </article>
           <article className="consent-term">
-            <h2>2. Dados do site e integrações</h2>
-            <p>Você autoriza o Analizi a coletar, receber, organizar e armazenar métricas do site vinculado, necessárias para gerar relatórios e insights. Os dados ficam armazenados em nossa infraestrutura enquanto sua conta estiver ativa ou pelo período exigido por lei.</p>
-            <p>Ao conectar o Google Analytics 4, você autoriza acesso somente de leitura aos dados permitidos. Ao instalar o Rastreador Analizi, declara ter autorização para inserir o código no site e para tratar dados de navegação conforme a LGPD e seus próprios avisos de privacidade.</p>
-            <p>Você declara ter poderes para vincular o negócio e acessar informações privadas e inteligência de negócio nele contidas. O rastreador não deve coletar conteúdo de formulários, senhas, e-mails ou telefones. O tratamento seguirá as finalidades informadas, medidas de segurança e direitos previstos em lei.</p>
+            <h2>2. Dados de tráfego e integrações</h2>
+            <div className="consent-term-scroll">
+              <p><strong>2.1. Escopo da coleta.</strong> O Analizi coleta, recebe, organiza, armazena e exibe somente métricas de tráfego, comportamento de navegação e localização geográfica geral do site vinculado, como visitas, sessões, páginas acessadas, origem, dispositivo, eventos de interação e região aproximada. Esses dados são usados para gerar relatórios, comparações, alertas e insights dentro do serviço.</p>
+              <p><strong>2.2. Proibição de dados pessoais.</strong> O Analizi não coleta nem pretende coletar dados pessoais, identificadores diretos ou conteúdo que permita identificar individualmente um visitante. O serviço não deve receber nomes, e-mails, telefones, endereços, documentos, senhas, dados de cartão, conteúdo de formulários, mensagens, identificadores de usuário ou outros dados sensíveis.</p>
+              <p><strong>2.3. Dados agregados e geográficos.</strong> As informações de comportamento e localização devem ser tratadas em formato agregado, anonimizado ou suficientemente generalizado para não revelar a identidade de uma pessoa. Localização significa apenas região, estado, país ou área aproximada; o Analizi não deve receber endereço, coordenada precisa ou histórico que permita acompanhar uma pessoa individualmente.</p>
+              <p><strong>2.4. Fontes de dados.</strong> Você pode usar o rastreador do Analizi ou conectar uma plataforma de métricas de terceiros. Ao conectar uma fonte externa, o acesso será limitado às permissões concedidas e, quando indicado no fluxo de conexão, será somente de leitura. Você declara ter autorização para vincular a propriedade, conta, domínio ou negócio e deve configurar a fonte para disponibilizar apenas métricas agregadas dentro do escopo deste termo.</p>
+              <p><strong>2.5. Responsabilidade pelo site.</strong> Você é responsável pela instalação correta do rastreador e por não inserir no código, URLs, eventos, campanhas ou parâmetros qualquer dado que identifique uma pessoa. Quando aplicável, também deve informar em seu site o uso de ferramentas de medição e cookies, sem atribuir ao Analizi uma coleta de dados pessoais que ele não realiza.</p>
+              <p><strong>2.6. Bloqueio de informações pessoais.</strong> Se você identificar que uma fonte, URL, evento ou integração está enviando dados pessoais, deverá interromper a transmissão e corrigir a configuração imediatamente. O Analizi poderá rejeitar, remover, anonimizar ou bloquear dados fora do escopo, mas isso não substitui a obrigação de manter suas fontes corretamente configuradas.</p>
+              <p><strong>2.7. Uso agregado.</strong> Os dados recebidos serão utilizados para análises estatísticas e operacionais do site e poderão ser combinados em relatórios agregados para compreender o desempenho, corrigir erros, melhorar recursos e acompanhar a qualidade do serviço. Não usaremos essas informações para identificar visitantes individuais.</p>
+              <p><strong>2.8. Compartilhamento e operadores.</strong> Podemos usar fornecedores de infraestrutura, armazenamento, suporte, segurança e processamento que atuem em nosso nome. Eles receberão apenas as métricas necessárias para prestar o serviço, ficarão sujeitos a deveres de confidencialidade e não poderão usar os dados para finalidades próprias incompatíveis. Não vendemos dados do seu site.</p>
+              <p><strong>2.9. Segurança e incidentes.</strong> Adotamos medidas técnicas e administrativas razoáveis para proteger as métricas contra acesso indevido, perda, alteração ou divulgação. Nenhum sistema conectado à internet é absolutamente seguro. Se identificarmos um incidente relevante que afete os dados tratados no serviço, adotaremos as medidas cabíveis e faremos as comunicações exigidas pela lei.</p>
+              <p><strong>2.10. Retenção e exclusão.</strong> Mantemos as métricas pelo tempo necessário para prestar o serviço, cumprir obrigações legais, resolver disputas e proteger direitos. Após o encerramento, poderemos excluir ou anonimizar os dados conforme nossos ciclos operacionais e prazos legais. Você deve exportar o que precisar antes de encerrar a conta.</p>
+              <p><strong>2.11. Integrações de terceiros.</strong> Integrações externas têm regras, disponibilidade e políticas próprias. O Analizi não controla alterações, indisponibilidade ou exatidão dos dados fornecidos por terceiros. Você deve configurar cada integração para compartilhar apenas relatórios e métricas de tráfego, comportamento e localização geral, sem dados pessoais ou identificadores individuais.</p>
+              <p><strong>2.12. Compartilhamentos opcionais.</strong> Se uma funcionalidade permitir compartilhar métricas com outro produto, serviço ou parceiro, esse compartilhamento somente ocorrerá após sua ativação e continuará limitado a dados agregados e não identificáveis. Você poderá desativá-lo quando a opção estiver disponível.</p>
+              <p><strong>2.13. Transferências internacionais.</strong> A operação do serviço pode envolver fornecedores localizados em outros países. Nesses casos, adotaremos medidas razoáveis para proteger as métricas transferidas. Como o Analizi não coleta dados pessoais, essa transferência se limita aos dados de tráfego, comportamento e localização geral previstos neste termo.</p>
+              <p><strong>2.14. Ordem de aplicação.</strong> Este termo rege o tratamento de métricas realizado pelo Analizi para prestar o serviço. Regras específicas de uma integração ou obrigação legal poderão prevalecer apenas sobre o ponto que regularem diretamente, sem ampliar as permissões de coleta para dados pessoais.</p>
+              <p><strong>2.15. Confidencialidade.</strong> Trataremos como confidenciais as informações não públicas do negócio e as métricas acessadas para prestar o serviço, exigindo o mesmo cuidado de pessoas e fornecedores autorizados. A obrigação não se aplica a informações públicas, já conhecidas legitimamente, desenvolvidas de forma independente ou cuja divulgação seja exigida por autoridade competente.</p>
+            </div>
             <label className="consent-check">
               <input type="checkbox" checked={dataTermsAccepted} onChange={(event) => setDataTermsAccepted(event.target.checked)} />
-              <span>Li e aceito o tratamento e armazenamento dos dados do site — versão {CONSENT_VERSION}.</span>
+              <span>Li e aceito o tratamento e armazenamento das métricas do site — versão {CONSENT_VERSION}.</span>
             </label>
           </article>
           {error && <p className="form-feedback error">{error}</p>}
@@ -441,9 +465,9 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
         <span className="eyebrow">CONECTE SEUS DADOS</span>
         <h1>De onde vamos trazer os dados?</h1>
         <p>Escolha a opção mais simples para você. Você poderá alterar isso depois.</p>
-        <button type="button" className={`source-card ${source === 'ga4' ? 'selected' : ''}`} onClick={() => setSource('ga4')}>
-          <span className="source-icon ga">G</span>
-          <span><b>Conectar Google Analytics</b><small>Use os dados que você já acompanha no Google.</small></span>
+        <button type="button" className="source-card" disabled style={{ opacity: .55, cursor: 'not-allowed' }}>
+          <span className="source-icon ga"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" /></span>
+          <span><b>Conectar Google Analytics</b><small>EM BREVE</small></span>
           {source === 'ga4' && <Check size={20} />}
         </button>
         <button type="button" className={`source-card ${source === 'tracker' ? 'selected' : ''}`} onClick={() => setSource('tracker')}>

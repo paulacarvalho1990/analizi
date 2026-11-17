@@ -5,10 +5,11 @@ import {
   CreditCard, Flag, TextCursorInput, Link as LinkIcon,
   BarChart3, SlidersHorizontal, Table as TableIcon, MapPin, HelpCircle,
   MessageSquareQuote, Volume2, GalleryHorizontal, ZoomIn, ZoomOut, Maximize2,
-  Calendar, FileText
+  Calendar, FileText, Layers, Settings, ArrowRight
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
+import { supabase } from '../lib/supabase'
 
 interface LayoutBlock {
   type: string
@@ -177,6 +178,13 @@ interface ScrollRetention {
   percentage: number
 }
 
+interface HeatmapLayoutVersion {
+  hash: string
+  firstSeenAt: string
+  lastSeenAt: string
+  sampleCount: number
+}
+
 interface HeatmapPayload {
   pagePath: string
   deviceType: string
@@ -189,6 +197,8 @@ interface HeatmapPayload {
     updatedAt: string
     blocks: LayoutBlock[]
   } | null
+  activeVersion: HeatmapLayoutVersion | null
+  versions: HeatmapLayoutVersion[]
   clicks: HeatmapClick[]
   scrollRetention: Record<string, ScrollRetention>
 }
@@ -496,12 +506,14 @@ function RenderWireframeBlock({ block, baseWidth }: { block: LayoutBlock; baseWi
 
 export function Heatmap() {
   const { currentSite } = useBusiness()
+  const [trackerConfigured, setTrackerConfigured] = useState<boolean | null>(null)
   const [selectedPage, setSelectedPage] = useState<string>('/')
   const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop')
   const [activeLayer, setActiveLayer] = useState<'clicks' | 'scroll'>('clicks')
   const [periodDays, setPeriodDays] = useState<number>(30)
   const [customStart, setCustomStart] = useState<string>('')
   const [customEnd, setCustomEnd] = useState<string>('')
+  const [selectedVersion, setSelectedVersion] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<HeatmapPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -511,6 +523,31 @@ export function Heatmap() {
   const wrapperRef = useRef<HTMLDivElement | null>(null)
 
   const targetSiteId = currentSite?.tracker_site_id || (currentSite?.id?.startsWith('ANLZ') ? currentSite.id : '')
+  const previewTrackerRequired = new URLSearchParams(window.location.search).get('preview') === 'tracker-required'
+
+  useEffect(() => {
+    if (!currentSite) {
+      setTrackerConfigured(null)
+      return
+    }
+    // O heatmap é sempre nativo. Quando GA4 é a fonte dos painéis, só o
+    // liberamos depois de o rastreador receber uma instalação confirmada.
+    if (currentSite.analytics_source !== 'ga4' || !supabase) {
+      setTrackerConfigured(true)
+      return
+    }
+    let active = true
+    void supabase
+      .from('data_sources')
+      .select('status')
+      .eq('site_id', currentSite.id)
+      .eq('kind', 'tracker')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setTrackerConfigured(data?.status === 'connected')
+      })
+    return () => { active = false }
+  }, [currentSite?.id, currentSite?.analytics_source])
 
   const fetchHeatmap = async (page = selectedPage, dev = device, days = periodDays) => {
     if (!targetSiteId) {
@@ -525,6 +562,7 @@ export function Heatmap() {
         device: dev,
         period: String(days)
       })
+      if (selectedVersion) query.set('version', selectedVersion)
       if (days === 0 && customStart && customEnd) {
         query.set('start', customStart)
         query.set('end', customEnd)
@@ -533,6 +571,8 @@ export function Heatmap() {
       if (!res.ok) throw new Error('Falha ao carregar dados do heatmap.')
       const json: HeatmapPayload = await res.json()
       setData(json)
+      const activeHash = json.activeVersion?.hash || ''
+      if (activeHash !== selectedVersion) setSelectedVersion(activeHash)
       if (json.availablePages?.length && !json.availablePages.includes(page)) {
         setSelectedPage(json.availablePages[0])
       }
@@ -547,7 +587,7 @@ export function Heatmap() {
     if (targetSiteId) {
       fetchHeatmap(selectedPage, device, periodDays)
     }
-  }, [targetSiteId, selectedPage, device, periodDays, customStart, customEnd])
+  }, [targetSiteId, selectedPage, device, periodDays, customStart, customEnd, selectedVersion])
 
   const layout = data?.layout
   const rawBlocks = layout?.blocks || []
@@ -599,6 +639,7 @@ export function Heatmap() {
 
   const scaledStageWidth = Math.round(totalDeviceWidth * activeScale)
   const scaledStageHeight = Math.round((pageHeight + frameBorderPadding) * activeScale)
+  const needsTracker = previewTrackerRequired || (currentSite?.analytics_source === 'ga4' && trackerConfigured === false)
 
   return (
     <div className="heatmap-container">
@@ -613,6 +654,20 @@ export function Heatmap() {
           </p>
         </div>
       </header>
+
+      {needsTracker ? (
+        <section className="heatmap-empty-card heatmap-tracker-required">
+          <div className="heatmap-empty-icon-box">
+            <Flame size={32} />
+          </div>
+          <span className="heatmap-empty-badge">RECURSO DO RASTREADOR ANALIZI</span>
+          <h3>Heatmap e rolagem precisam do Rastreador Analizi</h3>
+          <p>Essa funcionalidade está inclusa no Rastreador Analizi. Configure-o para visualizar onde as pessoas clicam e até onde elas rolam nas páginas do seu site.</p>
+          <a className="heatmap-setup-link" href="/configuracoes/rastreador">
+            <Settings size={17} /> Configurar rastreador <ArrowRight size={17} />
+          </a>
+        </section>
+      ) : <>
 
       {/* Barra de Controles e Filtros */}
       <div className="heatmap-toolbar">
@@ -633,6 +688,29 @@ export function Heatmap() {
             <option value={0}>Personalizado (De/Até)</option>
           </select>
         </div>
+
+        {(data?.versions?.length ?? 0) > 0 && data && (
+          <div className="heatmap-control-group">
+            <Layers size={15} style={{ color: 'var(--muted-foreground)' }} />
+            <label htmlFor="layout-version">Versão visual:</label>
+            <select
+              id="layout-version"
+              value={selectedVersion || data.activeVersion?.hash || ''}
+              onChange={(e) => setSelectedVersion(e.target.value)}
+              className="heatmap-select"
+              title="Selecione a versão visual da página para comparar o comportamento"
+            >
+              {data.versions.map((version, index) => {
+                const date = new Date(version.firstSeenAt).toLocaleDateString('pt-BR')
+                return (
+                  <option key={version.hash} value={version.hash}>
+                    {index === 0 ? 'Mais observada' : `Versão ${index + 1}`} · {date} ({version.sampleCount} capturas)
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+        )}
 
         {periodDays === 0 && (
           <div className="heatmap-control-group" style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
@@ -954,6 +1032,7 @@ export function Heatmap() {
           </div>
         </>
       )}
+      </>}
     </div>
   )
 }

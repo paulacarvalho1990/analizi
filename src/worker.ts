@@ -1,3 +1,4 @@
+import { buildWeeklyInsights, lastClosedWeek, type AIInsight, type BusinessContext } from './insights/engine'
 interface D1Statement {
   bind(...values: unknown[]): D1Statement
 }
@@ -15,6 +16,12 @@ interface Env {
   ANALIZI_EVENTS: D1Database
   ASSETS: AssetFetcher
   DEEPINFRA_API_KEY?: string
+  SUPABASE_URL?: string
+  SUPABASE_ANON_KEY?: string
+  SUPABASE_SERVICE_ROLE_KEY?: string
+  GOOGLE_OAUTH_CLIENT_ID?: string
+  GOOGLE_OAUTH_CLIENT_SECRET?: string
+  GA4_TOKEN_ENCRYPTION_KEY?: string
 }
 
 const ALLOWED_EVENTS = new Set([
@@ -95,6 +102,16 @@ function safeMetadata(value: unknown) {
   )
   const serialized = JSON.stringify(clean)
   return serialized.length <= 2_000 ? serialized : '{}'
+}
+
+function layoutHash(value: unknown) {
+  const input = JSON.stringify(value)
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `v${(hash >>> 0).toString(16).padStart(8, '0')}`
 }
 
 function requestedHost(request: Request) {
@@ -215,14 +232,28 @@ async function collect(request: Request, env: Env) {
 
     // Trata armazenamento estrutural de Layout (sem gravar na tabela events para economizar espaço)
     if (name === 'page_layout') {
-      const layoutObj = (event.metadata as { layout?: { viewport_width?: number; viewport_height?: number; page_height?: number; blocks?: unknown[] } })?.layout
+      const metadata = event.metadata as { layout?: { viewport_width?: number; viewport_height?: number; page_height?: number; blocks?: unknown[] }; layout_hash?: string } | undefined
+      const layoutObj = metadata?.layout
       if (layoutObj && Array.isArray(layoutObj.blocks)) {
         const pagePath = compactText(event.pagePath, 1_024) || '/'
         const devType = compactText(event.deviceType, 32) || 'desktop'
         const vpW = Number(layoutObj.viewport_width) || 1280
         const vpH = Number(layoutObj.viewport_height) || 800
         const pageH = Number(layoutObj.page_height) || 1200
-        const layoutJson = JSON.stringify(layoutObj.blocks.slice(0, 120))
+        const blocks = layoutObj.blocks.slice(0, 120)
+        const layoutJson = JSON.stringify(blocks)
+        const versionHash = compactText(metadata?.layout_hash, 40) || layoutHash(blocks)
+        const seenAt = event.occurredAt || new Date().toISOString()
+        statements.push(env.ANALIZI_EVENTS.prepare(`
+          insert into page_layout_versions (tracker_site_id, page_path, device_type, layout_hash, viewport_width, viewport_height, page_height, layout_json, first_seen_at, last_seen_at, sample_count)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+          on conflict(tracker_site_id, page_path, device_type, layout_hash) do update set
+            viewport_width = excluded.viewport_width,
+            viewport_height = excluded.viewport_height,
+            page_height = excluded.page_height,
+            last_seen_at = excluded.last_seen_at,
+            sample_count = page_layout_versions.sample_count + 1
+        `).bind(siteId, pagePath, devType, versionHash, vpW, vpH, pageH, layoutJson, seenAt, seenAt))
         statements.push(env.ANALIZI_EVENTS.prepare(`
           insert into page_layouts (tracker_site_id, page_path, device_type, viewport_width, viewport_height, page_height, layout_json, updated_at)
           values (?, ?, ?, ?, ?, ?, ?, current_timestamp)
@@ -355,7 +386,10 @@ async function provisionTrackerSite(request: Request, env: Env) {
   await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare(`
     insert into tracker_sites (tracker_site_id, supabase_site_id, business_id, plan, domain, is_active)
     values (?, ?, ?, ?, ?, 1)
-    on conflict(tracker_site_id) do update set domain = excluded.domain, plan = case when tracker_sites.plan = 'admin' then 'admin' else excluded.plan end, is_active = 1, updated_at = current_timestamp
+    on conflict(tracker_site_id) do update set
+      supabase_site_id = case when excluded.supabase_site_id <> excluded.tracker_site_id then excluded.supabase_site_id else tracker_sites.supabase_site_id end,
+      business_id = case when excluded.business_id <> excluded.tracker_site_id then excluded.business_id else tracker_sites.business_id end,
+      domain = excluded.domain, plan = case when tracker_sites.plan = 'admin' then 'admin' else excluded.plan end, is_active = 1, updated_at = current_timestamp
   `).bind(id, supabaseSiteId || id, businessId || id, plan, domain)])
   return json({ trackerSiteId: id, domain, plan })
 }
@@ -375,7 +409,18 @@ async function trackerStatus(id: string, env: Env) {
 }
 
 function isoDate(value: Date) { return value.toISOString().slice(0, 10) }
+function isoDateInTimeZone(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value)
+  const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
+}
 function shiftDate(value: string, days: number) { const date = new Date(`${value}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); return isoDate(date) }
+function monthStart(value: string) { return `${value.slice(0, 7)}-01` }
+function shiftMonths(value: string, months: number) {
+  const date = new Date(`${monthStart(value)}T00:00:00.000Z`)
+  date.setUTCMonth(date.getUTCMonth() + months)
+  return isoDate(date)
+}
 function validDate(value: string | null) { return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))) }
 
 const SQL_NORMALIZED_SOURCE = `case
@@ -418,10 +463,9 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   const requestedDays = Math.min(730, Math.max(1, Math.floor(Number(query.get('days') || 7))))
   const requestedEnd = query.get('end')
   const requestedStart = query.get('start')
-  const today = isoDate(new Date())
-  const yesterday = shiftDate(today, -1)
-  // Na Abordagem A (100% consolidado), a data limite é sempre D-1 (ontem)
-  const end = validDate(requestedEnd) && requestedEnd! < today ? requestedEnd! : yesterday
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  // Consolidado inclui o dia atual (parcial, atualizado pelo cron intradiário)
+  const end = validDate(requestedEnd) && requestedEnd! <= today ? requestedEnd! : today
   let start = validDate(requestedStart) ? requestedStart! : shiftDate(end, -requestedDays + 1)
   if (start > end) start = end
   const rawDays = Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1
@@ -822,6 +866,7 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
 
   const pagePath = searchParams.get('page') || '/'
   const deviceType = searchParams.get('device') || 'desktop'
+  const requestedVersion = compactText(searchParams.get('version'), 40)
   const browser = compactText(searchParams.get('browser'), 80)
   const source = compactText(searchParams.get('source'), 120)
   const medium = compactText(searchParams.get('medium'), 120)
@@ -838,7 +883,20 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
   if (medium) { extraEventWhere += ` and lower(${SQL_NORMALIZED_MEDIUM}) = lower(?)`; extraEventParams.push(medium) }
   if (campaign) { extraEventWhere += ' and lower(coalesce(campaign, \'\')) = lower(?)'; extraEventParams.push(campaign) }
 
-  // 1. Busca layout salvo
+  // 1. Busca snapshots de layout que estiveram ativos no período.
+  const versionsQuery = env.ANALIZI_EVENTS.prepare(`
+    select layout_hash, viewport_width, viewport_height, page_height, layout_json, first_seen_at, last_seen_at, sample_count
+    from page_layout_versions
+    where tracker_site_id = ? and page_path = ? and device_type = ?
+      and last_seen_at >= ? and first_seen_at <= ?
+    order by sample_count desc, last_seen_at desc
+    limit 30
+  `).bind(safeId, pagePath, deviceType, startDate, `${endDate}T23:59:59`)
+  const versionResults = await env.ANALIZI_EVENTS.batch([versionsQuery]) as Array<{ results?: Array<Record<string, unknown>> }>
+  const versions = versionResults[0]?.results || []
+  const activeVersion = versions.find((version) => String(version.layout_hash) === requestedVersion) || versions[0]
+
+  // 2. Busca o layout atual como fallback para instalações anteriores à migration.
   const layoutQuery = env.ANALIZI_EVENTS.prepare(`
     select page_path, device_type, viewport_width, viewport_height, page_height, layout_json, updated_at
     from page_layouts
@@ -851,7 +909,9 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
     select distinct page_path from page_layouts where tracker_site_id = ? order by page_path asc limit 100
   `).bind(safeId)
 
-  // 3. Busca cliques com coordenadas agregadas
+  // 3. Busca cliques associados à versão selecionada.
+  const clickVersionWhere = activeVersion?.layout_hash ? ` and json_extract(metadata_json, '$.layout_hash') = ?` : ''
+  const clickVersionParams = activeVersion?.layout_hash ? [String(activeVersion.layout_hash)] : []
   const clicksQuery = env.ANALIZI_EVENTS.prepare(`
     select
       cast(json_extract(metadata_json, '$.click_x_pct') as integer) as x_pct,
@@ -865,11 +925,11 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
       and (device_type = ? or (? = 'desktop' and device_type is null))
       and event_name in ('button_click', 'media_click', 'whatsapp_contact', 'sign_up', 'login', 'outbound_click', 'file_download')
       and json_extract(metadata_json, '$.click_x_pct') is not null
-      and date(occurred_at) >= ? and date(occurred_at) <= ?${extraEventWhere}
+      and date(occurred_at) >= ? and date(occurred_at) <= ?${clickVersionWhere}${extraEventWhere}
     group by x_pct, round(y_px / 15), tag, label
     order by count desc
     limit 250
-  `).bind(safeId, pagePath, deviceType, deviceType, startDate, endDate, ...extraEventParams)
+  `).bind(safeId, pagePath, deviceType, deviceType, startDate, endDate, ...clickVersionParams, ...extraEventParams)
 
   // 4. Busca consolidação de scroll depth
   const scrollQuery = env.ANALIZI_EVENTS.prepare(`
@@ -896,7 +956,7 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
     visitorsQuery
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
-  const layoutRow = results[0]?.results?.[0]
+  const layoutRow = activeVersion || results[0]?.results?.[0]
   const availablePages = (results[1]?.results || []).map((r) => String(r.page_path))
   const clicks = results[2]?.results || []
   const scrollRows = results[3]?.results || []
@@ -934,24 +994,27 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
       viewportWidth: layoutRow.viewport_width,
       viewportHeight: layoutRow.viewport_height,
       pageHeight: layoutRow.page_height,
-      updatedAt: layoutRow.updated_at,
+      updatedAt: layoutRow.updated_at || layoutRow.last_seen_at,
       blocks
     } : null,
+    activeVersion: activeVersion ? {
+      hash: String(activeVersion.layout_hash),
+      firstSeenAt: activeVersion.first_seen_at,
+      lastSeenAt: activeVersion.last_seen_at,
+      sampleCount: Number(activeVersion.sample_count || 0)
+    } : null,
+    versions: versions.map((version) => ({
+      hash: String(version.layout_hash),
+      firstSeenAt: version.first_seen_at,
+      lastSeenAt: version.last_seen_at,
+      sampleCount: Number(version.sample_count || 0)
+    })),
     clicks,
     scrollRetention
   }, 200)
 }
 
-export interface AIInsight {
-  key: string
-  type: 'traffic_growth' | 'traffic_drop' | 'lead_conversion' | 'top_channel' | 'page_engagement' | 'opportunity'
-  title: string
-  status: 'positive' | 'warning' | 'neutral'
-  badge: string
-  finding: string
-  action: string
-  projection: string
-}
+export type { AIInsight }
 
 function getWeekCycle(d = new Date()): string {
   const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
@@ -991,8 +1054,6 @@ function buildRuleBasedFallback(
   },
   scope: 'semanal' | 'mensal' | 'anual'
 ): AIInsight[] {
-  const bSeg = business?.segment || 'Serviços'
-  const bSub = business?.subsegment || ''
   const period = metrics?.periodDays || 7
 
   const t = metrics?.totals || {}
@@ -1001,13 +1062,20 @@ function buildRuleBasedFallback(
   const prevViews = Number(p.pageViews || 0)
   const users = Number(t.users || 0)
   const contacts = Number(t.contacts || 0)
-  const whatsapp = Number(t.whatsappContacts || 0)
   const attention = Number(t.attentionSeconds || 0)
 
   const topSource = metrics?.sources?.[0]?.name || 'direto'
   const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
-  const topPage = metrics?.pages?.[0]?.path || '/'
+  const topPagePath = metrics?.pages?.[0]?.path || '/'
+  const topPage = topPagePath === '/' ? 'PÁGINA INICIAL' : topPagePath
   const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
+  const riskiestPage = [...(metrics?.pages || [])]
+    .filter((page) => Number(page.views || 0) > 0 && page.exitRate != null)
+    .sort((a, b) => Number(b.exitRate || 0) - Number(a.exitRate || 0))[0]
+  const conversionRate = users > 0 ? (contacts / users) * 100 : 0
+  const previousUsers = Number(p.users || 0)
+  const previousContacts = Number(p.contacts || 0)
+  const previousConversionRate = previousUsers > 0 ? (previousContacts / previousUsers) * 100 : 0
 
   const list: AIInsight[] = []
   const growth = prevViews > 0 ? Math.round(((views - prevViews) / prevViews) * 100) : null
@@ -1017,84 +1085,111 @@ function buildRuleBasedFallback(
     list.push({
       key: 'traffic_growth',
       type: 'traffic_growth',
-      title: 'Público em trajetória de alta',
+      title: 'Tráfego cresce com sinal concreto',
       status: 'positive',
       badge: `Tendência ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
       finding: `Foram registradas ${views} visualizações ${scopeLabel}, crescendo ${growth}% sobre o ciclo anterior.`,
-      action: 'Mantenha a frequência das ações que geraram esse fluxo e confirme se os links de contato estão fáceis de achar.',
-      projection: `Mantendo a consistência, a projeção é alcançar mais de ${Math.round(views * 1.2)} acessos no próximo ciclo.`
+      action: `Identifique a campanha ou publicação que trouxe ${topSource} (${topSourceVal} acessos) e replique o formato uma vez nesta semana, levando para ${topPage}.`,
+      projection: `Se o ritmo se mantiver, o próximo ciclo tende a ficar entre ${Math.round(views * 1.05)} e ${Math.round(views * 1.15)} visualizações; acompanhe se os contatos crescem junto.`
     })
   } else if (growth !== null && growth < 0) {
     list.push({
       key: 'traffic_drop',
       type: 'traffic_drop',
-      title: 'Atenção ao recuo de visitas',
+      title: 'Queda de tráfego pede reação',
       status: 'warning',
       badge: `Alerta ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
       finding: `Houve uma redução de ${Math.abs(growth)}% nas visualizações ${scopeLabel} (total de ${views} visitas).`,
-      action: 'Envie um comunicado, novidade ou oferta via WhatsApp ou redes sociais para trazer clientes antigos de volta ao site.',
-      projection: 'Ações de reativação nessa semana evitam queda nos contatos para o próximo mês.'
+      action: `Publique uma ação de reativação no canal ${topSource} com link direto para ${topPage}; use um link identificado para confirmar se a ação recuperou as visitas.`,
+      projection: `Recuperar metade da queda adicionaria cerca de ${Math.round(Math.abs(views - prevViews) / 2)} visualizações no próximo ciclo.`
     })
   } else {
     list.push({
       key: 'traffic_growth',
       type: 'traffic_growth',
-      title: 'Dados consolidados com sucesso',
+      title: 'Base de comparação ainda curta',
       status: 'positive',
       badge: `Consolidado ${scope.charAt(0).toUpperCase() + scope.slice(1)}`,
       finding: `Seu site contabilizou ${views} visualizações de ${users} pessoas únicas no período analisado.`,
-      action: 'Continue divulgando seu domínio em todos os pontos de contato para acelerar a formação de histórico estatístico.',
-      projection: 'Com mais dados acumulados, as projeções ficarão ainda mais personalizadas para seu nicho.'
+      action: 'Divulgue um único link de campanha e mantenha a mesma página de destino nesta semana; isso cria uma referência confiável para a próxima comparação.',
+      projection: 'Com dois ciclos completos, será possível separar uma oscilação normal de uma tendência real de aquisição.'
     })
   }
 
-  if (contacts > 0 || whatsapp > 0) {
+  if (users === 0) {
     list.push({
       key: 'lead_conversion',
       type: 'lead_conversion',
-      title: 'Geração ativa de oportunidades',
-      status: 'positive',
-      badge: 'Contatos & Vendas',
-      finding: `O site gerou ${contacts} oportunidades no ciclo, das quais ${whatsapp} buscaram contato direto pelo WhatsApp.`,
-      action: 'Mantenha o tempo de resposta rápido e anote a principal dúvida dos clientes para responder já no site.',
-      projection: 'Responder em menos de 10 minutos chega a triplicar a conversão de interessados em clientes pagantes.'
+      title: 'Contatos ainda são poucos',
+      status: 'neutral',
+      badge: 'Dados insuficientes',
+      finding: 'Ainda não há usuários suficientes no período para avaliar se o site transforma visitas em contatos.',
+      action: 'Confira se o rastreador e os botões de WhatsApp/formulário foram testados em uma navegação real.',
+      projection: 'Após uma semana de tráfego registrado, o diagnóstico mostrará a taxa de contato e a página que mais contribui para ela.'
     })
-  } else if (views > 20) {
+  } else if (conversionRate === 0) {
     list.push({
       key: 'lead_conversion',
       type: 'lead_conversion',
-      title: 'Visitantes navegam sem chamar',
+      title: 'Tráfego não vira conversa',
       status: 'warning',
-      badge: 'Foco em Conversão',
-      finding: `O site somou ${views} visualizações, mas não registrou cliques de contato ou início de conversa.`,
-      action: 'Insira uma chamada clara com botão de WhatsApp convidando para tirar dúvidas ou solicitar orçamento.',
-      projection: `No segmento de ${bSub || bSeg}, sites com botão flutuante convertem de 3% a 7% dos visitantes.`
+      badge: 'Foco em contatos',
+      finding: `${users} pessoas visitaram o site e nenhuma iniciou contato. O gargalo está entre a navegação e a proposta de próximo passo, não necessariamente na aquisição.`,
+      action: `Na página ${topPage}, coloque uma chamada para ação (botão de contato ou link de formulário) visível na primeira tela com benefício claro, como “Pedir orçamento” ou “Falar com especialista”, e valide o clique no rastreador.`,
+      projection: `A primeira meta é sair de 0 para ${Math.max(1, Math.ceil(users * 0.01))} contato${Math.max(1, Math.ceil(users * 0.01)) > 1 ? 's' : ''} no próximo ciclo; só então compare versões da chamada para ação.`
+    })
+  } else {
+    const rateChange = previousConversionRate > 0 ? Math.round(((conversionRate - previousConversionRate) / previousConversionRate) * 100) : null
+    list.push({
+      key: 'lead_conversion',
+      type: 'lead_conversion',
+      title: 'Contatos precisam de escala',
+      status: conversionRate >= previousConversionRate ? 'positive' : 'warning',
+      badge: 'Prioridade comercial',
+      finding: `${contacts} contato${contacts !== 1 ? 's' : ''} para ${users} usuários representam uma taxa de contato de ${conversionRate.toFixed(1).replace('.', ',')}%${rateChange !== null ? ` (${rateChange >= 0 ? '+' : ''}${rateChange}% vs. ciclo anterior)` : ''}.`,
+      action: `Revise a página ${topPage}: deixe a oferta, uma prova de confiança e uma chamada para ação (botão de contato ou link de formulário) no mesmo trecho visível antes de pedir qualquer informação ao visitante.`,
+      projection: `Elevar a taxa em 1 ponto percentual no volume atual adicionaria aproximadamente ${Math.max(1, Math.round(users / 100))} contato${Math.max(1, Math.round(users / 100)) > 1 ? 's' : ''} por ciclo.`
     })
   }
 
-  if (topSource && topSourceVal > 0) {
-    const share = views > 0 ? Math.round((topSourceVal / views) * 100) : 0
+  {
+    const hasSourceData = topSourceVal > 0 && views > 0
+    const share = hasSourceData ? Math.round((topSourceVal / views) * 100) : 0
     list.push({
       key: 'top_channel',
       type: 'top_channel',
-      title: `Principal fonte: ${topSource}`,
+      title: hasSourceData ? `Dependência de ${topSource}` : 'Origem do tráfego sem leitura',
       status: 'neutral',
-      badge: 'Canal de Destaque',
-      finding: `O canal "${topSource}" originou ${share}% de todas as visitas do ciclo analisado.`,
-      action: 'Dobre a atenção nas publicações desse canal e teste links com identificação para medir quais postagens trazem mais retorno.',
-      projection: 'Estruturar um canal complementar reduz a dependência de uma única rede social.'
+      badge: hasSourceData ? 'Canal de destaque' : 'Dados insuficientes',
+      finding: hasSourceData
+        ? `O canal "${topSource}" trouxe ${topSourceVal} acessos (${share}% do tráfego). ${share >= 60 ? 'Essa concentração é um risco: uma queda no canal afeta diretamente a demanda.' : 'A distribuição ainda permite testar um segundo canal sem depender de um único ponto de entrada.'}`
+        : 'O volume atual não permite identificar de onde as visitas vieram com confiança.',
+      action: hasSourceData
+        ? (share >= 60 ? `Mantenha ${topSource} como canal principal, mas publique uma versão do mesmo conteúdo em um canal complementar com link para ${topPage}.` : `Compare os dois principais canais usando links identificados e aumente a frequência apenas no que leva visitantes até ${topPage}.`)
+        : `Divulgue ${topPage} usando um link identificado em um único canal nesta semana para registrar a origem das próximas visitas.`,
+      projection: hasSourceData
+        ? (share >= 60 ? 'Se um segundo canal chegar a 20% do tráfego, a operação fica menos vulnerável a oscilações do canal principal.' : 'A próxima leitura mostrará qual canal sustenta mais tráfego qualificado, não apenas visitas.')
+        : 'Na próxima segunda, o relatório poderá atribuir o tráfego ao canal testado e orientar onde concentrar o esforço.'
     })
   }
 
+  const exitRate = Number(riskiestPage?.exitRate || 0)
+  const riskiestPageName = riskiestPage?.path === '/' ? 'PÁGINA INICIAL' : riskiestPage?.path
   list.push({
     key: 'opportunity',
     type: 'opportunity',
-    title: `Oportunidade para ${bSub || bSeg}`,
-    status: 'neutral',
-    badge: 'Diagnóstico Estratégico',
-    finding: `A página mais visitada foi "${topPage}" (${topPageViews} acessos, média de ${attention}s de retenção).`,
-    action: `Garanta que o que você faz e a forma de entrar em contato apareçam na primeira tela da página "${topPage}".`,
-    projection: 'Ajustes no início da página diminuem saídas precoces e aumentam o número de orçamentos.'
+    title: riskiestPage ? `Saída alta em ${riskiestPageName}` : `Prioridade na página ${topPage}`,
+    status: riskiestPage && exitRate >= 50 ? 'warning' : 'neutral',
+    badge: 'Experiência da página',
+    finding: riskiestPage
+      ? `A página "${riskiestPageName}" perde ${exitRate.toFixed(1).replace('.', ',')}% das visitas (${Number(riskiestPage.views || 0)} visualizações). ${Number(riskiestPage.attentionSeconds || 0) < attention ? 'Ela também segura menos atenção que a média do site.' : 'O conteúdo prende atenção, mas não conduz o visitante ao próximo passo.'}`
+      : `A página "${topPage}" concentrou ${topPageViews} visualizações e média de ${attention}s de atenção; ainda não há taxa de saída suficiente para diagnosticar o ponto de abandono.`,
+    action: riskiestPage
+      ? `Revise os primeiros blocos de "${riskiestPageName}": deixe claro o benefício, retire distrações e adicione uma chamada para ação (botão de contato ou link de formulário) relacionada ao serviço antes de metade da página.`
+      : `Use "${topPage}" como página prioritária: mostre o principal benefício, para quem é e uma chamada para ação (botão de contato ou link de formulário) antes de o visitante rolar a tela.`,
+    projection: riskiestPage
+      ? 'Na próxima segunda, compare a taxa de saída desta página; uma queda de 10 pontos mostrará que a mudança reduziu abandono de forma concreta.'
+      : 'Quando houver mais sessões por página, o relatório apontará o trecho com maior risco de abandono para priorizar a próxima correção.'
   })
 
   return list
@@ -1129,7 +1224,8 @@ async function runDeepInfraAnalysis(
 
   const topSource = metrics?.sources?.[0]?.name || 'direto'
   const topSourceVal = Number(metrics?.sources?.[0]?.value || 0)
-  const topPage = metrics?.pages?.[0]?.path || '/'
+  const topPagePath = metrics?.pages?.[0]?.path || '/'
+  const topPage = topPagePath === '/' ? 'PÁGINA INICIAL' : topPagePath
   const topPageViews = Number(metrics?.pages?.[0]?.views || 0)
 
   const prompt = `Você é o IZI INTELLIGENCE, o analista sênior de negócios do Analizi. Seu cliente é um pequeno ou médio empreendedor sem conhecimento técnico em métricas e web analytics.
@@ -1152,10 +1248,20 @@ DADOS DO CLIENTE E NEGÓCIO:
 
 TAREFA OBRIGATÓRIA:
 Gere exatamente 4 insights pré-definidos padronizados em JSON, adaptados ao escopo ${scope}:
-1. "traffic_growth" ou "traffic_drop": análise de crescimento ou queda com diagnóstico estatístico e amigável.
-2. "lead_conversion": foco em conversões, contatos ou WhatsApp.
-3. "top_channel": análise de onde vem o público e estratégia de atração.
-4. "opportunity": recomendação direcionada ao tipo de negócio "${bSub || bSeg}" e à página mais visitada.
+1. "traffic_growth" ou "traffic_drop": explique a causa mais provável usando a variação e o principal canal; não trate correlação como certeza.
+2. "lead_conversion": calcule a taxa contatos/usuários, explique em linguagem simples onde a pessoa pode estar desistindo antes de entrar em contato e indique uma mudança específica na página prioritária.
+3. "top_channel": informe a concentração percentual do principal canal e se ela representa risco; proponha um teste mensurável de aquisição.
+4. "opportunity": diagnostique retenção/saída da página mais relevante e dê uma correção concreta para o conteúdo ou chamada para ação acima da primeira parte visível da página.
+
+REGRAS DE QUALIDADE:
+- Não use conselhos genéricos como "melhore o site", "continue divulgando" ou "mantenha a frequência" sem dizer onde, o que testar e qual métrica acompanhar.
+- Não invente benchmarks, dados de mercado, taxas ou causalidades que não estejam nos dados fornecidos.
+- Cada finding deve citar pelo menos um número real do contexto; se a base for insuficiente, diga isso explicitamente.
+- Escreva para quem não conhece analytics: prefira palavras como "visitas", "pessoas" e "contatos".
+- Todo termo de marketing digital ou web analytics deve vir imediatamente explicado entre parênteses, sem exceção. Exemplos: "CTA (chamada para ação, como botão de contato ou link de formulário)", "tráfego orgânico (visitas que chegam sem anúncio pago)", "remarketing (anúncio para quem já visitou seu site)", "funil (caminho da visita até o contato)" e "taxa de saída (percentual de visitas que deixam a página sem continuar)". Se não conseguir explicar o termo de modo simples, não o use.
+- Cada action deve ter 2 ou 3 passos curtos, em ordem, executáveis em até 48 horas. Diga onde fazer a mudança, o que mudar e qual número acompanhar depois. Não chame cliques, formulários ou contatos de "conversões".
+- Cada projection deve ser condicional e mensurável: diga qual métrica deve mudar na próxima leitura e em que direção, sem prometer vendas ou resultados garantidos.
+- Nunca exiba o caminho "/". Sempre escreva exatamente "PÁGINA INICIAL" ao se referir a ele.
 
 Responda ESTRITAMENTE um objeto JSON no formato:
 {
@@ -1208,6 +1314,28 @@ Responda ESTRITAMENTE um objeto JSON no formato:
     return Array.isArray(parsed.insights) && parsed.insights.length > 0 ? parsed.insights : null
   } catch (err) {
     console.error('Falha na chamada DeepInfra:', err)
+    return null
+  }
+}
+
+// Busca nome e segmento do negócio no Supabase (via business_id salvo no D1).
+async function fetchBusinessContext(env: Env, siteId: string): Promise<BusinessContext | null> {
+  const key = env.SUPABASE_SERVICE_ROLE_KEY
+  if (!env.SUPABASE_URL || !key) return null
+  try {
+    const rows = (await env.ANALIZI_EVENTS.batch([
+      env.ANALIZI_EVENTS.prepare('select business_id from tracker_sites where tracker_site_id = ? limit 1').bind(siteId)
+    ])) as Array<{ results?: Array<{ business_id?: string }> }>
+    const businessId = rows[0]?.results?.[0]?.business_id
+    if (!businessId) return null
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/businesses?id=eq.${encodeURIComponent(businessId)}&select=name,segment,subsegment,segment_detail&limit=1`, {
+      headers: { apikey: key, authorization: `Bearer ${key}` }
+    })
+    if (!res.ok) return null
+    const b = ((await res.json()) as Array<{ name?: string; segment?: string; subsegment?: string; segment_detail?: string }>)[0]
+    return b ? { name: b.name || undefined, segment: b.segment || undefined, subsegment: b.subsegment || undefined, segmentDetail: b.segment_detail || undefined } : null
+  } catch (err) {
+    console.error('Falha ao buscar segmento do negócio:', err)
     return null
   }
 }
@@ -1289,43 +1417,43 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
     }
   }
 
-  // 2. Determina escopo temporal (semanal, mensal ou anual) a partir do histórico e tendências
+  // Nenhuma análise para o ciclo atual (site novo ou cron que não cobriu o site):
+  // gera UMA vez a partir das métricas enviadas e congela no D1 para a semana.
+  // Próximas aberturas da tela leem o cache acima, sem regenerar.
   const scope = determineTemporalScope(
     metrics?.periodDays || 7,
     metrics?.totals || {},
     metrics?.previousTotals || {}
   )
-
-  // 3. Executa a análise com DeepInfra ou fallback
-  let generated: AIInsight[] | null = null
-  if (env.DEEPINFRA_API_KEY) {
-    generated = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, business || {}, metrics || {}, scope)
+  let finalInsights: AIInsight[]
+  if (safeSiteId) {
+    // Insights comparativos calculados no servidor a partir do D1 (última semana fechada).
+    const window = lastClosedWeek(isoDate(new Date()), shiftDate)
+    const savedBusiness = await fetchBusinessContext(env, safeSiteId)
+    finalInsights = (await buildWeeklyInsights(env.ANALIZI_EVENTS, safeSiteId, window, savedBusiness || business || {}, env.DEEPINFRA_API_KEY)).insights
+  } else {
+    let generated: AIInsight[] | null = null
+    if (env.DEEPINFRA_API_KEY) {
+      generated = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, business || {}, metrics || {}, scope)
+    }
+    finalInsights = generated || buildRuleBasedFallback(business || {}, metrics || {}, scope)
   }
-
-  const finalInsights = generated || buildRuleBasedFallback(business || {}, metrics || {}, scope)
   const nowIso = new Date().toISOString()
 
-  // 4. Salva no D1 na tabela site_insights congelando para a semana atual
-  if (safeSiteId) {
+  if (safeSiteId && finalInsights.length) {
     try {
-      const insightId = `ins_${safeSiteId}_${currentWeek}`
       await env.ANALIZI_EVENTS.batch([
         env.ANALIZI_EVENTS.prepare(`
           insert into site_insights (id, tracker_site_id, week_cycle, temporal_scope, insights_json, model, metadata_json, created_at)
           values (?, ?, ?, ?, ?, 'IZI INTELLIGENCE', ?, ?)
-          on conflict(tracker_site_id, week_cycle) do update set
-            temporal_scope = excluded.temporal_scope,
-            insights_json = excluded.insights_json,
-            model = excluded.model,
-            metadata_json = excluded.metadata_json,
-            created_at = excluded.created_at
+          on conflict(tracker_site_id, week_cycle) do nothing
         `).bind(
-          insightId,
+          `ins_${safeSiteId}_${currentWeek}`,
           safeSiteId,
           currentWeek,
           scope,
           JSON.stringify(finalInsights),
-          JSON.stringify({ businessSegment: business?.segment, subsegment: business?.subsegment }),
+          JSON.stringify({ businessSegment: business?.segment, subsegment: business?.subsegment, origin: 'first_view' }),
           nowIso
         )
       ])
@@ -1347,7 +1475,10 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
 async function runScheduledWeeklyInsights(env: Env): Promise<void> {
   const currentWeek = getWeekCycle()
   const today = isoDate(new Date())
-  const start7 = shiftDate(today, -6)
+  // O relatório de segunda usa a última semana fechada (segunda a domingo),
+  // preservando dados consolidados e evitando analisar um dia ainda em curso.
+  const end7 = shiftDate(today, -1)
+  const start7 = shiftDate(end7, -6)
   const prevStart7 = shiftDate(start7, -7)
 
   // Busca todos os sites ativos no D1
@@ -1367,40 +1498,15 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
 
       if (check[0]?.results?.length) continue
 
-      const stats = (await env.ANALIZI_EVENTS.batch([
-        env.ANALIZI_EVENTS.prepare(
-          `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts, sum(event_name='whatsapp_contact') whatsappContacts, coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct visitor_id), 0)), 0) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ?`
-        ).bind(sId, start7, today),
-        env.ANALIZI_EVENTS.prepare(
-          `select count(distinct visitor_id) users, sum(event_name='page_view') pageViews, sum(event_name in ('whatsapp_contact','sign_up')) contacts from events where tracker_site_id=? and occurred_at >= ? and occurred_at < ?`
-        ).bind(sId, prevStart7, start7),
-        env.ANALIZI_EVENTS.prepare(
-          `select coalesce(source,'direto') name, count(*) value from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(source,'direto') order by value desc limit 1`
-        ).bind(sId, start7, today),
-        env.ANALIZI_EVENTS.prepare(
-          `select coalesce(page_path,'/') path, sum(event_name='page_view') views, coalesce(round((sum(coalesce(engagement_time_ms, 0)) / 1000.0) / nullif(count(distinct visitor_id), 0)), 0) attentionSeconds from events where tracker_site_id=? and occurred_at >= ? and occurred_at <= ? group by coalesce(page_path,'/') order by views desc limit 1`
-        ).bind(sId, start7, today)
-      ])) as Array<{ results?: Array<Record<string, unknown>> }>
-
-      const totals = stats[0]?.results?.[0] || {}
-      const previousTotals = stats[1]?.results?.[0] || {}
-      const sources = stats[2]?.results || []
-      const pages = stats[3]?.results || []
-
-      const metrics = {
-        periodDays: 7,
-        totals,
-        previousTotals,
-        sources: sources as Array<{ name: string; value: number | string }>,
-        pages: pages as Array<{ path: string; views: number | string; attentionSeconds?: number }>
-      }
-
-      const scope = determineTemporalScope(7, totals, previousTotals)
-      let insights: AIInsight[] | null = null
-      if (env.DEEPINFRA_API_KEY) {
-        insights = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, {}, metrics, scope)
-      }
-      const finalInsights = insights || buildRuleBasedFallback({}, metrics, scope)
+      // Mesma lógica do endpoint: comparações calculadas no D1, IA só reescreve.
+      const scope: 'semanal' = 'semanal'
+      const { insights: finalInsights } = await buildWeeklyInsights(
+        env.ANALIZI_EVENTS,
+        sId,
+        { start: start7, end: end7, prevStart: prevStart7, prevEnd: shiftDate(start7, -1) },
+        (await fetchBusinessContext(env, sId)) || {},
+        env.DEEPINFRA_API_KEY
+      )
       const nowIso = new Date().toISOString()
       const insightId = `ins_${sId}_${currentWeek}`
 
@@ -1421,8 +1527,11 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
   }
 }
 
-async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
-  console.log('Iniciando consolidação diária dos dados de D-1...')
+async function runDailyConsolidationAndCleanup(env: Env, intraday = false): Promise<void> {
+  // intraday: reconsolida só ontem + hoje (parcial) e não executa limpeza.
+  // diário (03h UTC): reconsolida toda a janela de eventos até hoje e limpa.
+  const rangeSql = intraday ? "between date('now', '-3 hours', '-1 day') and date('now', '-3 hours')" : "<= date('now', '-3 hours')"
+  console.log(intraday ? 'Consolidação intradiária (ontem + hoje)...' : 'Iniciando consolidação diária até o dia atual...')
   try {
     // 1. Consolida métricas gerais do dia anterior (D-1) com os conceitos do GA4:
     // - average_engagement_seconds = soma(engagement_time_ms) / 1000 / usuários ativos
@@ -1432,7 +1541,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_metrics (tracker_site_id, metric_date, sessions, users, new_users, page_views, conversions, whatsapp_contacts, sign_ups, form_submits, logins, average_engagement_seconds, exit_rate)
         select
           e.tracker_site_id,
-          date(e.occurred_at) as metric_date,
+          date(e.occurred_at, '-3 hours') as metric_date,
           count(distinct e.session_id) as sessions,
           count(distinct e.visitor_id) as users,
           sum(e.event_name = 'first_visit') as new_users,
@@ -1449,7 +1558,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
                 select s.session_id
                 from events s
                 where s.tracker_site_id = e.tracker_site_id
-                  and date(s.occurred_at) = date(e.occurred_at)
+                  and date(s.occurred_at, '-3 hours') = date(e.occurred_at, '-3 hours')
                 group by s.session_id
                 having sum(coalesce(s.engagement_time_ms, 0)) >= 10000
                     or sum(s.event_name = 'page_view') >= 2
@@ -1458,8 +1567,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
             )
           ) / nullif(count(distinct e.session_id), 0), 1) as exit_rate
         from events e
-        where date(e.occurred_at) <= date('now', '-1 day')
-        group by e.tracker_site_id, date(e.occurred_at)
+        where date(e.occurred_at, '-3 hours') ${rangeSql}
+        group by e.tracker_site_id, date(e.occurred_at, '-3 hours')
         on conflict(tracker_site_id, metric_date) do update set
           sessions = excluded.sessions,
           users = excluded.users,
@@ -1478,7 +1587,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_sources (tracker_site_id, metric_date, source, medium, campaign, users, new_users, sessions, page_views, conversions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           ${SQL_NORMALIZED_SOURCE} as source,
           coalesce(medium, '') as medium,
           coalesce(campaign, '') as campaign,
@@ -1488,8 +1597,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           sum(event_name = 'page_view') as page_views,
           count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, coalesce(medium, ''), coalesce(campaign, '')
+        where date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_SOURCE}, coalesce(medium, ''), coalesce(campaign, '')
         on conflict(tracker_site_id, metric_date, source, medium, campaign) do update set
           users = excluded.users,
           new_users = excluded.new_users,
@@ -1505,7 +1614,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_pages (tracker_site_id, metric_date, page_path, page_title, page_views, users, entrances, exits, exit_rate, average_engagement_seconds, average_load_time_ms, conversions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           coalesce(page_path, '/') as page_path,
           max(page_title) as page_title,
           sum(event_name = 'page_view') as page_views,
@@ -1517,11 +1626,11 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
                 select s.session_id
                 from events s
                 where s.tracker_site_id = events.tracker_site_id
-                  and date(s.occurred_at) = date(events.occurred_at)
+                  and date(s.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
                   and s.session_id in (
                     select p2.session_id from events p2
                     where p2.tracker_site_id = events.tracker_site_id
-                      and date(p2.occurred_at) = date(events.occurred_at)
+                      and date(p2.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
                       and coalesce(p2.page_path, '/') = coalesce(events.page_path, '/')
                   )
                 group by s.session_id
@@ -1537,11 +1646,11 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
                 select s.session_id
                 from events s
                 where s.tracker_site_id = events.tracker_site_id
-                  and date(s.occurred_at) = date(events.occurred_at)
+                  and date(s.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
                   and s.session_id in (
                     select p2.session_id from events p2
                     where p2.tracker_site_id = events.tracker_site_id
-                      and date(p2.occurred_at) = date(events.occurred_at)
+                      and date(p2.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
                       and coalesce(p2.page_path, '/') = coalesce(events.page_path, '/')
                   )
                 group by s.session_id
@@ -1555,8 +1664,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           coalesce(round(sum(coalesce(load_time_ms, 0)) / nullif(sum(case when load_time_ms > 0 then 1 else 0 end), 0)), 0) as average_load_time_ms,
           count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), coalesce(page_path, '/')
+        where date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), coalesce(page_path, '/')
         on conflict(tracker_site_id, metric_date, page_path) do update set
           page_title = excluded.page_title,
           page_views = excluded.page_views,
@@ -1573,14 +1682,14 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_source_pages (tracker_site_id, metric_date, source, page_path, page_views, users)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           ${SQL_NORMALIZED_SOURCE} as source,
           coalesce(page_path, '/') as page_path,
           sum(event_name = 'page_view') as page_views,
           count(distinct visitor_id) as users
         from events
-        where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, coalesce(page_path, '/')
+        where date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_SOURCE}, coalesce(page_path, '/')
         on conflict(tracker_site_id, metric_date, source, page_path) do update set
           page_views = excluded.page_views,
           users = excluded.users;
@@ -1590,7 +1699,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_button_clicks (tracker_site_id, metric_date, page_path, button_label, button_id, destination, contact_intent, is_contact_lead, clicks, sessions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           coalesce(page_path, '/') as page_path,
           coalesce(json_extract(metadata_json, '$.button_label'), 'Botão sem texto') as button_label,
           coalesce(json_extract(metadata_json, '$.button_id'), '') as button_id,
@@ -1602,8 +1711,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         from events
         where event_name in ('button_click', 'whatsapp_contact', 'sign_up', 'login', 'outbound_click', 'file_download')
           and json_extract(metadata_json, '$.button_label') is not null
-          and date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), coalesce(page_path, '/'), coalesce(json_extract(metadata_json, '$.button_label'), 'Botão sem texto'), coalesce(json_extract(metadata_json, '$.button_id'), ''), coalesce(json_extract(metadata_json, '$.destination'), ''), coalesce(json_extract(metadata_json, '$.contact_intent'), 'geral'), coalesce(json_extract(metadata_json, '$.is_contact_lead'), 0)
+          and date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), coalesce(page_path, '/'), coalesce(json_extract(metadata_json, '$.button_label'), 'Botão sem texto'), coalesce(json_extract(metadata_json, '$.button_id'), ''), coalesce(json_extract(metadata_json, '$.destination'), ''), coalesce(json_extract(metadata_json, '$.contact_intent'), 'geral'), coalesce(json_extract(metadata_json, '$.is_contact_lead'), 0)
         on conflict(tracker_site_id, metric_date, page_path, button_label, button_id, destination, contact_intent, is_contact_lead) do update set
           clicks = excluded.clicks,
           sessions = excluded.sessions;
@@ -1613,13 +1722,13 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_contacts (tracker_site_id, metric_date, contact_type, page_path, contacts)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           event_name as contact_type,
           coalesce(page_path, '/') as page_path,
           count(*) as contacts
         from events
-        where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'login', 'form_start', 'form_abandon') and date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), event_name, coalesce(page_path, '/')
+        where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'login', 'form_start', 'form_abandon') and date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), event_name, coalesce(page_path, '/')
         on conflict (tracker_site_id, metric_date, contact_type, page_path) do update set
           contacts = excluded.contacts;
       `),
@@ -1628,7 +1737,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_locations (tracker_site_id, metric_date, country, region, city, page_views, users, sessions, conversions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           coalesce(nullif(country, ''), 'BR') as country,
           coalesce(nullif(region, ''), 'Não identificado') as region,
           coalesce(nullif(city, ''), 'Não identificada') as city,
@@ -1637,8 +1746,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           count(distinct session_id) as sessions,
           count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where country is not null and country != '' and date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), coalesce(nullif(country, ''), 'BR'), coalesce(nullif(region, ''), 'Não identificado'), coalesce(nullif(city, ''), 'Não identificada')
+        where country is not null and country != '' and date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), coalesce(nullif(country, ''), 'BR'), coalesce(nullif(region, ''), 'Não identificado'), coalesce(nullif(city, ''), 'Não identificada')
         on conflict (tracker_site_id, metric_date, country, region, city) do update set
           page_views = excluded.page_views,
           users = excluded.users,
@@ -1650,7 +1759,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_devices (tracker_site_id, metric_date, device_type, browser, sessions, users, new_users, page_views, conversions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           ${SQL_NORMALIZED_DEVICE} as device_type,
           ${SQL_NORMALIZED_BROWSER} as browser,
           count(distinct session_id) as sessions,
@@ -1659,8 +1768,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           sum(event_name = 'page_view') as page_views,
           count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}
+        where date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}
         on conflict (tracker_site_id, metric_date, device_type, browser) do update set
           sessions = excluded.sessions,
           users = excluded.users,
@@ -1676,7 +1785,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         )
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           ${SQL_NORMALIZED_SOURCE} as source,
           ${SQL_NORMALIZED_MEDIUM} as medium,
           ${SQL_NORMALIZED_CAMPAIGN} as campaign,
@@ -1711,10 +1820,10 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           sum(event_name = 'login') as logins,
           count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where date(occurred_at) <= date('now', '-1 day')
+        where date(occurred_at, '-3 hours') ${rangeSql}
         group by
           tracker_site_id,
-          date(occurred_at),
+          date(occurred_at, '-3 hours'),
           ${SQL_NORMALIZED_SOURCE},
           ${SQL_NORMALIZED_MEDIUM},
           ${SQL_NORMALIZED_CAMPAIGN},
@@ -1737,22 +1846,23 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
       // 10. Consolida conversões confirmadas e intenções comerciais por tipo.
       env.ANALIZI_EVENTS.prepare(`
         insert into daily_conversion_events (tracker_site_id, metric_date, source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage, conversions, sessions)
-        select tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, ${SQL_NORMALIZED_MEDIUM}, ${SQL_NORMALIZED_CAMPAIGN}, ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}, coalesce(page_path, '/'),
+        select tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_SOURCE}, ${SQL_NORMALIZED_MEDIUM}, ${SQL_NORMALIZED_CAMPAIGN}, ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}, coalesce(page_path, '/'),
           case when event_name = 'whatsapp_contact' then 'whatsapp' when event_name = 'sign_up' then 'cadastro' when event_name = 'form_submit' then coalesce(nullif(json_extract(metadata_json, '$.conversion_type'), ''), 'contato') when event_name = 'file_download' then 'download' when event_name = 'checkout_start' then 'checkout' when event_name = 'payment_start' then 'pagamento' when event_name in ('subscription_start', 'subscription') then 'assinatura' when event_name = 'purchase' then 'compra' else 'outro' end,
           coalesce(nullif(json_extract(metadata_json, '$.form_name'), ''), nullif(json_extract(metadata_json, '$.button_label'), ''), nullif(json_extract(metadata_json, '$.form_id'), ''), ''),
           case when event_name in ('checkout_start', 'payment_start', 'subscription_start', 'file_download') then 'intencao' else 'confirmada' end, count(*), count(distinct session_id)
-        from events where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'file_download', 'checkout_start', 'payment_start', 'subscription_start', 'purchase', 'subscription') and date(occurred_at) <= date('now', '-1 day')
+        from events where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'file_download', 'checkout_start', 'payment_start', 'subscription_start', 'purchase', 'subscription') and date(occurred_at, '-3 hours') ${rangeSql}
         group by 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
         on conflict do update set conversions = excluded.conversions, sessions = excluded.sessions;
       `)
     ])
 
     console.log('Consolidação concluída com sucesso.')
+    if (intraday) return
 
     // 7. VALIDAÇÃO DE SEGURANÇA: Somente executa a limpeza se a consolidação realmente gravou registros
     const check = await env.ANALIZI_EVENTS.batch([
       env.ANALIZI_EVENTS.prepare(`
-        select count(*) as c from daily_metrics where metric_date = date('now', '-1 day')
+        select count(*) as c from daily_metrics where metric_date = date('now', '-3 hours', '-1 day')
       `)
     ]) as Array<{ results?: Array<{ c: number }> }>
 
@@ -1762,11 +1872,11 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
       await env.ANALIZI_EVENTS.batch([
         env.ANALIZI_EVENTS.prepare(`
           delete from events
-          where date(occurred_at) <= date('now', '-30 days')
+          where date(occurred_at, '-3 hours') <= date('now', '-3 hours', '-30 days')
             and exists (
               select 1 from daily_metrics dm
               where dm.tracker_site_id = events.tracker_site_id
-                and dm.metric_date = date(events.occurred_at)
+                and dm.metric_date = date(events.occurred_at, '-3 hours')
             );
         `)
       ])
@@ -1777,9 +1887,955 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
   }
 }
 
+async function runMonthlyConsolidationAndRetention(env: Env): Promise<void> {
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  // Mantém os seis meses correntes em granularidade diária. O mês que sai
+  // dessa janela passa a ser consultado exclusivamente no consolidado mensal.
+  const dailyCutoff = shiftMonths(today, -5)
+  const monthlyCutoff = shiftMonths(today, -26)
+  const statements: D1Statement[] = []
+  const monthlyRebuildStatements: D1Statement[] = []
+  const add = (sql: string, ...values: unknown[]) => statements.push(env.ANALIZI_EVENTS.prepare(sql).bind(...values))
+  const rebuildAdd = (sql: string, ...values: unknown[]) => monthlyRebuildStatements.push(env.ANALIZI_EVENTS.prepare(sql).bind(...values))
+
+  // Rastreador: consolidação mensal pondera médias por sessões/usuários e soma
+  // contagens, preservando a semântica das tabelas diárias.
+  add(`insert into monthly_metrics (tracker_site_id, month_start, sessions, users, new_users, page_views, conversions, whatsapp_contacts, sign_ups, form_submits, logins, average_engagement_seconds, exit_rate)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', sum(sessions), sum(users), sum(new_users), sum(page_views), sum(conversions), sum(whatsapp_contacts), sum(sign_ups), sum(form_submits), sum(logins), round(sum(average_engagement_seconds * sessions) / nullif(sum(sessions), 0), 2), round(sum(exit_rate * sessions) / nullif(sum(sessions), 0), 2)
+    from daily_metrics where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7)
+    on conflict(tracker_site_id, month_start) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, conversions=excluded.conversions, whatsapp_contacts=excluded.whatsapp_contacts, sign_ups=excluded.sign_ups, form_submits=excluded.form_submits, logins=excluded.logins, average_engagement_seconds=excluded.average_engagement_seconds, exit_rate=excluded.exit_rate`, dailyCutoff)
+  add(`insert into monthly_sources (tracker_site_id, month_start, source, medium, campaign, users, new_users, sessions, page_views, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', source, medium, campaign, sum(users), sum(new_users), sum(sessions), sum(page_views), sum(conversions)
+    from daily_sources where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), source, medium, campaign
+    on conflict(tracker_site_id, month_start, source, medium, campaign) do update set users=excluded.users, new_users=excluded.new_users, sessions=excluded.sessions, page_views=excluded.page_views, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_pages (tracker_site_id, month_start, page_path, page_title, page_views, users, entrances, exits, exit_rate, average_engagement_seconds, average_load_time_ms, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', page_path, max(page_title), sum(page_views), sum(users), sum(entrances), sum(exits), round(sum(exit_rate * page_views) / nullif(sum(page_views), 0), 2), round(sum(average_engagement_seconds * users) / nullif(sum(users), 0), 2), round(sum(average_load_time_ms * page_views) / nullif(sum(page_views), 0), 2), sum(conversions)
+    from daily_pages where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), page_path
+    on conflict(tracker_site_id, month_start, page_path) do update set page_title=excluded.page_title, page_views=excluded.page_views, users=excluded.users, entrances=excluded.entrances, exits=excluded.exits, exit_rate=excluded.exit_rate, average_engagement_seconds=excluded.average_engagement_seconds, average_load_time_ms=excluded.average_load_time_ms, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_source_pages (tracker_site_id, month_start, source, page_path, page_views, users)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', source, page_path, sum(page_views), sum(users)
+    from daily_source_pages where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), source, page_path
+    on conflict(tracker_site_id, month_start, source, page_path) do update set page_views=excluded.page_views, users=excluded.users`, dailyCutoff)
+  add(`insert into monthly_button_clicks (tracker_site_id, month_start, page_path, button_label, button_id, destination, contact_intent, is_contact_lead, clicks, sessions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', page_path, button_label, button_id, destination, contact_intent, is_contact_lead, sum(clicks), sum(sessions)
+    from daily_button_clicks where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), page_path, button_label, button_id, destination, contact_intent, is_contact_lead
+    on conflict(tracker_site_id, month_start, page_path, button_label, button_id, destination, contact_intent, is_contact_lead) do update set clicks=excluded.clicks, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into monthly_contacts (tracker_site_id, month_start, contact_type, page_path, contacts)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', contact_type, page_path, sum(contacts)
+    from daily_contacts where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), contact_type, page_path
+    on conflict(tracker_site_id, month_start, contact_type, page_path) do update set contacts=excluded.contacts`, dailyCutoff)
+  add(`insert into monthly_locations (tracker_site_id, month_start, country, region, city, page_views, users, sessions, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', country, region, city, sum(page_views), sum(users), sum(sessions), sum(conversions)
+    from daily_locations where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), country, region, city
+    on conflict(tracker_site_id, month_start, country, region, city) do update set page_views=excluded.page_views, users=excluded.users, sessions=excluded.sessions, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_devices (tracker_site_id, month_start, device_type, browser, sessions, users, new_users, page_views, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', device_type, browser, sum(sessions), sum(users), sum(new_users), sum(page_views), sum(conversions)
+    from daily_devices where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), device_type, browser
+    on conflict(tracker_site_id, month_start, device_type, browser) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_source_medium_results (tracker_site_id, month_start, source, medium, campaign, device_type, browser, page_path, sessions, page_views, users, new_users, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, form_submits, logins, conversions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', source, medium, campaign, device_type, browser, page_path, sum(sessions), sum(page_views), sum(users), sum(new_users), sum(general_clicks), sum(contact_clicks), sum(whatsapp_clicks), sum(sign_ups), sum(form_submits), sum(logins), sum(conversions)
+    from daily_source_medium_results where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), source, medium, campaign, device_type, browser, page_path
+    on conflict(tracker_site_id, month_start, source, medium, campaign, device_type, browser, page_path) do update set sessions=excluded.sessions, page_views=excluded.page_views, users=excluded.users, new_users=excluded.new_users, general_clicks=excluded.general_clicks, contact_clicks=excluded.contact_clicks, whatsapp_clicks=excluded.whatsapp_clicks, sign_ups=excluded.sign_ups, form_submits=excluded.form_submits, logins=excluded.logins, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into monthly_conversion_events (tracker_site_id, month_start, source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage, conversions, sessions)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage, sum(conversions), sum(sessions)
+    from daily_conversion_events where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage
+    on conflict(tracker_site_id, month_start, source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage) do update set conversions=excluded.conversions, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into monthly_page_scroll (tracker_site_id, month_start, page_path, device_type, depth_bracket, visitors)
+    select tracker_site_id, substr(metric_date, 1, 7) || '-01', page_path, device_type, depth_bracket, sum(visitors)
+    from daily_page_scroll where metric_date < ? group by tracker_site_id, substr(metric_date, 1, 7), page_path, device_type, depth_bracket
+    on conflict(tracker_site_id, month_start, page_path, device_type, depth_bracket) do update set visitors=excluded.visitors`, dailyCutoff)
+
+  // GA4: mesmas famílias de dados, com médias ponderadas quando a soma
+  // simples produziria distorção (duração média e bounce rate).
+  add(`insert into ga4_monthly_metrics (supabase_site_id, property_id, month_start, sessions, users, new_users, page_views, key_events, average_session_duration)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', sum(sessions), sum(users), sum(new_users), sum(page_views), sum(key_events), round(sum(average_session_duration * sessions) / nullif(sum(sessions), 0), 2)
+    from ga4_daily_metrics where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7)
+    on conflict(supabase_site_id, property_id, month_start) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, key_events=excluded.key_events, average_session_duration=excluded.average_session_duration`, dailyCutoff)
+  add(`insert into ga4_monthly_source_medium_results (supabase_site_id, property_id, month_start, source, medium, campaign, sessions, page_views, users, new_users, key_events, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, logins, conversions)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', source, medium, campaign, sum(sessions), sum(page_views), sum(users), sum(new_users), sum(key_events), sum(general_clicks), sum(contact_clicks), sum(whatsapp_clicks), sum(sign_ups), sum(logins), sum(conversions)
+    from ga4_daily_source_medium_results where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), source, medium, campaign
+    on conflict(supabase_site_id, property_id, month_start, source, medium, campaign) do update set sessions=excluded.sessions, page_views=excluded.page_views, users=excluded.users, new_users=excluded.new_users, key_events=excluded.key_events, general_clicks=excluded.general_clicks, contact_clicks=excluded.contact_clicks, whatsapp_clicks=excluded.whatsapp_clicks, sign_ups=excluded.sign_ups, logins=excluded.logins, conversions=excluded.conversions`, dailyCutoff)
+  add(`insert into ga4_monthly_pages (supabase_site_id, property_id, month_start, page_path, page_views, users, sessions, key_events, bounce_rate, average_session_duration)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', page_path, sum(page_views), sum(users), sum(sessions), sum(key_events), round(sum(bounce_rate * sessions) / nullif(sum(sessions), 0), 2), round(sum(average_session_duration * sessions) / nullif(sum(sessions), 0), 2)
+    from ga4_daily_pages where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), page_path
+    on conflict(supabase_site_id, property_id, month_start, page_path) do update set page_views=excluded.page_views, users=excluded.users, sessions=excluded.sessions, key_events=excluded.key_events, bounce_rate=excluded.bounce_rate, average_session_duration=excluded.average_session_duration`, dailyCutoff)
+  add(`insert into ga4_monthly_source_pages (supabase_site_id, property_id, month_start, source, landing_page, sessions, users)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', source, landing_page, sum(sessions), sum(users)
+    from ga4_daily_source_pages where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), source, landing_page
+    on conflict(supabase_site_id, property_id, month_start, source, landing_page) do update set sessions=excluded.sessions, users=excluded.users`, dailyCutoff)
+  add(`insert into ga4_monthly_devices (supabase_site_id, property_id, month_start, device_type, browser, sessions, users, new_users, page_views, key_events)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', device_type, browser, sum(sessions), sum(users), sum(new_users), sum(page_views), sum(key_events)
+    from ga4_daily_devices where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), device_type, browser
+    on conflict(supabase_site_id, property_id, month_start, device_type, browser) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, key_events=excluded.key_events`, dailyCutoff)
+  add(`insert into ga4_monthly_locations (supabase_site_id, property_id, month_start, country, region, city, sessions, users, page_views, key_events)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', country, region, city, sum(sessions), sum(users), sum(page_views), sum(key_events)
+    from ga4_daily_locations where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), country, region, city
+    on conflict(supabase_site_id, property_id, month_start, country, region, city) do update set sessions=excluded.sessions, users=excluded.users, page_views=excluded.page_views, key_events=excluded.key_events`, dailyCutoff)
+  add(`insert into ga4_monthly_contacts (supabase_site_id, property_id, month_start, contact_type, page_path, contacts, sessions)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', contact_type, page_path, sum(contacts), sum(sessions)
+    from ga4_daily_contacts where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), contact_type, page_path
+    on conflict(supabase_site_id, property_id, month_start, contact_type, page_path) do update set contacts=excluded.contacts, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into ga4_monthly_clicks (supabase_site_id, property_id, month_start, dimension_key, page_path, label, button_id, destination, intent, is_contact_lead, clicks, sessions)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', dimension_key, page_path, label, button_id, destination, intent, is_contact_lead, sum(clicks), sum(sessions)
+    from ga4_daily_clicks where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), dimension_key
+    on conflict(supabase_site_id, property_id, month_start, dimension_key) do update set page_path=excluded.page_path, label=excluded.label, button_id=excluded.button_id, destination=excluded.destination, intent=excluded.intent, is_contact_lead=excluded.is_contact_lead, clicks=excluded.clicks, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into ga4_monthly_conversion_events (supabase_site_id, property_id, month_start, conversion_type, conversion_name, conversion_stage, page_path, conversions, sessions)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', conversion_type, conversion_name, conversion_stage, page_path, sum(conversions), sum(sessions)
+    from ga4_daily_conversion_events where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), conversion_type, conversion_name, conversion_stage, page_path
+    on conflict(supabase_site_id, property_id, month_start, conversion_type, conversion_name, conversion_stage, page_path) do update set conversions=excluded.conversions, sessions=excluded.sessions`, dailyCutoff)
+  add(`insert into ga4_monthly_peak_hours (supabase_site_id, property_id, month_start, day_of_week, hour_of_day, sessions, page_views, key_events)
+    select supabase_site_id, property_id, substr(metric_date, 1, 7) || '-01', day_of_week, hour_of_day, sum(sessions), sum(page_views), sum(key_events)
+    from ga4_daily_peak_hours where metric_date < ? group by supabase_site_id, property_id, substr(metric_date, 1, 7), day_of_week, hour_of_day
+    on conflict(supabase_site_id, property_id, month_start, day_of_week, hour_of_day) do update set sessions=excluded.sessions, page_views=excluded.page_views, key_events=excluded.key_events`, dailyCutoff)
+
+  // Rebuild only months that still have daily source rows. This removes
+  // dimensions that disappeared after a reprocess without deleting older
+  // monthly history whose daily source rows already expired.
+  const monthlyRebuildSpecs: Array<[string, string[]]> = [
+    ['monthly_metrics', ['tracker_site_id']],
+    ['monthly_sources', ['tracker_site_id']],
+    ['monthly_pages', ['tracker_site_id']],
+    ['monthly_source_pages', ['tracker_site_id']],
+    ['monthly_button_clicks', ['tracker_site_id']],
+    ['monthly_contacts', ['tracker_site_id']],
+    ['monthly_locations', ['tracker_site_id']],
+    ['monthly_devices', ['tracker_site_id']],
+    ['monthly_source_medium_results', ['tracker_site_id']],
+    ['monthly_conversion_events', ['tracker_site_id']],
+    ['monthly_page_scroll', ['tracker_site_id']],
+  ]
+  for (const [monthlyTable, ownerKeys] of monthlyRebuildSpecs) {
+    rebuildAdd(`delete from ${monthlyTable}
+      where exists (
+        select 1 from daily_metrics d
+        where ${ownerKeys.map(key => `d.${key} = ${monthlyTable}.${key}`).join(' and ')}
+          and substr(d.metric_date, 1, 7) || '-01' = ${monthlyTable}.month_start
+          and d.metric_date < ?
+      )`, dailyCutoff)
+  }
+  const ga4MonthlyRebuildSpecs: Array<[string, string[]]> = [
+    ['ga4_monthly_metrics', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_source_medium_results', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_pages', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_source_pages', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_devices', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_locations', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_contacts', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_clicks', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_conversion_events', ['supabase_site_id', 'property_id']],
+    ['ga4_monthly_peak_hours', ['supabase_site_id', 'property_id']],
+  ]
+  for (const [monthlyTable, ownerKeys] of ga4MonthlyRebuildSpecs) {
+    rebuildAdd(`delete from ${monthlyTable}
+      where exists (
+        select 1 from ga4_daily_metrics d
+        where ${ownerKeys.map(key => `d.${key} = ${monthlyTable}.${key}`).join(' and ')}
+          and substr(d.metric_date, 1, 7) || '-01' = ${monthlyTable}.month_start
+          and d.metric_date < ?
+      )`, dailyCutoff)
+  }
+
+  try {
+    await env.ANALIZI_EVENTS.batch([...monthlyRebuildStatements, ...statements])
+    const validationSpecs = [
+      ['daily_metrics', 'monthly_metrics', ['tracker_site_id']],
+      ['daily_sources', 'monthly_sources', ['tracker_site_id', 'source', 'medium', 'campaign']],
+      ['daily_pages', 'monthly_pages', ['tracker_site_id', 'page_path']],
+      ['daily_source_pages', 'monthly_source_pages', ['tracker_site_id', 'source', 'page_path']],
+      ['daily_button_clicks', 'monthly_button_clicks', ['tracker_site_id', 'page_path', 'button_label', 'button_id', 'destination', 'contact_intent', 'is_contact_lead']],
+      ['daily_contacts', 'monthly_contacts', ['tracker_site_id', 'contact_type', 'page_path']],
+      ['daily_locations', 'monthly_locations', ['tracker_site_id', 'country', 'region', 'city']],
+      ['daily_devices', 'monthly_devices', ['tracker_site_id', 'device_type', 'browser']],
+      ['daily_source_medium_results', 'monthly_source_medium_results', ['tracker_site_id', 'source', 'medium', 'campaign', 'device_type', 'browser', 'page_path']],
+      ['daily_conversion_events', 'monthly_conversion_events', ['tracker_site_id', 'source', 'medium', 'campaign', 'device_type', 'browser', 'page_path', 'conversion_type', 'conversion_name', 'conversion_stage']],
+      ['daily_page_scroll', 'monthly_page_scroll', ['tracker_site_id', 'page_path', 'device_type', 'depth_bracket']],
+      ['ga4_daily_metrics', 'ga4_monthly_metrics', ['supabase_site_id', 'property_id']],
+      ['ga4_daily_source_medium_results', 'ga4_monthly_source_medium_results', ['supabase_site_id', 'property_id', 'source', 'medium', 'campaign']],
+      ['ga4_daily_pages', 'ga4_monthly_pages', ['supabase_site_id', 'property_id', 'page_path']],
+      ['ga4_daily_source_pages', 'ga4_monthly_source_pages', ['supabase_site_id', 'property_id', 'source', 'landing_page']],
+      ['ga4_daily_devices', 'ga4_monthly_devices', ['supabase_site_id', 'property_id', 'device_type', 'browser']],
+      ['ga4_daily_locations', 'ga4_monthly_locations', ['supabase_site_id', 'property_id', 'country', 'region', 'city']],
+      ['ga4_daily_contacts', 'ga4_monthly_contacts', ['supabase_site_id', 'property_id', 'contact_type', 'page_path']],
+      ['ga4_daily_clicks', 'ga4_monthly_clicks', ['supabase_site_id', 'property_id', 'dimension_key']],
+      ['ga4_daily_conversion_events', 'ga4_monthly_conversion_events', ['supabase_site_id', 'property_id', 'conversion_type', 'conversion_name', 'conversion_stage', 'page_path']],
+      ['ga4_daily_peak_hours', 'ga4_monthly_peak_hours', ['supabase_site_id', 'property_id', 'day_of_week', 'hour_of_day']],
+    ] as Array<[string, string, string[]]>
+    const validation = await env.ANALIZI_EVENTS.batch(validationSpecs.map(([dailyTable, monthlyTable, keys]) => {
+      const keyMatch = keys.map(key => `m.${key}=d.${key}`).join(' and ')
+      return env.ANALIZI_EVENTS.prepare(`select count(*) as invalid from ${dailyTable} d where d.metric_date < ? and not exists (select 1 from ${monthlyTable} m where ${keyMatch} and m.month_start=substr(d.metric_date, 1, 7) || '-01')`).bind(dailyCutoff)
+    })) as Array<{ results?: Array<{ invalid: number }> }>
+    const invalidRows = validation.reduce((sum, result) => sum + Number(result.results?.[0]?.invalid || 0), 0)
+    if (invalidRows > 0) throw new Error(`Validação mensal falhou para ${invalidRows} linhas diárias.`)
+
+    const dailyTables = ['daily_metrics', 'daily_sources', 'daily_pages', 'daily_source_pages', 'daily_button_clicks', 'daily_contacts', 'daily_locations', 'daily_devices', 'daily_source_medium_results', 'daily_conversion_events', 'daily_page_scroll']
+    const ga4DailyTables = ['ga4_daily_metrics', 'ga4_daily_source_medium_results', 'ga4_daily_pages', 'ga4_daily_source_pages', 'ga4_daily_devices', 'ga4_daily_locations', 'ga4_daily_contacts', 'ga4_daily_clicks', 'ga4_daily_conversion_events', 'ga4_daily_peak_hours']
+    await env.ANALIZI_EVENTS.batch([
+      ...dailyTables.map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where metric_date < ?`).bind(dailyCutoff)),
+      ...ga4DailyTables.map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where metric_date < ?`).bind(dailyCutoff)),
+      env.ANALIZI_EVENTS.prepare('delete from monthly_event_usage where usage_month < ?').bind(monthlyCutoff.slice(0, 7)),
+      ...['monthly_metrics', 'monthly_sources', 'monthly_pages', 'monthly_source_pages', 'monthly_button_clicks', 'monthly_contacts', 'monthly_locations', 'monthly_devices', 'monthly_source_medium_results', 'monthly_conversion_events', 'monthly_page_scroll'].map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where month_start < ?`).bind(monthlyCutoff)),
+      ...['ga4_monthly_metrics', 'ga4_monthly_source_medium_results', 'ga4_monthly_pages', 'ga4_monthly_source_pages', 'ga4_monthly_devices', 'ga4_monthly_locations', 'ga4_monthly_contacts', 'ga4_monthly_clicks', 'ga4_monthly_conversion_events', 'ga4_monthly_peak_hours'].map(table => env.ANALIZI_EVENTS.prepare(`delete from ${table} where month_start < ?`).bind(monthlyCutoff)),
+    ])
+    console.log('monthly_consolidation_success', JSON.stringify({ dailyCutoff, monthlyCutoff }))
+  } catch (error) {
+    console.error('monthly_consolidation_failed', error)
+  }
+}
+
+type Ga4Property = { id: string, name: string, accountName: string }
+type AuthenticatedUser = { id: string, token: string }
+
+function ga4Configured(env: Env) {
+  return Boolean(env.SUPABASE_URL && env.SUPABASE_ANON_KEY && env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET && env.GA4_TOKEN_ENCRYPTION_KEY)
+}
+
+async function authenticatedUser(request: Request, env: Env): Promise<AuthenticatedUser | null> {
+  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
+  if (!token || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
+  // O PostgREST valida a assinatura e as políticas RLS na consulta de ownedSite.
+  // Aqui só extraímos o subject para evitar uma chamada extra ao endpoint Auth,
+  // que pode rejeitar tokens válidos quando a chave pública foi rotacionada.
+  try {
+    const part = token.split('.')[1]
+    if (!part) return null
+    const normalized = part.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((part.length + 3) % 4)
+    const claims = JSON.parse(atob(normalized)) as { sub?: string, exp?: number, iss?: string }
+    if (!claims.sub || (claims.exp && claims.exp < Math.floor(Date.now() / 1000))) return null
+    if (claims.iss && !claims.iss.includes('/auth/v1')) return null
+    return { id: claims.sub, token }
+  } catch {
+    return null
+  }
+}
+
+async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trackerSiteId = '', businessId = ''): Promise<{ id: string, tracker_site_id: string } | null> {
+  // Nunca registra identificadores, e-mails ou tokens: estes marcadores existem
+  // apenas para diagnosticar falhas de vínculo entre o painel e o Supabase.
+  const audit = (stage: string, detail: Record<string, boolean | number> = {}) => console.warn('ga4_site_access', JSON.stringify({ stage, ...detail }))
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+    audit('supabase_not_configured')
+    return null
+  }
+  const apiKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY
+  const requestHeaders = { apikey: apiKey, authorization: `Bearer ${apiKey}` }
+  const encodedSite = encodeURIComponent(siteId)
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
+  if (!response.ok) {
+    audit('site_query_failed', { status: response.status, usingServiceRole: Boolean(env.SUPABASE_SERVICE_ROLE_KEY) })
+    return null
+  }
+  const rows = await response.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
+  audit('site_query_complete', { rows: rows.length, hasTrackerFallback: Boolean(trackerSiteId), hasBusinessFallback: Boolean(businessId) })
+  const isMember = async (businessId: string) => {
+    if (!env.SUPABASE_SERVICE_ROLE_KEY) return true
+    const memberResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/business_members?business_id=eq.${encodeURIComponent(businessId)}&user_id=eq.${encodeURIComponent(user.id)}&select=user_id&limit=1`, { headers: requestHeaders })
+    if (!memberResponse.ok) {
+      audit('membership_query_failed', { status: memberResponse.status })
+      return false
+    }
+    const members = await memberResponse.json() as Array<{ user_id: string }>
+    return Boolean(members[0])
+  }
+  const canAccessBusiness = async (businessId: string) => {
+    if (await isMember(businessId)) return true
+    const ownerResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/businesses?id=eq.${encodeURIComponent(businessId)}&owner_id=eq.${encodeURIComponent(user.id)}&select=id&limit=1`, { headers: requestHeaders })
+    if (!ownerResponse.ok) audit('owner_query_failed', { status: ownerResponse.status })
+    return ownerResponse.ok && Boolean((await ownerResponse.json() as Array<{ id: string }>)[0])
+  }
+  if (rows[0] && await canAccessBusiness(rows[0].business_id)) return { id: rows[0].id, tracker_site_id: rows[0].tracker_site_id }
+  if (trackerSiteId) {
+    const fallback = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select supabase_site_id, tracker_site_id from tracker_sites where tracker_site_id = ? and is_active = 1').bind(trackerSiteId)]) as Array<{ results?: Array<{ supabase_site_id: string, tracker_site_id: string }> }>
+    const provisioned = fallback[0]?.results?.[0]
+    if (provisioned?.supabase_site_id) {
+      const verified = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?id=eq.${encodeURIComponent(provisioned.supabase_site_id)}&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
+      if (verified.ok) {
+        const verifiedRows = await verified.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
+        if (verifiedRows[0] && await canAccessBusiness(verifiedRows[0].business_id)) return { id: verifiedRows[0].id, tracker_site_id: verifiedRows[0].tracker_site_id }
+      }
+    }
+  }
+  if (businessId) {
+    if (await canAccessBusiness(businessId)) {
+      const siteResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?business_id=eq.${encodeURIComponent(businessId)}&is_active=eq.true&select=id,tracker_site_id,business_id&order=created_at.asc&limit=1`, { headers: requestHeaders })
+      if (siteResponse.ok) {
+        const businessSites = await siteResponse.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
+        if (businessSites[0]) return { id: businessSites[0].id, tracker_site_id: businessSites[0].tracker_site_id }
+      }
+    }
+  }
+  audit('access_not_resolved', { initialSiteFound: Boolean(rows[0]) })
+  return null
+}
+
+function b64encode(bytes: Uint8Array) { return btoa(String.fromCharCode(...bytes)) }
+function b64decode(value: string) { return Uint8Array.from(atob(value), char => char.charCodeAt(0)) }
+
+async function tokenKey(env: Env) {
+  if (!env.GA4_TOKEN_ENCRYPTION_KEY) throw new Error('Criptografia GA4 não configurada.')
+  const raw = b64decode(env.GA4_TOKEN_ENCRYPTION_KEY)
+  if (raw.byteLength !== 32) throw new Error('A chave de criptografia GA4 deve ter 32 bytes em Base64.')
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt'])
+}
+
+async function encryptToken(token: string, env: Env) {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await tokenKey(env), new TextEncoder().encode(token))
+  return { ciphertext: b64encode(new Uint8Array(encrypted)), iv: b64encode(iv) }
+}
+
+async function decryptToken(ciphertext: string, iv: string, env: Env) {
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64decode(iv) }, await tokenKey(env), b64decode(ciphertext))
+  return new TextDecoder().decode(plain)
+}
+
+async function googleJson(url: string, accessToken: string) {
+  const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } })
+  if (!response.ok) throw new Error(`Google Analytics respondeu ${response.status}.`)
+  return response.json() as Promise<Record<string, unknown>>
+}
+
+async function listGa4Properties(accessToken: string): Promise<Array<Ga4Property & { websiteUrl?: string }>> {
+  const properties: Ga4Property[] = []
+  let pageToken = ''
+  do {
+    const url = new URL('https://analyticsadmin.googleapis.com/v1beta/accountSummaries')
+    url.searchParams.set('pageSize', '200')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+    const data = await googleJson(url.toString(), accessToken) as { accountSummaries?: Array<{ displayName?: string, propertySummaries?: Array<{ property?: string, displayName?: string }> }>, nextPageToken?: string }
+    for (const account of data.accountSummaries || []) for (const property of account.propertySummaries || []) {
+      const id = property.property?.replace('properties/', '') || ''
+      if (id) properties.push({ id, name: property.displayName || `Propriedade ${id}`, accountName: account.displayName || 'Google Analytics' })
+    }
+    pageToken = data.nextPageToken || ''
+  } while (pageToken)
+  return Promise.all(properties.map(async property => {
+    try {
+      const data = await googleJson(`https://analyticsadmin.googleapis.com/v1beta/properties/${property.id}/dataStreams`, accessToken) as { dataStreams?: Array<{ type?: string, webStreamData?: { defaultUri?: string } }> }
+      const websiteUrl = data.dataStreams?.find(stream => stream.type === 'WEB_DATA_STREAM')?.webStreamData?.defaultUri
+      return { ...property, websiteUrl }
+    } catch { return property }
+  }))
+}
+
+async function ga4Properties(request: Request, env: Env) {
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const body = await request.json().catch(() => ({})) as { accessToken?: string }
+  if (!body.accessToken) return json({ error: 'A autorização do Google expirou. Autorize novamente.' }, 400)
+  try { return json({ properties: await listGa4Properties(body.accessToken) }) }
+  catch (error) { return json({ error: error instanceof Error ? error.message : 'Não foi possível listar propriedades.' }, 502) }
+}
+
+async function ga4Connect(request: Request, env: Env) {
+  if (!ga4Configured(env)) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const body = await request.json().catch(() => ({})) as { siteId?: string, trackerSiteId?: string, businessId?: string, propertyId?: string, refreshToken?: string, googleUserId?: string }
+  const propertyId = compactText(body.propertyId, 64).replace(/^properties\//i, '')
+  const siteId = compactText(body.siteId, 64)
+  if (!siteId) return json({ error: 'O site atual não foi informado. Recarregue a página e tente novamente.' }, 400)
+  const site = await ownedSite(siteId, user, env, compactText(body.trackerSiteId, 32), compactText(body.businessId, 64))
+  if (!site) return json({ error: 'Não encontramos este site na sua conta. Recarregue o painel para atualizar o site selecionado.' }, 404)
+  if (!/^\d+$/.test(propertyId)) return json({ error: 'O identificador da propriedade GA4 é inválido. Selecione uma propriedade da lista.' }, 400)
+  if (!body.refreshToken) return json({ error: 'O Google não forneceu um token de renovação. Autorize novamente.' }, 400)
+  try {
+    const encrypted = await encryptToken(body.refreshToken, env)
+    await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare(`
+      insert into ga4_connections (supabase_site_id, tracker_site_id, property_id, google_user_id, refresh_token_ciphertext, refresh_token_iv)
+      values (?, ?, ?, ?, ?, ?)
+      on conflict(supabase_site_id) do update set property_id = excluded.property_id, google_user_id = excluded.google_user_id,
+        refresh_token_ciphertext = excluded.refresh_token_ciphertext, refresh_token_iv = excluded.refresh_token_iv,
+        connected_at = current_timestamp, last_error = null
+    `).bind(site.id, site.tracker_site_id, propertyId, compactText(body.googleUserId, 128) || null, encrypted.ciphertext, encrypted.iv)])
+    return json({ connected: true, propertyId })
+  } catch (error) { return json({ error: error instanceof Error ? error.message : 'Não foi possível salvar a conexão.' }, 500) }
+}
+
+async function ga4Disconnect(request: Request, env: Env) {
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const body = await request.json().catch(() => ({})) as { siteId?: string }
+  const site = await ownedSite(compactText(body.siteId, 64), user, env)
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('delete from ga4_connections where supabase_site_id = ?').bind(site.id)])
+  return json({ disconnected: true })
+}
+
+async function ga4AccessToken(connection: { refresh_token_ciphertext: string, refresh_token_iv: string }, env: Env) {
+  const refreshToken = await decryptToken(connection.refresh_token_ciphertext, connection.refresh_token_iv, env)
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: env.GOOGLE_OAUTH_CLIENT_ID!, client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET!, refresh_token: refreshToken, grant_type: 'refresh_token' })
+  })
+  if (!response.ok) throw new Error('A autorização do Google expirou. Reconecte o GA4.')
+  const body = await response.json() as { access_token?: string }
+  if (!body.access_token) throw new Error('O Google não devolveu um token de acesso.')
+  return body.access_token
+}
+
+type Ga4DimensionFilter = {
+  andGroup?: { expressions: Ga4DimensionFilter[] }
+  orGroup?: { expressions: Ga4DimensionFilter[] }
+  filter?: {
+    fieldName: string
+    stringFilter: { matchType: 'EXACT', value: string, caseSensitive: false }
+  }
+}
+
+type Ga4ReportRow = { dimensions: string[], metrics: number[] }
+type Ga4ReportResult = {
+  rows: Ga4ReportRow[]
+  rowCount: number
+  propertyQuota?: unknown
+}
+
+function ga4Filters(query: URLSearchParams, pageField = 'pagePathPlusQueryString'): Ga4DimensionFilter | undefined {
+  const fields: Array<[string, string, number]> = [
+    ['page', pageField, 1024],
+    ['source', 'sessionSource', 120],
+    ['medium', 'sessionMedium', 120],
+    ['campaign', 'sessionCampaignName', 240],
+    ['device', 'deviceCategory', 32],
+    ['browser', 'browser', 80]
+  ]
+  const expressions = fields.flatMap(([parameter, fieldName, maxLength]) => {
+    const value = compactText(query.get(parameter), maxLength)
+    return value ? [{ filter: { fieldName, stringFilter: { matchType: 'EXACT' as const, value, caseSensitive: false as const } } }] : []
+  })
+  return expressions.length ? { andGroup: { expressions } } : undefined
+}
+
+function ga4EventFilter(baseFilter: Ga4DimensionFilter | undefined, eventNames: string[]): Ga4DimensionFilter {
+  const eventFilter: Ga4DimensionFilter = { orGroup: { expressions: eventNames.map(value => ({ filter: { fieldName: 'eventName', stringFilter: { matchType: 'EXACT', value, caseSensitive: false } } })) } }
+  return baseFilter ? { andGroup: { expressions: [baseFilter, eventFilter] } } : eventFilter
+}
+
+async function ga4Report(propertyId: string, accessToken: string, label: string, start: string, end: string, dimensions: string[], metrics: string[], dimensionFilter?: Ga4DimensionFilter): Promise<Ga4ReportResult> {
+  const endpoint = `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`
+  const limit = 100000
+  const rows: Ga4ReportRow[] = []
+  let rowCount = 0
+  let offset = 0
+  let propertyQuota: unknown
+  let page = 0
+
+  while (true) {
+    let response: Response | null = null
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ dateRanges: [{ startDate: start, endDate: end }], dimensions: dimensions.map(name => ({ name })), metrics: metrics.map(name => ({ name })), ...(dimensionFilter ? { dimensionFilter } : {}), limit, offset, returnPropertyQuota: true })
+        })
+      } catch (error) {
+        if (attempt === 2) throw error
+        await new Promise(resolve => setTimeout(resolve, 250 * (2 ** attempt)))
+        continue
+      }
+      if (response.ok || ![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break
+      await new Promise(resolve => setTimeout(resolve, 250 * (2 ** attempt)))
+    }
+    if (!response) throw new Error('Não foi possível consultar os dados GA4.')
+    if (!response.ok) throw new Error(`Não foi possível consultar os dados GA4 (${response.status}).`)
+    const payload = await response.json() as { rowCount?: number, propertyQuota?: unknown, rows?: Array<{ dimensionValues?: Array<{ value?: string }>, metricValues?: Array<{ value?: string }> }> }
+    const pageRows = (payload.rows || []).map(row => ({ dimensions: (row.dimensionValues || []).map(value => value.value || ''), metrics: (row.metricValues || []).map(value => Number(value.value || 0)) }))
+    rowCount = Number(payload.rowCount ?? rowCount + pageRows.length)
+    propertyQuota = payload.propertyQuota ?? propertyQuota
+    rows.push(...pageRows)
+    console.log('ga4_report_measurement', JSON.stringify({ label, start, end, dimensions, metrics, page, offset, rowCount, returnedRows: pageRows.length, totalRows: rows.length, propertyQuota: payload.propertyQuota ?? null }))
+    if (!pageRows.length || rows.length >= rowCount || pageRows.length < limit) break
+    offset += pageRows.length
+    page += 1
+  }
+
+  if (rowCount > rows.length) console.warn('ga4_report_truncated', JSON.stringify({ label, start, end, rowCount, returnedRows: rows.length, limit }))
+  return { rows, rowCount, propertyQuota }
+}
+
+const ANALYTICS_TIMEZONE = 'America/Sao_Paulo'
+
+type Ga4SyncConnection = {
+  supabase_site_id: string
+  property_id: string
+  refresh_token_ciphertext: string
+  refresh_token_iv: string
+}
+
+type Ga4DailySyncReports = {
+  dailyRange: Ga4ReportResult
+  sources: Ga4ReportResult
+  pages: Ga4ReportResult
+  sourcePages: Ga4ReportResult
+  devices: Ga4ReportResult
+  locations: Ga4ReportResult
+  conversionEvents: Ga4ReportResult
+  eventDetails: Ga4ReportResult
+  peakHours: Ga4ReportResult
+  pageContactSessions: Ga4ReportResult
+}
+
+function ga4DateValue(value: string) {
+  return /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : value
+}
+
+function ga4ConversionType(name: string) {
+  if (name === 'whatsapp_contact' || name === 'whatsapp_click') return 'whatsapp'
+  if (name === 'sign_up') return 'cadastro'
+  if (name === 'form_submit') return 'contato'
+  if (name === 'file_download') return 'download'
+  if (name === 'checkout_start') return 'checkout'
+  if (name === 'payment_start') return 'pagamento'
+  if (name === 'subscription_start' || name === 'subscription') return 'assinatura'
+  if (name === 'purchase') return 'compra'
+  return 'outro'
+}
+
+function ga4ClickIntent(eventName: string, destination: string) {
+  if (eventName === 'file_download') return 'download'
+  if (eventName === 'whatsapp_click' || eventName === 'whatsapp_contact' || /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whatsapp)/i.test(destination)) return 'whatsapp'
+  return 'link_externo'
+}
+
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function ga4DailySyncReports(propertyId: string, accessToken: string, start: string, end: string): Promise<Ga4DailySyncReports> {
+  const metricNames = ['screenPageViews', 'activeUsers', 'newUsers', 'sessions', 'keyEvents', 'averageSessionDuration']
+  const contactEventFilter = ga4EventFilter(undefined, ['whatsapp_contact', 'whatsapp_click', 'sign_up', 'form_submit'])
+  const [dailyRange, sources, pages, sourcePages, devices, locations, conversionEvents, eventDetails, peakHours, pageContactSessions] = await Promise.all([
+    ga4Report(propertyId, accessToken, 'sync-daily', start, end, ['date'], metricNames),
+    ga4Report(propertyId, accessToken, 'sync-sources', start, end, ['date', 'sessionSource', 'sessionMedium', 'sessionCampaignName'], metricNames.slice(0, 5)),
+    ga4Report(propertyId, accessToken, 'sync-pages', start, end, ['date', 'pagePathPlusQueryString'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration', 'bounceRate', 'sessions']),
+    ga4Report(propertyId, accessToken, 'sync-source-pages', start, end, ['date', 'sessionSource', 'landingPage'], ['sessions', 'activeUsers']),
+    ga4Report(propertyId, accessToken, 'sync-devices', start, end, ['date', 'deviceCategory', 'browser'], metricNames.slice(0, 5)),
+    ga4Report(propertyId, accessToken, 'sync-locations', start, end, ['date', 'country', 'region', 'city'], metricNames.slice(0, 5)),
+    ga4Report(propertyId, accessToken, 'sync-conversion-events', start, end, ['date', 'eventName', 'pagePathPlusQueryString'], ['keyEvents', 'sessions']),
+    ga4Report(propertyId, accessToken, 'sync-event-details', start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions']),
+    ga4Report(propertyId, accessToken, 'sync-peak-hours', start, end, ['date', 'dayOfWeek', 'hour'], ['sessions', 'screenPageViews', 'keyEvents']),
+    ga4Report(propertyId, accessToken, 'sync-page-contact-sessions', start, end, ['date', 'pagePathPlusQueryString'], ['sessions'], contactEventFilter),
+  ])
+  return { dailyRange, sources, pages, sourcePages, devices, locations, conversionEvents, eventDetails, peakHours, pageContactSessions }
+}
+
+async function persistGa4DailyReports(env: Env, connection: Ga4SyncConnection, start: string, end: string, reports: Ga4DailySyncReports) {
+  const statements: D1Statement[] = []
+  const add = (sql: string, values: unknown[]) => statements.push(env.ANALIZI_EVENTS.prepare(sql).bind(...values))
+  const dailyTables = [
+    'ga4_daily_metrics',
+    'ga4_daily_source_medium_results',
+    'ga4_daily_pages',
+    'ga4_daily_source_pages',
+    'ga4_daily_devices',
+    'ga4_daily_locations',
+    'ga4_daily_contacts',
+    'ga4_daily_clicks',
+    'ga4_daily_conversion_events',
+    'ga4_daily_peak_hours',
+  ]
+  const dates = []
+  for (let date = start; date <= end; date = shiftDate(date, 1)) dates.push(date)
+  const rowsOn = (report: Ga4ReportResult, date: string) => report.rows.filter(row => ga4DateValue(row.dimensions[0] || '') === date)
+
+  for (const date of dates) {
+    // Cada relatório representa um snapshot do dia. Limpar antes do upsert
+    // evita manter dimensões que desapareceram no reprocessamento.
+    for (const table of dailyTables) {
+      add(`delete from ${table} where supabase_site_id = ? and property_id = ? and metric_date = ?`, [connection.supabase_site_id, connection.property_id, date])
+    }
+    for (const row of rowsOn(reports.dailyRange, date)) {
+      add(`insert into ga4_daily_metrics (supabase_site_id, property_id, metric_date, sessions, users, new_users, page_views, key_events, average_session_duration)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, key_events=excluded.key_events, average_session_duration=excluded.average_session_duration`,
+      [connection.supabase_site_id, connection.property_id, date, row.metrics[3] || 0, row.metrics[1] || 0, row.metrics[2] || 0, row.metrics[0] || 0, row.metrics[4] || 0, row.metrics[5] || 0])
+    }
+    for (const row of rowsOn(reports.sources, date)) {
+      const source = row.dimensions[1] || 'Direto'
+      const medium = row.dimensions[2] || 'direto'
+      const campaign = row.dimensions[3] || ''
+      const keyEvents = row.metrics[4] || 0
+      add(`insert into ga4_daily_source_medium_results (supabase_site_id, property_id, metric_date, source, medium, campaign, sessions, page_views, users, new_users, key_events, general_clicks, contact_clicks, whatsapp_clicks, sign_ups, logins, conversions)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0, 0, 0, ?)
+        on conflict(supabase_site_id, property_id, metric_date, source, medium, campaign) do update set sessions=excluded.sessions, page_views=excluded.page_views, users=excluded.users, new_users=excluded.new_users, key_events=excluded.key_events, contact_clicks=excluded.contact_clicks, conversions=excluded.conversions`,
+      [connection.supabase_site_id, connection.property_id, date, source, medium, campaign, row.metrics[3] || 0, row.metrics[0] || 0, row.metrics[1] || 0, row.metrics[2] || 0, keyEvents, keyEvents, keyEvents])
+    }
+    for (const row of rowsOn(reports.pages, date)) {
+      add(`insert into ga4_daily_pages (supabase_site_id, property_id, metric_date, page_path, page_views, users, sessions, key_events, bounce_rate, average_session_duration)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, page_path) do update set page_views=excluded.page_views, users=excluded.users, sessions=excluded.sessions, key_events=excluded.key_events, bounce_rate=excluded.bounce_rate, average_session_duration=excluded.average_session_duration`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || '/', row.metrics[0] || 0, row.metrics[1] || 0, row.metrics[5] || 0, row.metrics[2] || 0, row.metrics[4] || 0, row.metrics[3] || 0])
+    }
+    for (const row of rowsOn(reports.sourcePages, date)) {
+      add(`insert into ga4_daily_source_pages (supabase_site_id, property_id, metric_date, source, landing_page, sessions, users)
+        values (?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, source, landing_page) do update set sessions=excluded.sessions, users=excluded.users`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || 'Direto', row.dimensions[2] || '/', row.metrics[0] || 0, row.metrics[1] || 0])
+    }
+    for (const row of rowsOn(reports.devices, date)) {
+      add(`insert into ga4_daily_devices (supabase_site_id, property_id, metric_date, device_type, browser, sessions, users, new_users, page_views, key_events)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, device_type, browser) do update set sessions=excluded.sessions, users=excluded.users, new_users=excluded.new_users, page_views=excluded.page_views, key_events=excluded.key_events`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || 'desktop', row.dimensions[2] || 'Outro', row.metrics[3] || 0, row.metrics[1] || 0, row.metrics[2] || 0, row.metrics[0] || 0, row.metrics[4] || 0])
+    }
+    for (const row of rowsOn(reports.locations, date)) {
+      add(`insert into ga4_daily_locations (supabase_site_id, property_id, metric_date, country, region, city, sessions, users, page_views, key_events)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, country, region, city) do update set sessions=excluded.sessions, users=excluded.users, page_views=excluded.page_views, key_events=excluded.key_events`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || '', row.dimensions[2] || '', row.dimensions[3] || '', row.metrics[3] || 0, row.metrics[1] || 0, row.metrics[0] || 0, row.metrics[4] || 0])
+    }
+    for (const row of rowsOn(reports.conversionEvents, date)) {
+      const name = row.dimensions[1] || ''
+      add(`insert into ga4_daily_conversion_events (supabase_site_id, property_id, metric_date, conversion_type, conversion_name, conversion_stage, page_path, conversions, sessions)
+        values (?, ?, ?, ?, ?, 'confirmada', ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, conversion_type, conversion_name, conversion_stage, page_path) do update set conversions=excluded.conversions, sessions=excluded.sessions`,
+      [connection.supabase_site_id, connection.property_id, date, ga4ConversionType(name), name, row.dimensions[2] || '/', row.metrics[0] || 0, row.metrics[1] || 0])
+    }
+    for (const row of rowsOn(reports.peakHours, date)) {
+      add(`insert into ga4_daily_peak_hours (supabase_site_id, property_id, metric_date, day_of_week, hour_of_day, sessions, page_views, key_events)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(supabase_site_id, property_id, metric_date, day_of_week, hour_of_day) do update set sessions=excluded.sessions, page_views=excluded.page_views, key_events=excluded.key_events`,
+      [connection.supabase_site_id, connection.property_id, date, Number(row.dimensions[1] || 0), Number(row.dimensions[2] || 0), row.metrics[0] || 0, row.metrics[1] || 0, row.metrics[2] || 0])
+    }
+    for (const row of rowsOn(reports.pageContactSessions, date)) {
+      add(`insert into ga4_daily_contacts (supabase_site_id, property_id, metric_date, contact_type, page_path, contacts, sessions)
+        values (?, ?, ?, 'contact_session', ?, 0, ?)
+        on conflict(supabase_site_id, property_id, metric_date, contact_type, page_path) do update set contacts=excluded.contacts, sessions=excluded.sessions`,
+      [connection.supabase_site_id, connection.property_id, date, row.dimensions[1] || '/', row.metrics[0] || 0])
+    }
+    for (const row of rowsOn(reports.eventDetails, date)) {
+      const eventName = row.dimensions[1] || 'click'
+      const path = row.dimensions[2] || '/'
+      const label = row.dimensions[3] || (eventName === 'file_download' ? 'Download de arquivo' : 'Link externo')
+      const buttonId = row.dimensions[4] || ''
+      const destination = row.dimensions[5] || ''
+      if (eventName === 'form_start' || eventName === 'form_submit') {
+        add(`insert into ga4_daily_contacts (supabase_site_id, property_id, metric_date, contact_type, page_path, contacts, sessions)
+          values (?, ?, ?, ?, ?, ?, ?)
+          on conflict(supabase_site_id, property_id, metric_date, contact_type, page_path) do update set contacts=excluded.contacts, sessions=excluded.sessions`,
+        [connection.supabase_site_id, connection.property_id, date, eventName, path, row.metrics[0] || 0, row.metrics[1] || 0])
+      }
+      if (['click', 'file_download', 'whatsapp_click', 'whatsapp_contact'].includes(eventName) || destination) {
+        const intent = ga4ClickIntent(eventName, destination)
+        const isContactLead = intent === 'whatsapp' ? 1 : 0
+        const dimensionKey = await sha256Hex([path, label, buttonId, destination, intent, isContactLead].join('\u001f'))
+        add(`insert into ga4_daily_clicks (supabase_site_id, property_id, metric_date, dimension_key, page_path, label, button_id, destination, intent, is_contact_lead, clicks, sessions)
+          values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          on conflict(supabase_site_id, property_id, metric_date, dimension_key) do update set page_path=excluded.page_path, label=excluded.label, button_id=excluded.button_id, destination=excluded.destination, intent=excluded.intent, is_contact_lead=excluded.is_contact_lead, clicks=excluded.clicks, sessions=excluded.sessions`,
+        [connection.supabase_site_id, connection.property_id, date, dimensionKey, path, label, buttonId, destination, intent, isContactLead, row.metrics[0] || 0, row.metrics[1] || 0])
+      }
+    }
+  }
+
+  let rowCount = 0
+  for (let index = 0; index < statements.length; index += 80) {
+    const batch = statements.slice(index, index + 80)
+    await env.ANALIZI_EVENTS.batch(batch)
+    rowCount += batch.length
+  }
+  return rowCount
+}
+
+async function runScheduledGa4Sync(env: Env): Promise<void> {
+  if (!ga4Configured(env)) {
+    console.warn('GA4 cron ignorado: integração não configurada.')
+    return
+  }
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  const dates = [shiftDate(today, -3), shiftDate(today, -2), shiftDate(today, -1)]
+  const start = dates[0]
+  const end = dates[dates.length - 1]
+  const connectionsResult = await env.ANALIZI_EVENTS.batch([
+    env.ANALIZI_EVENTS.prepare('select supabase_site_id, property_id, refresh_token_ciphertext, refresh_token_iv from ga4_connections')
+  ]) as Array<{ results?: Ga4SyncConnection[] }>
+  const connections = connectionsResult[0]?.results ?? []
+
+  for (const connection of connections) {
+    const runId = `ga4_${connection.supabase_site_id}_${Date.now()}`
+    try {
+      await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare(`insert into ga4_sync_runs (id, supabase_site_id, property_id, sync_kind, period_start, period_end, status) values (?, ?, ?, 'daily', ?, ?, 'running')`).bind(runId, connection.supabase_site_id, connection.property_id, start, end),
+        ...dates.map(date => env.ANALIZI_EVENTS.prepare(`insert into ga4_sync_periods (supabase_site_id, property_id, period_type, period_start, status, attempts, last_run_id, last_error, updated_at)
+          values (?, ?, 'day', ?, 'running', 1, ?, null, current_timestamp)
+          on conflict(supabase_site_id, property_id, period_type, period_start) do update set status='running', attempts=ga4_sync_periods.attempts + 1, last_run_id=excluded.last_run_id, last_error=null, updated_at=current_timestamp`).bind(connection.supabase_site_id, connection.property_id, date, runId))
+      ])
+
+      const accessToken = await ga4AccessToken(connection, env)
+      const reports = await ga4DailySyncReports(connection.property_id, accessToken, start, end)
+      const rowCount = await persistGa4DailyReports(env, connection, start, end, reports)
+      const validation = await env.ANALIZI_EVENTS.batch([
+        env.ANALIZI_EVENTS.prepare('select count(*) as row_count from ga4_daily_metrics where supabase_site_id = ? and property_id = ? and metric_date >= ? and metric_date <= ?').bind(connection.supabase_site_id, connection.property_id, start, end)
+      ]) as Array<{ results?: Array<{ row_count: number }> }>
+      const persistedRows = Number(validation[0]?.results?.[0]?.row_count || 0)
+      const quotaJson = JSON.stringify({ reports: Object.fromEntries(Object.entries(reports).map(([label, report]) => [label, report.propertyQuota ?? null])) })
+      await env.ANALIZI_EVENTS.batch([
+        ...dates.map(date => env.ANALIZI_EVENTS.prepare(`update ga4_sync_periods set status='success', last_success_at=current_timestamp, last_error=null, updated_at=current_timestamp where supabase_site_id=? and property_id=? and period_type='day' and period_start=? and last_run_id=?`).bind(connection.supabase_site_id, connection.property_id, date, runId)),
+        env.ANALIZI_EVENTS.prepare(`update ga4_sync_runs set status='success', report_count=10, row_count=?, quota_json=?, finished_at=current_timestamp where id=?`).bind(rowCount, quotaJson, runId),
+        env.ANALIZI_EVENTS.prepare(`update ga4_connections set last_synced_at=current_timestamp, last_error=null where supabase_site_id=?`).bind(connection.supabase_site_id)
+      ])
+      console.log('ga4_sync_success', JSON.stringify({ siteId: connection.supabase_site_id, propertyId: connection.property_id, start, end, upsertStatements: rowCount, persistedMetricRows: persistedRows }))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha desconhecida na sincronização GA4.'
+      await env.ANALIZI_EVENTS.batch([
+        ...dates.map(date => env.ANALIZI_EVENTS.prepare(`update ga4_sync_periods set status='failed', last_error=?, updated_at=current_timestamp where supabase_site_id=? and property_id=? and period_type='day' and period_start=? and last_run_id=?`).bind(message.slice(0, 1000), connection.supabase_site_id, connection.property_id, date, runId)),
+        env.ANALIZI_EVENTS.prepare(`update ga4_sync_runs set status='failed', error_message=?, finished_at=current_timestamp where id=?`).bind(message.slice(0, 1000), runId),
+        env.ANALIZI_EVENTS.prepare(`update ga4_connections set last_error=? where supabase_site_id=?`).bind(message.slice(0, 1000), connection.supabase_site_id)
+      ]).catch(updateError => console.error('ga4_sync_failure_update_error', updateError))
+      console.error('ga4_sync_failed', JSON.stringify({ siteId: connection.supabase_site_id, propertyId: connection.property_id, start, end, error: message }))
+    }
+  }
+}
+
+async function ga4AnalyticsFromApi(request: Request, env: Env, query: URLSearchParams) {
+  if (!ga4Configured(env)) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const site = await ownedSite(compactText(query.get('siteId'), 64), user, env)
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  const result = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select property_id, refresh_token_ciphertext, refresh_token_iv from ga4_connections where supabase_site_id = ?').bind(site.id)]) as Array<{ results?: Array<{ property_id: string, refresh_token_ciphertext: string, refresh_token_iv: string }> }>
+  const connection = result[0]?.results?.[0]
+  if (!connection) return json({ error: 'Nenhuma propriedade GA4 está conectada a este site.' }, 404)
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  const end = validDate(query.get('end')) && query.get('end')! < today ? query.get('end')! : shiftDate(today, -1)
+  const start = validDate(query.get('start')) && query.get('start')! <= end ? query.get('start')! : shiftDate(end, -6)
+  const previousStart = shiftDate(start, -Math.max(1, Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1))
+  const dimensionFilter = ga4Filters(query)
+  const sourcePageFilter = ga4Filters(query, 'landingPage')
+  try {
+    const accessToken = await ga4AccessToken(connection, env)
+    const metricNames = ['screenPageViews', 'activeUsers', 'newUsers', 'sessions', 'keyEvents', 'averageSessionDuration']
+    const contactEventFilter = ga4EventFilter(dimensionFilter, ['whatsapp_contact', 'whatsapp_click', 'sign_up', 'form_submit'])
+    const [dailyRange, sourcesResult, pagesResult, sourcePagesResult, devicesResult, locationsResult, conversionEventsResult, eventDetailsResult, peakHoursResult, pageContactSessionsResult] = await Promise.all([
+      ga4Report(connection.property_id, accessToken, 'daily-current-and-previous', previousStart, end, ['date'], metricNames, dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'sources', start, end, ['sessionSource', 'sessionMedium', 'sessionCampaignName'], metricNames.slice(0, 5), dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'pages', start, end, ['pagePathPlusQueryString'], ['screenPageViews', 'activeUsers', 'keyEvents', 'averageSessionDuration', 'bounceRate', 'sessions'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'source-pages', start, end, ['sessionSource', 'landingPage'], ['sessions', 'activeUsers'], sourcePageFilter),
+      ga4Report(connection.property_id, accessToken, 'devices', start, end, ['deviceCategory', 'browser'], metricNames.slice(0, 5), dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'locations', start, end, ['country', 'region', 'city'], metricNames.slice(0, 5), dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'conversion-events', start, end, ['date', 'eventName', 'pagePathPlusQueryString'], ['keyEvents', 'sessions'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'event-details', start, end, ['date', 'eventName', 'pagePathPlusQueryString', 'linkText', 'linkId', 'linkUrl'], ['eventCount', 'sessions'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'peak-hours', start, end, ['dayOfWeek', 'hour'], ['sessions', 'screenPageViews', 'keyEvents'], dimensionFilter),
+      ga4Report(connection.property_id, accessToken, 'page-contact-sessions', start, end, ['date', 'pagePathPlusQueryString'], ['sessions'], contactEventFilter)
+    ])
+    const ga4Date = (value: string) => /^\d{8}$/.test(value) ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}` : value
+    const daily = dailyRange.rows.filter(row => ga4Date(row.dimensions[0]) >= start && ga4Date(row.dimensions[0]) <= end)
+    const previousDaily = dailyRange.rows.filter(row => ga4Date(row.dimensions[0]) >= previousStart && ga4Date(row.dimensions[0]) < start)
+    const sources = sourcesResult.rows
+    const pages = pagesResult.rows
+    const sourcePages = sourcePagesResult.rows
+    const devices = devicesResult.rows
+    const locations = locationsResult.rows
+    const conversionEvents = conversionEventsResult.rows
+    const eventDetails = eventDetailsResult.rows
+    const peakHours = peakHoursResult.rows.map(row => ({ dayOfWeek: Number(row.dimensions[0] || 0), hourOfDay: Number(row.dimensions[1] || 0), sessions: row.metrics[0] || 0, views: row.metrics[1] || 0, contacts: row.metrics[2] || 0 }))
+    const pageContactSessions = pageContactSessionsResult.rows
+    const dailyRows = daily.map(row => ({ date: `${row.dimensions[0].slice(0, 4)}-${row.dimensions[0].slice(4, 6)}-${row.dimensions[0].slice(6, 8)}`, pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], contacts: row.metrics[4], attentionSeconds: row.metrics[5] }))
+    const totals = dailyRows.reduce((sum, row) => ({ pageViews: sum.pageViews + row.pageViews, users: sum.users + row.users, newUsers: sum.newUsers + row.newUsers, sessions: sum.sessions + row.sessions, contacts: sum.contacts + row.contacts, contactSessions: sum.contactSessions + row.contacts, attentionSeconds: sum.attentionSeconds + row.attentionSeconds * row.sessions }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
+    totals.attentionSeconds = totals.sessions ? Math.round(totals.attentionSeconds / totals.sessions) : 0
+    const previousRows = previousDaily.map(row => ({ pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], contacts: row.metrics[4], attentionSeconds: row.metrics[5] }))
+    const previousTotals = previousRows.reduce<{ pageViews: number, users: number, newUsers: number, sessions: number, contacts: number, contactSessions: number, attentionSeconds: number }>((sum, row) => ({ pageViews: sum.pageViews + row.pageViews, users: sum.users + row.users, newUsers: sum.newUsers + row.newUsers, sessions: sum.sessions + row.sessions, contacts: sum.contacts + row.contacts, contactSessions: sum.contactSessions + row.contacts, attentionSeconds: sum.attentionSeconds + row.attentionSeconds * row.sessions }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
+    previousTotals.attentionSeconds = previousTotals.sessions ? Math.round(previousTotals.attentionSeconds / previousTotals.sessions) : 0
+    const sourceRows = sources.map(row => ({ source: row.dimensions[0] || 'Direto', medium: row.dimensions[1] || 'direto', campaign: row.dimensions[2] || '', page: '', device: '', browser: '', pageViews: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], conversions: row.metrics[4], generalClicks: 0, contactClicks: row.metrics[4], whatsappClicks: 0, signUps: 0, logins: 0 }))
+    const sourceTotals = Array.from(sourceRows.reduce((map, row) => map.set(row.source, (map.get(row.source) || 0) + row.sessions), new Map<string, number>())).map(([name, value]) => ({ name, value }))
+    const isWhatsApp = (value: string) => /(?:wa\.me|api\.whatsapp\.com|web\.whatsapp\.com|whatsapp)/i.test(value)
+    const clickDetails = eventDetails
+      .filter(row => ['click', 'file_download', 'whatsapp_click', 'whatsapp_contact'].includes(row.dimensions[1]) || Boolean(row.dimensions[5]))
+      .map(row => {
+        const eventName = row.dimensions[1] || 'click'
+        const destination = row.dimensions[5] || ''
+        return {
+          date: ga4Date(row.dimensions[0]), path: row.dimensions[2] || '/', label: row.dimensions[3] || (eventName === 'file_download' ? 'Download de arquivo' : isWhatsApp(destination) ? 'WhatsApp' : 'Link externo'), buttonId: row.dimensions[4] || undefined, destination: destination || undefined,
+          intent: eventName === 'file_download' ? 'download' : isWhatsApp(destination) || eventName === 'whatsapp_click' || eventName === 'whatsapp_contact' ? 'whatsapp' : 'link_externo', isContactLead: isWhatsApp(destination) || eventName === 'whatsapp_click' || eventName === 'whatsapp_contact' ? 1 : 0,
+          clicks: row.metrics[0], sessions: row.metrics[1]
+        }
+      })
+    const contactDetails = eventDetails
+      .filter(row => ['form_start', 'form_submit'].includes(row.dimensions[1]))
+      .map(row => ({ date: ga4Date(row.dimensions[0]), type: row.dimensions[1], path: row.dimensions[2] || '/', contacts: row.metrics[0] }))
+    const formClicks = contactDetails
+      .filter(item => item.type === 'form_submit')
+      .map(item => ({ date: item.date, path: item.path, label: 'Formulário enviado', intent: 'contato', isContactLead: 1, clicks: item.contacts, sessions: 0 }))
+    const eventType = (name: string) => name === 'form_submit' ? 'contato' : name === 'file_download' ? 'download' : /whatsapp/i.test(name) ? 'whatsapp' : name === 'purchase' ? 'compra' : 'outro'
+    const pageConversionMap = new Map<string, { path: string, sessions: number, whatsappClicks: number, signUps: number, contactSessions: number }>()
+    pages.forEach(row => {
+      const path = row.dimensions[0] || '/'
+      pageConversionMap.set(path, { path, sessions: row.metrics[5] || 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 })
+    })
+    pageContactSessions.forEach(row => {
+      const path = row.dimensions[1] || '/'
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      current.contactSessions += row.metrics[0] || 0
+      pageConversionMap.set(path, current)
+    })
+    eventDetails.forEach(row => {
+      const eventName = row.dimensions[1] || ''
+      if (eventName !== 'whatsapp_contact' && eventName !== 'whatsapp_click' && eventName !== 'sign_up') return
+      const path = row.dimensions[2] || '/'
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      if (eventName === 'whatsapp_contact' || eventName === 'whatsapp_click') current.whatsappClicks += row.metrics[0] || 0
+      if (eventName === 'sign_up') current.signUps += row.metrics[0] || 0
+      pageConversionMap.set(path, current)
+    })
+    return json({ totals, previousTotals, daily: dailyRows, sources: sourceTotals, pages: pages.map(row => ({ path: row.dimensions[0] || '/', views: row.metrics[0], title: row.dimensions[0] || '/', attentionSeconds: Math.round(row.metrics[3]), exitRate: Math.round(row.metrics[4] * 1000) / 10 })), sourcePages: sourcePages.map(row => ({ source: row.dimensions[0] || 'Direto', path: row.dimensions[1] || '/', views: row.metrics[0], users: row.metrics[1] })), sourceMediumResults: sourceRows, devices: devices.map(row => ({ device: row.dimensions[0] || 'desktop', browser: row.dimensions[1] || 'Outro', views: row.metrics[0], users: row.metrics[1], newUsers: row.metrics[2], sessions: row.metrics[3], conversions: row.metrics[4] })), locations: locations.map(row => ({ country: row.dimensions[0], region: row.dimensions[1], city: row.dimensions[2], views: row.metrics[0], users: row.metrics[1], sessions: row.metrics[3], conversions: row.metrics[4] })), contactDetails, clickDetails: [...clickDetails, ...formClicks], conversionEvents: conversionEvents.filter(row => row.metrics[0] > 0).map(row => ({ date: ga4Date(row.dimensions[0]), type: eventType(row.dimensions[1]), name: row.dimensions[1] || 'Evento-chave GA4', stage: 'confirmada', path: row.dimensions[2] || '/', conversions: row.metrics[0], sessions: row.metrics[1] })), pageConversionResults: Array.from(pageConversionMap.values()).filter(row => row.sessions > 0 || row.contactSessions > 0), peakHours, filterPages: pages.map(row => ({ path: row.dimensions[0] || '/' })), filterSources: sourceRows.map(row => ({ source: row.source })), filterMediums: sourceRows.map(row => ({ medium: row.medium })), filterCampaigns: sourceRows.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.dimensions[0] || 'desktop' })), filterBrowsers: devices.map(row => ({ browser: row.dimensions[1] || 'Outro' })), periodDays: dailyRows.length, sourceKind: 'ga4' })
+  } catch (error) { return json({ error: error instanceof Error ? error.message : 'Não foi possível consultar o GA4.' }, 502) }
+}
+
+function ga4StoredRangeQuery(dailyTable: string, monthlyTable: string, columns: string[], siteId: string, propertyId: string, start: string, end: string, today: string) {
+  const dailyCutoff = shiftMonths(today, -5)
+  const monthlyEnd = monthStart(end < dailyCutoff ? end : shiftDate(dailyCutoff, -1))
+  const parts: string[] = []
+  const params: unknown[] = []
+  if (start < dailyCutoff) {
+    parts.push(`select ${columns.join(', ')}, month_start as period_date from ${monthlyTable} where supabase_site_id = ? and property_id = ? and month_start >= ? and month_start <= ?`)
+    params.push(siteId, propertyId, monthStart(start), monthlyEnd)
+  }
+  if (end >= dailyCutoff) {
+    parts.push(`select ${columns.join(', ')}, metric_date as period_date from ${dailyTable} where supabase_site_id = ? and property_id = ? and metric_date >= ? and metric_date <= ?`)
+    params.push(siteId, propertyId, start > dailyCutoff ? start : dailyCutoff, end)
+  }
+  return { sql: parts.join(' union all '), params }
+}
+
+function ga4Number(row: Record<string, unknown>, key: string) { return Number(row[key] || 0) }
+function ga4Text(row: Record<string, unknown>, key: string, fallback = '') { return typeof row[key] === 'string' && row[key] ? row[key] as string : fallback }
+function ga4FilterRows(rows: Array<Record<string, unknown>>, filters: Record<string, string>, fields: Record<string, string>) {
+  return rows.filter(row => Object.entries(fields).every(([filter, column]) => !filters[filter] || ga4Text(row, column).toLowerCase() === filters[filter].toLowerCase()))
+}
+
+function ga4Aggregate(rows: Array<Record<string, unknown>>, keys: string[], sums: string[]) {
+  const map = new Map<string, Record<string, unknown>>()
+  for (const row of rows) {
+    const key = keys.map(column => ga4Text(row, column)).join('\u001f')
+    const current = map.get(key) || Object.fromEntries(keys.map(column => [column, row[column]]))
+    for (const column of sums) current[column] = ga4Number(current, column) + ga4Number(row, column)
+    map.set(key, current)
+  }
+  return Array.from(map.values())
+}
+
+async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return json({ error: 'A integração GA4 ainda não foi configurada no servidor.' }, 503)
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const site = await ownedSite(compactText(query.get('siteId'), 64), user, env)
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  const connectionResult = await env.ANALIZI_EVENTS.batch([
+    env.ANALIZI_EVENTS.prepare('select property_id, last_synced_at, last_error from ga4_connections where supabase_site_id = ?').bind(site.id)
+  ]) as Array<{ results?: Array<{ property_id: string, last_synced_at?: string | null, last_error?: string | null }> }>
+  const connection = connectionResult[0]?.results?.[0]
+  if (!connection) return json({ error: 'Nenhuma propriedade GA4 está conectada a este site.' }, 404)
+
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  const end = validDate(query.get('end')) && query.get('end')! < today ? query.get('end')! : shiftDate(today, -1)
+  const start = validDate(query.get('start')) && query.get('start')! <= end ? query.get('start')! : shiftDate(end, -6)
+  const group = query.get('group') || 'day'
+  const dailyCutoff = shiftMonths(today, -5)
+  if (start < dailyCutoff && (group === 'day' || group === 'week')) {
+    return json({ error: 'Períodos acima de seis meses só podem ser analisados com granularidade mensal ou superior.' }, 400)
+  }
+  const filters = {
+    page: compactText(query.get('page'), 1024),
+    source: compactText(query.get('source'), 120),
+    medium: compactText(query.get('medium'), 120),
+    campaign: compactText(query.get('campaign'), 240),
+    device: compactText(query.get('device'), 32),
+    browser: compactText(query.get('browser'), 80),
+  }
+  try {
+    const periodDays = Math.max(1, Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1)
+    const previousStart = shiftDate(start, -periodDays)
+    const previousEnd = shiftDate(start, -1)
+    const tableQueries = [
+      ga4StoredRangeQuery('ga4_daily_metrics', 'ga4_monthly_metrics', ['sessions', 'users', 'new_users', 'page_views', 'key_events', 'average_session_duration'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_source_medium_results', 'ga4_monthly_source_medium_results', ['source', 'medium', 'campaign', 'sessions', 'page_views', 'users', 'new_users', 'key_events', 'general_clicks', 'contact_clicks', 'whatsapp_clicks', 'sign_ups', 'logins', 'conversions'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_pages', 'ga4_monthly_pages', ['page_path', 'page_views', 'users', 'sessions', 'key_events', 'bounce_rate', 'average_session_duration'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_source_pages', 'ga4_monthly_source_pages', ['source', 'landing_page', 'sessions', 'users'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_devices', 'ga4_monthly_devices', ['device_type', 'browser', 'sessions', 'users', 'new_users', 'page_views', 'key_events'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_locations', 'ga4_monthly_locations', ['country', 'region', 'city', 'sessions', 'users', 'page_views', 'key_events'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_contacts', 'ga4_monthly_contacts', ['contact_type', 'page_path', 'contacts', 'sessions'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_clicks', 'ga4_monthly_clicks', ['dimension_key', 'page_path', 'label', 'button_id', 'destination', 'intent', 'is_contact_lead', 'clicks', 'sessions'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_conversion_events', 'ga4_monthly_conversion_events', ['conversion_type', 'conversion_name', 'conversion_stage', 'page_path', 'conversions', 'sessions'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_peak_hours', 'ga4_monthly_peak_hours', ['day_of_week', 'hour_of_day', 'sessions', 'page_views', 'key_events'], site.id, connection.property_id, start, end, today),
+      ga4StoredRangeQuery('ga4_daily_metrics', 'ga4_monthly_metrics', ['sessions', 'users', 'new_users', 'page_views', 'key_events', 'average_session_duration'], site.id, connection.property_id, previousStart, previousEnd, today),
+    ]
+    const result = await env.ANALIZI_EVENTS.batch(tableQueries.map(item => env.ANALIZI_EVENTS.prepare(item.sql).bind(...item.params))) as Array<{ results?: Array<Record<string, unknown>> }>
+    const rows = result.map(item => item.results || [])
+    const metricRows = rows[0]
+    const sourceRows = ga4FilterRows(rows[1], filters, { source: 'source', medium: 'medium', campaign: 'campaign' })
+    const pageRows = ga4FilterRows(rows[2], filters, { page: 'page_path' })
+    const sourcePageRows = ga4FilterRows(rows[3], filters, { page: 'landing_page', source: 'source' })
+    const deviceRows = ga4FilterRows(rows[4], filters, { device: 'device_type', browser: 'browser' })
+    const locationRows = rows[5]
+    const contactRows = ga4FilterRows(rows[6], filters, { page: 'page_path' })
+    const clickRows = ga4FilterRows(rows[7], filters, { page: 'page_path' })
+    const conversionRows = ga4FilterRows(rows[8], filters, { page: 'page_path' })
+    const peakRows = rows[9]
+    const previousMetricRows = rows[10]
+
+    const daily = metricRows
+      .map(row => ({ date: ga4Text(row, 'period_date'), pageViews: ga4Number(row, 'page_views'), users: ga4Number(row, 'users'), newUsers: ga4Number(row, 'new_users'), sessions: ga4Number(row, 'sessions'), contacts: ga4Number(row, 'key_events'), attentionSeconds: ga4Number(row, 'average_session_duration') }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    const totals = daily.reduce((sum, row) => ({ pageViews: sum.pageViews + row.pageViews, users: sum.users + row.users, newUsers: sum.newUsers + row.newUsers, sessions: sum.sessions + row.sessions, contacts: sum.contacts + row.contacts, contactSessions: sum.contactSessions + row.contacts, attentionSeconds: sum.attentionSeconds + row.attentionSeconds * row.sessions }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
+    totals.attentionSeconds = totals.sessions ? Math.round(totals.attentionSeconds / totals.sessions) : 0
+    const sourceMediumResults = ga4Aggregate(sourceRows, ['source', 'medium', 'campaign'], ['sessions', 'page_views', 'users', 'new_users', 'key_events', 'general_clicks', 'contact_clicks', 'whatsapp_clicks', 'sign_ups', 'logins', 'conversions']).map(row => ({ source: ga4Text(row, 'source', 'Direto'), medium: ga4Text(row, 'medium', 'direto'), campaign: ga4Text(row, 'campaign'), page: '', device: '', browser: '', pageViews: ga4Number(row, 'page_views'), users: ga4Number(row, 'users'), newUsers: ga4Number(row, 'new_users'), sessions: ga4Number(row, 'sessions'), conversions: ga4Number(row, 'conversions'), generalClicks: ga4Number(row, 'general_clicks'), contactClicks: ga4Number(row, 'contact_clicks'), whatsappClicks: ga4Number(row, 'whatsapp_clicks'), signUps: ga4Number(row, 'sign_ups'), logins: ga4Number(row, 'logins') }))
+    const sources = Array.from(sourceMediumResults.reduce((map, row) => map.set(row.source, (map.get(row.source) || 0) + row.sessions), new Map<string, number>())).map(([name, value]) => ({ name, value }))
+    const pageAggregates = new Map<string, { page_views: number, users: number, sessions: number, key_events: number, attention_weight: number, bounce_weight: number }>()
+    pageRows.forEach(row => {
+      const path = ga4Text(row, 'page_path', '/')
+      const current = pageAggregates.get(path) || { page_views: 0, users: 0, sessions: 0, key_events: 0, attention_weight: 0, bounce_weight: 0 }
+      const sessions = ga4Number(row, 'sessions')
+      current.page_views += ga4Number(row, 'page_views')
+      current.users += ga4Number(row, 'users')
+      current.sessions += sessions
+      current.key_events += ga4Number(row, 'key_events')
+      current.attention_weight += ga4Number(row, 'average_session_duration') * sessions
+      current.bounce_weight += ga4Number(row, 'bounce_rate') * sessions
+      pageAggregates.set(path, current)
+    })
+    const pages = Array.from(pageAggregates.entries()).map(([path, row]) => ({ path, views: row.page_views, title: path, attentionSeconds: row.sessions ? Math.round(row.attention_weight / row.sessions) : 0, exitRate: row.sessions ? Math.round((row.bounce_weight / row.sessions) * 10) / 10 : 0 }))
+    const sourcePages = ga4Aggregate(sourcePageRows, ['source', 'landing_page'], ['sessions', 'users']).map(row => ({ source: ga4Text(row, 'source', 'Direto'), path: ga4Text(row, 'landing_page', '/'), views: ga4Number(row, 'sessions'), users: ga4Number(row, 'users') }))
+    const devices = ga4Aggregate(deviceRows, ['device_type', 'browser'], ['page_views', 'users', 'new_users', 'sessions', 'key_events']).map(row => ({ device: ga4Text(row, 'device_type', 'desktop'), browser: ga4Text(row, 'browser', 'Outro'), views: ga4Number(row, 'page_views'), users: ga4Number(row, 'users'), newUsers: ga4Number(row, 'new_users'), sessions: ga4Number(row, 'sessions'), conversions: ga4Number(row, 'key_events') }))
+    const locations = ga4Aggregate(locationRows, ['country', 'region', 'city'], ['page_views', 'users', 'sessions', 'key_events']).map(row => ({ country: ga4Text(row, 'country'), region: ga4Text(row, 'region'), city: ga4Text(row, 'city'), views: ga4Number(row, 'page_views'), users: ga4Number(row, 'users'), sessions: ga4Number(row, 'sessions'), conversions: ga4Number(row, 'key_events') }))
+    const contactDetails = ga4Aggregate(contactRows, ['period_date', 'contact_type', 'page_path'], ['contacts', 'sessions']).map(row => ({ date: ga4Text(row, 'period_date'), type: ga4Text(row, 'contact_type'), path: ga4Text(row, 'page_path', '/'), contacts: ga4Number(row, 'contacts') }))
+    const clickDetails = ga4Aggregate(clickRows, ['period_date', 'dimension_key'], ['clicks', 'sessions']).map(row => ({ date: ga4Text(row, 'period_date'), path: ga4Text(row, 'page_path', '/'), label: ga4Text(row, 'label', 'Link externo'), buttonId: ga4Text(row, 'button_id') || undefined, destination: ga4Text(row, 'destination') || undefined, intent: ga4Text(row, 'intent', 'link_externo'), isContactLead: ga4Number(row, 'is_contact_lead'), clicks: ga4Number(row, 'clicks'), sessions: ga4Number(row, 'sessions') }))
+    const conversionEvents = ga4Aggregate(conversionRows, ['period_date', 'conversion_type', 'conversion_name', 'conversion_stage', 'page_path'], ['conversions', 'sessions']).map(row => ({ date: ga4Text(row, 'period_date'), type: ga4Text(row, 'conversion_type'), name: ga4Text(row, 'conversion_name'), stage: ga4Text(row, 'conversion_stage', 'confirmada'), path: ga4Text(row, 'page_path', '/'), conversions: ga4Number(row, 'conversions'), sessions: ga4Number(row, 'sessions') }))
+    const peakHours = ga4Aggregate(peakRows, ['day_of_week', 'hour_of_day'], ['sessions', 'page_views', 'key_events']).map(row => ({ dayOfWeek: ga4Number(row, 'day_of_week'), hourOfDay: ga4Number(row, 'hour_of_day'), sessions: ga4Number(row, 'sessions'), views: ga4Number(row, 'page_views'), contacts: ga4Number(row, 'key_events') }))
+    const previousTotals = previousMetricRows.reduce<{ pageViews: number, users: number, newUsers: number, sessions: number, contacts: number, contactSessions: number, attentionSeconds: number }>((sum, row) => ({ pageViews: sum.pageViews + ga4Number(row, 'page_views'), users: sum.users + ga4Number(row, 'users'), newUsers: sum.newUsers + ga4Number(row, 'new_users'), sessions: sum.sessions + ga4Number(row, 'sessions'), contacts: sum.contacts + ga4Number(row, 'key_events'), contactSessions: sum.contactSessions + ga4Number(row, 'key_events'), attentionSeconds: sum.attentionSeconds + ga4Number(row, 'average_session_duration') * ga4Number(row, 'sessions') }), { pageViews: 0, users: 0, newUsers: 0, sessions: 0, contacts: 0, contactSessions: 0, attentionSeconds: 0 })
+    previousTotals.attentionSeconds = previousTotals.sessions ? Math.round(previousTotals.attentionSeconds / previousTotals.sessions) : 0
+    const pageConversionMap = new Map<string, { path: string, sessions: number, whatsappClicks: number, signUps: number, contactSessions: number }>()
+    pages.forEach(row => pageConversionMap.set(row.path, { path: row.path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }))
+    pageRows.forEach(row => {
+      const path = ga4Text(row, 'page_path', '/')
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      current.sessions += ga4Number(row, 'sessions')
+      pageConversionMap.set(path, current)
+    })
+    contactRows.forEach(row => {
+      const path = ga4Text(row, 'page_path', '/')
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      if (ga4Text(row, 'contact_type') === 'contact_session') current.contactSessions += ga4Number(row, 'sessions')
+      if (ga4Text(row, 'contact_type') === 'form_submit') current.signUps += ga4Number(row, 'contacts')
+      pageConversionMap.set(path, current)
+    })
+    clickRows.forEach(row => {
+      if (ga4Text(row, 'intent') !== 'whatsapp') return
+      const path = ga4Text(row, 'page_path', '/')
+      const current = pageConversionMap.get(path) || { path, sessions: 0, whatsappClicks: 0, signUps: 0, contactSessions: 0 }
+      current.whatsappClicks += ga4Number(row, 'clicks')
+      pageConversionMap.set(path, current)
+    })
+    return json({ totals, previousTotals, daily, sources, pages, sourcePages, sourceMediumResults, devices, locations, contactDetails, clickDetails, conversionEvents, pageConversionResults: Array.from(pageConversionMap.values()).filter(row => row.sessions > 0 || row.contactSessions > 0), peakHours, filterPages: pages.map(row => ({ path: row.path })), filterSources: sourceMediumResults.map(row => ({ source: row.source })), filterMediums: sourceMediumResults.map(row => ({ medium: row.medium })), filterCampaigns: sourceMediumResults.map(row => ({ campaign: row.campaign })), filterDevices: devices.map(row => ({ device: row.device })), filterBrowsers: devices.map(row => ({ browser: row.browser })), periodDays: daily.length, sourceKind: 'ga4', dataSource: 'd1', granularity: start < dailyCutoff ? (end >= dailyCutoff ? 'mixed' : 'monthly') : 'daily', lastSyncedAt: connection.last_synced_at || null, lastSyncError: connection.last_error || null })
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Não foi possível consultar os dados persistidos do GA4.' }, 500)
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+    if (request.method === 'OPTIONS' && url.pathname.startsWith('/v1/ga4/')) {
+      return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' } })
+    }
     if (url.pathname === '/v1/events' || url.pathname === '/v1/sync' || url.pathname === '/v1/collect') {
       return collect(request, env)
     }
@@ -1792,6 +2848,10 @@ export default {
       return new Response(assetRes.body, { status: assetRes.status, headers })
     }
     if (url.pathname === '/v1/tracker-sites') return provisionTrackerSite(request, env)
+    if (url.pathname === '/v1/ga4/properties' && request.method === 'POST') return ga4Properties(request, env)
+    if (url.pathname === '/v1/ga4/connect' && request.method === 'POST') return ga4Connect(request, env)
+    if (url.pathname === '/v1/ga4/disconnect' && request.method === 'POST') return ga4Disconnect(request, env)
+    if (url.pathname === '/v1/ga4/analytics' && request.method === 'GET') return ga4Analytics(request, env, url.searchParams)
     const statusMatch = url.pathname.match(/^\/v1\/tracker-sites\/(ANLZ[A-Z0-9]{5}-A)\/status$/i)
     if (statusMatch) return trackerStatus(statusMatch[1], env)
     const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)
@@ -1801,10 +2861,19 @@ export default {
     if (url.pathname === '/v1/ai-insights') return generateAIInsights(request, env)
     return env.ASSETS.fetch(request)
   },
-  async scheduled(_event: unknown, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
-    ctx.waitUntil(Promise.all([
-      runDailyConsolidationAndCleanup(env),
-      runScheduledWeeklyInsights(env)
-    ]))
+  async scheduled(event: { cron?: string }, env: Env, ctx: { waitUntil: (p: Promise<unknown>) => void }): Promise<void> {
+    const jobs: Promise<void>[] = []
+    const isDaily = event.cron === '0 3 * * *'
+    const isWeekly = event.cron === '15 3 * * 1'
+    if (event.cron === '*/30 * * * *') {
+      jobs.push(runDailyConsolidationAndCleanup(env, true))
+    }
+    if (isDaily) {
+      jobs.push(runDailyConsolidationAndCleanup(env), runScheduledGa4Sync(env))
+    }
+    if (isWeekly || !event.cron) {
+      jobs.push(runMonthlyConsolidationAndRetention(env), runScheduledWeeklyInsights(env))
+    }
+    ctx.waitUntil(Promise.all(jobs))
   },
 }

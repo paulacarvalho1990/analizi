@@ -2,6 +2,7 @@ import { BarChart3, Compass, FileText, Flame, Lightbulb, LogOut, Menu, Moon, Set
 import { useEffect, type ReactNode } from 'react'
 import { BrandLogo } from './BrandLogo'
 import { WorkspaceSelector, NewSiteModal } from './WorkspaceSelector'
+import { APP_VERSION } from '../lib/version'
 
 export type Page = 'dashboard' | 'acquisition' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup'
 
@@ -92,7 +93,13 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
           <Settings size={20} />
         </button>
       </header>
-      <main className="main-content">{children}</main>
+      <main className="main-content">
+        {children}
+        <footer className="app-footer" aria-label="Versão do Analizi">
+          <span>Analizi</span>
+          <span>{APP_VERSION}</span>
+        </footer>
+      </main>
       <NewSiteModal onSiteCreated={() => navigate('data-sources')} />
       <nav className="mobile-nav" aria-label="Menu de navegação mobile">
         {nav.map(({ id, shortLabel, label, icon: Icon, badge }) => (

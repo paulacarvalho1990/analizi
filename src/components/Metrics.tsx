@@ -81,12 +81,6 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     why: 'Indica a eficiência do seu site em converter visitantes curiosos em leads quentes.',
     tip: 'Se estiver abaixo de 2%, reforce depoimentos, clareza da oferta e garantias.'
   },
-  'Taxa de conversão': {
-    caption: 'Percentual de visitas que geraram contato',
-    what: 'Porcentagem das visitas totais que completaram uma ação de contato ou cadastro.',
-    why: 'Mede o poder de persuasão do seu site para transformar visitas em oportunidades.',
-    tip: 'Torne a oferta irresistível e reduza o número de passos até o contato.'
-  },
   'Origem principal': {
     caption: 'Canal de onde chegou a maior parte do público',
     what: 'Canal de divulgação que trouxe o maior volume absoluto de visitantes para o site.',
@@ -139,7 +133,7 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     caption: 'Comparativo entre visitantes espontâneos e anúncios pagos',
     what: 'Separação entre pessoas que entraram espontaneamente (Google, direto) e tráfego pago (Meta Ads, Google Ads).',
     why: 'Indica a sustentabilidade do negócio e o retorno de cada canal de aquisição.',
-    tip: 'Combine SEO de longo prazo com anúncios focados em conversão direta.'
+    tip: 'Combine SEO de longo prazo com anúncios focados em gerar contatos diretos.'
   },
   'Downloads de arquivos': {
     caption: 'Arquivos baixados pelos visitantes',
@@ -283,7 +277,7 @@ export function DualMetricCard({
   paidShare = "—",
   paidContacts = 0,
   paidConvRate = "—",
-  caption = "Comparativo de volume e conversão entre busca espontânea e anúncios pagos"
+  caption = "Comparativo de volume e contatos entre busca espontânea e anúncios pagos"
 }: {
   title?: string
   organicSessions?: number | string
