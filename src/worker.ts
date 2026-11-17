@@ -1,3 +1,4 @@
+import { chatJSON, type WorkersAI } from './insights/llm'
 import { buildWeeklyInsights, lastClosedWeek, type AIInsight, type BusinessContext } from './insights/engine'
 import { derive, REPORT_KINDS, type ReportData, type ReportKind } from './reports/derive'
 import { buildReportInsights } from './reports/insights'
@@ -18,6 +19,8 @@ interface AssetFetcher {
 interface Env {
   ANALIZI_EVENTS: D1Database
   ASSETS: AssetFetcher
+  AI?: WorkersAI
+  AI_GATEWAY_ID?: string
   DEEPINFRA_API_KEY?: string
   SUPABASE_URL?: string
   SUPABASE_ANON_KEY?: string
@@ -1218,8 +1221,8 @@ function buildRuleBasedFallback(
   return list
 }
 
-async function runDeepInfraAnalysis(
-  apiKey: string,
+async function runAIAnalysis(
+  env: Env,
   business: { name?: string; segment?: string; subsegment?: string; segmentDetail?: string },
   metrics: {
     periodDays?: number
@@ -1303,15 +1306,7 @@ Responda ESTRITAMENTE um objeto JSON no formato:
 }`
 
   try {
-    const aiResponse = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: 'meta-llama/Llama-3.3-70B-Instruct',
-        messages: [
+    const rawContent = await chatJSON(env, [
           {
             role: 'system',
             content: 'Você é o IZI INTELLIGENCE. Responda APENAS um JSON válido seguindo a estrutura solicitada sem textos adicionais.'
@@ -1320,23 +1315,12 @@ Responda ESTRITAMENTE um objeto JSON no formato:
             role: 'user',
             content: prompt
           }
-        ],
-        temperature: 0.3,
-        response_format: { type: 'json_object' }
-      })
-    })
-
-    if (!aiResponse.ok) {
-      console.error('DeepInfra error status:', aiResponse.status)
-      return null
-    }
-
-    const aiData = (await aiResponse.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const rawContent = aiData.choices?.[0]?.message?.content || '{}'
+        ], 0.3)
+    if (!rawContent) return null
     const parsed = JSON.parse(rawContent) as { insights?: AIInsight[] }
     return Array.isArray(parsed.insights) && parsed.insights.length > 0 ? parsed.insights : null
   } catch (err) {
-    console.error('Falha na chamada DeepInfra:', err)
+    console.error('Falha na análise de IA:', err)
     return null
   }
 }
@@ -1454,11 +1438,11 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
     // Insights comparativos calculados no servidor a partir do D1 (última semana fechada).
     const window = lastClosedWeek(isoDate(new Date()), shiftDate)
     const savedBusiness = await fetchBusinessContext(env, safeSiteId)
-    finalInsights = (await buildWeeklyInsights(env.ANALIZI_EVENTS, safeSiteId, window, savedBusiness || business || {}, env.DEEPINFRA_API_KEY)).insights
+    finalInsights = (await buildWeeklyInsights(env.ANALIZI_EVENTS, safeSiteId, window, savedBusiness || business || {}, env)).insights
   } else {
     let generated: AIInsight[] | null = null
-    if (env.DEEPINFRA_API_KEY) {
-      generated = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, business || {}, metrics || {}, scope)
+    if (env.AI || env.DEEPINFRA_API_KEY) {
+      generated = await runAIAnalysis(env, business || {}, metrics || {}, scope)
     }
     finalInsights = generated || buildRuleBasedFallback(business || {}, metrics || {}, scope)
   }
@@ -1622,7 +1606,7 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
         sId,
         week,
         (await fetchBusinessContext(env, sId)) || {},
-        env.DEEPINFRA_API_KEY
+        env
       )
       const nowIso = new Date().toISOString()
       const insightId = `ins_${sId}_${currentWeek}`
