@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users, Activity, CreditCard, Mail, Search, Minus, UserMinus, TrendingDown, X } from 'lucide-react'
 import { AppShell, type Page } from './components/AppShell'
 import { BrandLogo } from './components/BrandLogo'
 import { MetricCard, DualMetricCard } from './components/Metrics'
@@ -8,7 +8,7 @@ import { Button } from './components/ui/Button'
 import { AuthFlow, CONSENT_VERSION, type AuthFlowMode } from './components/AuthFlow'
 import { LandingPage } from './components/LandingPage'
 import { supabase } from './lib/supabase'
-import { BusinessProvider, useBusiness, type BusinessItem, type SiteItem } from './lib/business-context'
+import { BusinessProvider, useBusiness, PLAN_DEFINITIONS, type BusinessItem, type SiteItem, type PlanMetadata } from './lib/business-context'
 import { BrazilGeoMap } from './components/BrazilMap'
 
 const ITEMS_PER_PAGE = 25
@@ -1028,7 +1028,7 @@ function Audience() {
           {visibleSources.map(item => (
             <div className="source-pages-row" key={`${item.source}-${item.path}`}>
               <span><b>{normalizeOriginName(item.source)}</b></span>
-              <span><code className="path-code">{item.path}</code></span>
+              <span><code className="path-code">{item.path}</code>{item.path === '/' && <span className="home-page-badge">Página inicial</span>}</span>
               <span><b>{Number(item.views || 0).toLocaleString('pt-BR')}</b></span>
               <span>{Number(item.users || 0).toLocaleString('pt-BR')}</span>
             </div>
@@ -1478,7 +1478,7 @@ function Results() {
                 return (
                   <div className="conversion-detail-row" key={`${item.path}-${index}`}>
                     <span title={item.path} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      <code className="path-code">{item.path}</code>
+                      <code className="path-code">{item.path}</code>{item.path === '/' && <span className="home-page-badge">Página inicial</span>}
                     </span>
                     <span>{Number(item.sessions || 0).toLocaleString('pt-BR')}</span>
                     <span>
@@ -1601,7 +1601,7 @@ function Results() {
             <div className="click-detail-row" key={`${item.date}-${item.label}-${item.path}-${index}`}>
               <span><b>{item.date.slice(5).split('-').reverse().join('/')}</b></span>
               <span><b>{item.label}</b>{item.buttonId ? <small>#{item.buttonId}</small> : null}</span>
-              <span><code className="path-code">{item.path}</code></span>
+              <span><code className="path-code">{item.path}</code>{item.path === '/' && <span className="home-page-badge">Página inicial</span>}</span>
               <span>{item.destination ? <small title={item.destination} className="click-destination">{item.destination}</small> : '—'}</span>
               <span><b>{Number(item.clicks || 0).toLocaleString('pt-BR')}</b></span>
             </div>
@@ -1634,7 +1634,7 @@ function Results() {
             <span>{item.date.slice(5).split('-').reverse().join('/')}</span>
             <span><b>{conversionTypeLabel(item.type)}</b></span>
             <span>{item.name || '—'}</span>
-            <span><code className="path-code">{item.path}</code></span>
+            <span><code className="path-code">{item.path}</code>{item.path === '/' && <span className="home-page-badge">Página inicial</span>}</span>
             <span>{item.stage === 'confirmada' ? 'Confirmada' : 'Iniciada'}</span>
             <span><b>{Number(item.conversions || 0).toLocaleString('pt-BR')}</b></span>
           </div>
@@ -1726,50 +1726,109 @@ interface GeneratedInsight {
   projection: string
 }
 
+const INSIGHT_GLOSSARY: Array<{ term: string; test: RegExp; text: string }> = [
+  { term: 'CTA', test: /\bCTAs?\b/, text: 'Chamada para ação: botões ou links que levam a pessoa a entrar em contato, como “Fale no WhatsApp”.' },
+  { term: 'tráfego orgânico', test: /tr[áa]fego org[âa]nico/i, text: 'Visitas que chegam sem anúncio pago, como pelo resultado normal do Google.' },
+  { term: 'busca orgânica', test: /busca org[âa]nica/i, text: 'Visitas que chegam pelo resultado normal do Google, sem ser por anúncio pago.' },
+  { term: 'remarketing', test: /remarketing/i, text: 'Anúncio mostrado para quem já visitou o seu site.' },
+  { term: 'funil', test: /\bfunil\b/i, text: 'O caminho que a visita percorre até virar contato.' },
+  { term: 'taxa de saída', test: /taxa de sa[íi]da/i, text: 'Percentual de visitas que deixam a página sem continuar no site.' },
+  { term: 'taxa de rejeição', test: /taxa de rejei[çc][ãa]o|bounce/i, text: 'Percentual de visitas que saem do site sem interagir com nada.' },
+  { term: 'UTM', test: /\bUTMs?\b/, text: 'Etiqueta colocada no link para mostrar de qual campanha a visita veio.' }
+]
+
 function formatInsightText(value: string) {
   return value
-    .replace(/([“"'])\/([”"'])/g, '$1PÁGINA INICIAL$2')
-    .replace(/(^|[\s("'“”])\/(?=$|[\s,.;:!?'"“”])/g, '$1PÁGINA INICIAL')
-    .replace(/página\s+\/(?=[\s,.;:!?]|$)/gi, 'PÁGINA INICIAL')
-    .replace(/\bCTA\b(?!\s*\()/g, 'CTA (chamada para ação, como botões de contato ou links de formulário)')
-    .replace(/\btráfego orgânico\b(?!\s*\()/gi, 'tráfego orgânico (visitas que chegam sem anúncio pago)')
-    .replace(/\bremarketing\b(?!\s*\()/gi, 'remarketing (anúncio para quem já visitou seu site)')
-    .replace(/\bfunil\b(?!\s*\()/gi, 'funil (caminho da visita até o contato)')
-    .replace(/\btaxa de saída\b(?!\s*\()/gi, 'taxa de saída (percentual de visitas que deixam a página sem continuar)')
+    .replace(/([“"'])\/([”"'])/g, '$1página inicial$2')
+    .replace(/(^|[\s("'“”])\/(?=$|[\s,.;:!?'"“”])/g, '$1página inicial')
+    .replace(/página\s+\/(?=[\s,.;:!?]|$)/gi, 'página inicial')
 }
 
-function Insights() {
+type InsightKind = 'warn' | 'opp' | 'good'
+const INSIGHT_KIND_LABEL: Record<InsightKind, string> = { warn: 'Precisa de atenção', opp: 'Oportunidade', good: 'Indo bem' }
+const INSIGHT_PRIORITY: Record<InsightKind, string> = { warn: 'Prioridade alta', opp: 'Prioridade média', good: 'Manter' }
+const insightKind = (status: GeneratedInsight['status']): InsightKind => status === 'warning' ? 'warn' : status === 'positive' ? 'good' : 'opp'
+
+function insightTarget(item: GeneratedInsight): { page: Page; label: string } | null {
+  const text = `${item.type} ${item.badge} ${item.title}`.toLowerCase()
+  if (/p[áa]gina|page|conte[úu]do|rolagem|scroll/.test(text)) return { page: 'pages', label: 'Ver em Páginas' }
+  if (/whats|contato|convers|lead|formul|resultado/.test(text)) return { page: 'results', label: 'Ver em Resultados' }
+  if (/origem|canal|campanha|instagram|google|tr[áa]fego|aquisi|source|utm|an[úu]ncio/.test(text)) return { page: 'acquisition', label: 'Ver em Aquisição' }
+  if (/p[úu]blico|dispositivo|celular|hor[áa]rio|cidade|regi[ãa]o|audience/.test(text)) return { page: 'audience', label: 'Ver em Público' }
+  return null
+}
+
+function nextMonday(from = new Date()) {
+  const d = new Date(from)
+  const diff = (8 - d.getDay()) % 7 || 7
+  d.setDate(d.getDate() + diff)
+  return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(d)
+}
+
+function sparkPath(values: number[], w = 120, h = 34) {
+  if (values.length < 2) return { line: '', area: '' }
+  const max = Math.max(...values, 1)
+  const min = Math.min(...values, 0)
+  const span = max - min || 1
+  const pts = values.map((v, i) => [Math.round((i / (values.length - 1)) * w * 10) / 10, Math.round((h - 3 - ((v - min) / span) * (h - 8)) * 10) / 10])
+  const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0]} ${p[1]}`).join(' ')
+  return { line, area: `${line} L${w} ${h} L0 ${h} Z` }
+}
+
+function InsightKpi({ label, value, current, previous, series, color, invert }: { label: string; value: string; current?: number; previous?: number; series: number[]; color: string; invert?: boolean }) {
+  const now = Number(current || 0)
+  const before = Number(previous || 0)
+  const pct = before ? Math.round(((now - before) / before) * 100) : null
+  const up = pct !== null && pct >= 0
+  const good = invert ? !up : up
+  const sp = sparkPath(series)
+  return (
+    <div className="z-kpi">
+      <small>{label}</small>
+      <b>{value}</b>
+      {pct === null
+        ? <span className="z-delta neutral">Sem período anterior para comparar</span>
+        : <span className={`z-delta ${good ? '' : 'dn'}`}>{up ? '▲' : '▼'} {Math.abs(pct)}% vs. período anterior</span>}
+      {sp.line && (
+        <svg className="z-spark" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true">
+          <path d={sp.area} fill={color} fillOpacity=".14" />
+          <path d={sp.line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </div>
+  )
+}
+
+function Insights({ setPage }: { setPage: (page: Page) => void }) {
   const analytics = useAnalytics();
   const { currentBusiness, currentSite } = useBusiness();
   const [insights, setInsights] = useState<GeneratedInsight[]>([]);
   const [loadingAI, setLoadingAI] = useState(false);
-  const [modelLabel, setModelLabel] = useState<string>('IZI INTELLIGENCE');
-  const [scopeLabel, setScopeLabel] = useState<string>('semanal');
-  const [cachedNotice, setCachedNotice] = useState<boolean>(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [awaitingWeeklyReport, setAwaitingWeeklyReport] = useState(false);
+  const [filter, setFilter] = useState<'all' | InsightKind>('all');
+  const [openGloss, setOpenGloss] = useState<Record<string, boolean>>({});
+  const [toast, setToast] = useState<{ text: string; undoKey?: string } | null>(null);
 
-  const [readKeys, setReadKeys] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('analizi-viewed-insights') || '[]');
-    } catch {
-      return [];
-    }
+  const [doneKeys, setDoneKeys] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('analizi-viewed-insights') || '[]'); } catch { return []; }
   });
-
-  const toggleRead = (key: string) => {
-    setReadKeys((current) => {
-      const next = current.includes(key) ? current.filter((item) => item !== key) : [...current, key];
-      localStorage.setItem('analizi-viewed-insights', JSON.stringify(next));
-      return next;
-    });
+  const saveDone = (next: string[]) => {
+    setDoneKeys(next);
+    try { localStorage.setItem('analizi-viewed-insights', JSON.stringify(next)); } catch { /* armazenamento indisponível */ }
   };
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const fetchInsights = async () => {
     if (!analytics || !currentSite) return;
     setLoadingAI(true);
     try {
-      const res = await fetch('/v1/ai-insights', {
+      const res = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/ai-insights', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -1791,145 +1850,243 @@ function Insights() {
           }
         })
       });
-
       if (res.ok) {
-        const data = await res.json() as {
-          insights?: GeneratedInsight[];
-          model?: string;
-          scope?: string;
-          cached?: boolean;
-          generatedAt?: string;
-        };
+        const data = await res.json() as { insights?: GeneratedInsight[]; generatedAt?: string };
         if (data.insights && data.insights.length > 0) {
           setInsights(data.insights);
-          if (data.model) setModelLabel(data.model);
-          if (data.scope) setScopeLabel(data.scope);
-          setCachedNotice(Boolean(data.cached));
           setGeneratedAt(data.generatedAt || null);
           setAwaitingWeeklyReport(false);
-        } else if (res.status === 202) {
+        } else {
           setInsights([]);
-          setAwaitingWeeklyReport(true);
+          setAwaitingWeeklyReport(res.status === 202);
         }
       }
     } catch (err) {
       console.error('Erro ao gerar insights:', err);
     } finally {
       setLoadingAI(false);
+      setLoadedOnce(true);
     }
   };
 
   useEffect(() => {
-    if (analytics && currentSite) {
-      fetchInsights();
-    }
+    if (analytics && currentSite) void fetchInsights();
   }, [currentSite?.id, analytics]);
 
-  const activeInsights = insights;
-  const reportDate = generatedAt
-    ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'long' }).format(new Date(generatedAt))
-    : null;
+  const order: Record<InsightKind, number> = { warn: 0, opp: 1, good: 2 };
+  const all = insights
+    .map((item) => ({ ...item, id: item.key || item.title, kind: insightKind(item.status) }))
+    .sort((a, b) => order[a.kind] - order[b.kind]);
+  const open = all.filter((item) => !doneKeys.includes(item.id));
+  const done = all.filter((item) => doneKeys.includes(item.id));
+  const visible = open.filter((item) => filter === 'all' || item.kind === filter);
+  const count = (k: InsightKind) => open.filter((item) => item.kind === k).length;
+  const total = all.length;
+  const progress = total ? done.length / total : 0;
+
+  const t = analytics?.totals;
+  const p = analytics?.previousTotals;
+  const daily = analytics?.daily ?? [];
+  const rate = (c?: number, s?: number) => (s ? (Number(c || 0) / Number(s)) * 100 : 0);
+  const contactRate = t?.sessions ? `${rate(t.contactSessions, t.sessions).toFixed(1).replace('.', ',')}%` : '—';
+  const periodDays = analytics?.periodDays ?? selectedDays();
+  const reportDate = generatedAt ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long' }).format(new Date(generatedAt)) : null;
+
+  const headline = (() => {
+    if (!total) return '';
+    const parts: string[] = [];
+    if (count('warn')) parts.push(`${count('warn')} ${count('warn') === 1 ? 'ponto de atenção' : 'pontos de atenção'}`);
+    if (count('opp')) parts.push(`${count('opp')} ${count('opp') === 1 ? 'oportunidade' : 'oportunidades'}`);
+    if (count('good')) parts.push(`${count('good')} ${count('good') === 1 ? 'coisa indo bem' : 'coisas indo bem'}`);
+    if (!parts.length) return 'Você concluiu todas as recomendações desta semana.';
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}` : parts[0];
+    return `Nesta semana, a IZI encontrou ${list} no seu site.`;
+  })();
+
+  const markDone = (id: string) => { saveDone([...doneKeys, id]); setToast({ text: 'Marcado como feito', undoKey: id }); };
+  const undo = (id: string) => saveDone(doneKeys.filter((k) => k !== id));
+  const C = 213.6;
+
+  const chips: Array<{ id: 'all' | InsightKind; label: string; count: number }> = [
+    { id: 'all', label: 'Todos', count: open.length },
+    { id: 'warn', label: 'Atenção', count: count('warn') },
+    { id: 'opp', label: 'Oportunidades', count: count('opp') },
+    { id: 'good', label: 'Indo bem', count: count('good') }
+  ];
 
   return (
     <>
       <PageHeader
         title="Insights"
-        subtitle={`Diagnósticos inteligentes consolidados para o seu site (${scopeLabel}).`}
+        subtitle="O que mudou no seu site e o que fazer a seguir, em ordem de prioridade."
         eyebrow="INTELIGÊNCIA ARTIFICIAL"
         icon={Sparkles}
         iconColor="#ff3cac"
       />
-      <div className="insights-context-row">
-        <span className="badge-ia">
-          <Sparkles size={13} /> IZI INTELLIGENCE
-        </span>
-        <span className="source-badge">
-          <span className="source-badge-dot"></span>
-          {analytics?.sourceKind === 'ga4' ? 'GA4' : 'RASTREADOR ANALIZI ATIVO'}
-        </span>
-      </div>
-
-      <AnalyticsFilters analytics={analytics} />
 
       {loadingAI && !insights.length ? (
-        <section className="insights-loading-state" style={{ padding: 40, textAlign: 'center' }}>
-          <Sparkles size={32} className="spin" style={{ color: '#ff3cac', marginBottom: 12 }} />
-          <p style={{ fontSize: 14 }}>O Analizi está cruzando o comportamento do seu público com o seu segmento...</p>
+        <section className="z-hero" aria-busy="true">
+          <div className="z-hero-l">
+            <span className="z-izi"><span className="z-pulse pink" />Gerando agora</span>
+            <h2>Preparando o diagnóstico da semana</h2>
+            <div className="z-hero-meta"><span>A IZI está comparando o comportamento do seu público com o seu segmento. Leva cerca de 1 minuto. Pode sair desta tela, o diagnóstico fica salvo.</span></div>
+          </div>
+          <div className="z-kpis">
+            {[0, 1, 2].map((i) => <div className="z-kpi" key={i}><div className="z-skel dark" style={{ width: '60%' }} /><div className="z-skel dark" style={{ height: 26 }} /></div>)}
+          </div>
+        </section>
+      ) : !total ? (
+        <section className="z-card z-empty">
+          <div className="z-empty-ic"><Clock size={26} /></div>
+          <h3>{awaitingWeeklyReport ? 'Seu próximo diagnóstico fica pronto na segunda-feira' : loadedOnce ? 'Ainda não há insights para este site' : 'Carregando insights…'}</h3>
+          <p>{awaitingWeeklyReport
+            ? 'Os insights comparam semanas completas. Assim que a semana fechar, eles aparecem aqui sozinhos.'
+            : 'Para comparar semanas, o Analizi precisa de pelo menos 7 dias de dados do seu site. Confira se o rastreador está recebendo visitas.'}</p>
+          <Button variant="secondary" onClick={() => setPage('settings')}>Ver status do rastreador</Button>
         </section>
       ) : (
-        <section className="insights-modern-grid">
-          {awaitingWeeklyReport && !activeInsights.length && (
-            <article className="empty-tip" style={{ gridColumn: '1 / -1' }}>
-              <Sparkles size={22} />
-              <div>
-                <b>Seu próximo diagnóstico será preparado na segunda-feira.</b>
-                <p>Os insights são fechados semanalmente para comparar períodos completos, sem alterar a análise cada vez que a tela é aberta.</p>
+        <>
+          <section className="z-hero" aria-label="Resumo da semana">
+            <div className="z-hero-l">
+              <span className="z-izi"><Sparkles size={13} />Resumo da IZI Intelligence</span>
+              <h2>{headline}</h2>
+              <div className="z-hero-meta">
+                <span><Calendar size={14} />{reportDate ? `Diagnóstico gerado em ${reportDate}` : 'Diagnóstico semanal'}</span>
+                <span><RefreshCw size={14} />Próximo: {nextMonday()}</span>
               </div>
-            </article>
-          )}
-          {activeInsights.map((item) => {
-            const read = readKeys.includes(item.key || item.title);
-            const isPos = item.status === 'positive';
-            const isWarn = item.status === 'warning';
-            const badgeType = isWarn ? 'warning' : isPos ? 'success' : 'opportunity';
+            </div>
+            <div className="z-kpis" aria-label={`Seus números nos últimos ${periodDays} dias`}>
+              <InsightKpi label={`Usuários · ${periodDays} dias`} value={t?.users !== undefined ? Number(t.users).toLocaleString('pt-BR') : '—'} current={t?.users} previous={p?.users} series={daily.map((d) => Number(d.users || 0))} color="#8FB8FF" />
+              <InsightKpi label="Contatos iniciados" value={t?.contacts !== undefined ? Number(t.contacts).toLocaleString('pt-BR') : '—'} current={t?.contacts} previous={p?.contacts} series={daily.map((d) => Number(d.contacts || 0))} color="#FF7AC6" />
+              <InsightKpi label="Visitas que viram contato" value={contactRate} current={rate(t?.contactSessions, t?.sessions)} previous={rate(p?.contactSessions, p?.sessions)} series={daily.map((d) => rate(d.contacts, d.sessions))} color="#FFC48A" />
+            </div>
+          </section>
 
-            return (
-              <article
-                className={`insight-card-system ${read ? 'viewed' : ''}`}
-                key={item.key || item.title}
-              >
-                <div className={`insight-icon-box ${badgeType}`}>
-                  {isWarn ? (
-                    <AlertTriangle size={22} />
-                  ) : isPos ? (
-                    <CircleCheck size={22} />
-                  ) : (
-                    <Sparkles size={22} />
-                  )}
+          <div className="z-ins-layout">
+            <div className="z-ins-main">
+              <div className="z-toolbar">
+                <div className="z-seg" role="tablist" aria-label="Filtrar insights">
+                  {chips.map((c) => (
+                    <button key={c.id} type="button" role="tab" aria-selected={filter === c.id} className={`z-sg ${filter === c.id ? 'on' : ''}`} onClick={() => setFilter(c.id)}>
+                      {c.id !== 'all' && <span className={`z-dot ${c.id}`} />}{c.label}<em>{c.count}</em>
+                    </button>
+                  ))}
                 </div>
+                <span className="z-muted-sm">Ordenado por prioridade</span>
+              </div>
 
-                <div className="insight-content-system">
-                  <div className="insight-meta-row">
-                    <span className={`insight-badge-pill ${badgeType}`}>{item.badge}</span>
-                    <span className="insight-date-stamp">{reportDate ? `Atualizado em ${reportDate}` : 'Atualização semanal: segunda-feira'}</span>
+              <div className="z-list">
+                {visible.map((item) => {
+                  const terms = INSIGHT_GLOSSARY.filter((g) => g.test.test(`${item.title} ${item.finding} ${item.action} ${item.projection}`));
+                  const target = insightTarget(item);
+                  return (
+                    <article className={`z-ins ${item.kind}`} key={item.id}>
+                      <div className="z-ins-b">
+                        <div>
+                          <div className="z-ins-top">
+                            <span className="z-kind">
+                              {item.kind === 'warn' ? <AlertTriangle size={13} /> : item.kind === 'good' ? <CircleCheck size={13} /> : <Lightbulb size={13} />}
+                              {INSIGHT_KIND_LABEL[item.kind]}
+                            </span>
+                            <span className="z-muted-sm">{INSIGHT_PRIORITY[item.kind]}</span>
+                            {item.badge && <span className="z-mtag">{item.badge}</span>}
+                          </div>
+                          <h3>{formatInsightText(item.title)}</h3>
+                          <p className="z-finding">{formatInsightText(item.finding)}</p>
+                          {terms.length > 0 && (
+                            <div className="z-gloss-row">
+                              {terms.map((g) => {
+                                const gk = `${item.id}:${g.term}`;
+                                return (
+                                  <div key={gk}>
+                                    <button type="button" className="z-gl-btn" aria-expanded={!!openGloss[gk]} onClick={() => setOpenGloss({ ...openGloss, [gk]: !openGloss[gk] })}>O que é {g.term}?</button>
+                                    {openGloss[gk] && <p className="z-gl">{g.text}</p>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                          <div className="z-todo">
+                            <span className="z-todo-ic"><Check size={15} /></span>
+                            <div><h4>O que fazer</h4><p>{formatInsightText(item.action)}</p></div>
+                          </div>
+                        </div>
+                        <div className="z-evi">
+                          <span className="z-evi-h">O que esperar</span>
+                          <p>{formatInsightText(item.projection)}</p>
+                        </div>
+                      </div>
+                      <div className="z-ins-f">
+                        <small><BarChart3 size={13} />Baseado nos dados do Rastreador Analizi</small>
+                        <div className="z-ins-f-r">
+                          {target && <button type="button" className="z-lnk" onClick={() => setPage(target.page)}>{target.label}</button>}
+                          <button type="button" className="z-btn sec sm" onClick={() => markDone(item.id)}><Check size={14} />Marcar como feito</button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+                {!visible.length && (
+                  <div className="z-card z-empty">
+                    <div className="z-empty-ic"><CircleCheck size={26} /></div>
+                    <h3>{open.length ? 'Nada nesta categoria esta semana' : 'Tudo feito por esta semana'}</h3>
+                    <p>{open.length ? 'Escolha “Todos” para ver as outras recomendações.' : `Você concluiu todas as recomendações. O próximo diagnóstico chega ${nextMonday()}.`}</p>
                   </div>
+                )}
+              </div>
 
-                  <h3>{formatInsightText(item.title)}</h3>
-
-                  <div className="insight-box-block">
-                    <strong style={{ display: 'block', marginBottom: 4, color: 'var(--foreground)' }}>O que os dados mostram:</strong>
-                    <span>{formatInsightText(item.finding)}</span>
-                  </div>
-
-                  <div className="insight-action-grid">
-                    <div className="insight-sub-box">
-                      <span className="insight-sub-box-title">Recomendação prática:</span>
-                      <p>{formatInsightText(item.action)}</p>
+              {done.length > 0 && (
+                <details className="z-done" open={!open.length}>
+                  <summary>Feitos nesta semana ({done.length})</summary>
+                  {done.map((item) => (
+                    <div className="z-done-row" key={item.id}>
+                      <span><CircleCheck size={16} />{formatInsightText(item.title)}</span>
+                      <button type="button" className="z-btn ghost sm" onClick={() => undo(item.id)}>Desfazer</button>
                     </div>
+                  ))}
+                </details>
+              )}
+            </div>
 
-                    <div className="insight-sub-box">
-                      <span className="insight-sub-box-title">Projeção esperada:</span>
-                      <p>{formatInsightText(item.projection)}</p>
-                    </div>
-                  </div>
+            <aside className="z-rail">
+              <div className="z-card">
+                <h3>Seu progresso</h3>
+                <p className="z-sub" style={{ marginBottom: 14 }}>Recomendações desta semana</p>
+                <div className="z-ring">
+                  <svg width="78" height="78" viewBox="0 0 80 80" role="img" aria-label={`${done.length} de ${total} feitos`}>
+                    <circle cx="40" cy="40" r="34" fill="none" className="z-ring-bg" strokeWidth="8" />
+                    <circle cx="40" cy="40" r="34" fill="none" stroke="#D61F83" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${(progress * C).toFixed(1)} ${C}`} transform="rotate(-90 40 40)" />
+                  </svg>
+                  <div><b>{done.length} de {total}</b><p className="z-sub" style={{ margin: 0 }}>{!open.length ? 'Semana concluída' : done.length ? `Faltam ${open.length}` : 'Comece pelos pontos de atenção'}</p></div>
                 </div>
+              </div>
+              {open.length > 0 && (
+                <div className="z-card">
+                  <h3>Comece por aqui</h3>
+                  <ol className="z-rl">
+                    {open.slice(0, 3).map((item, n) => <li key={item.id}><i>{n + 1}</i><span>{formatInsightText(item.title)}</span></li>)}
+                  </ol>
+                </div>
+              )}
+              <div className="z-card z-soft">
+                <h3 className="z-h-ic"><Info size={16} />Como os insights funcionam</h3>
+                <p className="z-sub" style={{ marginTop: 8 }}>Toda segunda, a IZI compara a semana que fechou com a anterior, considerando o segmento do seu negócio{currentBusiness?.subsegment ? ` (${currentBusiness.subsegment})` : ''}. Por isso eles não mudam quando você troca as datas em outras telas.</p>
+              </div>
+            </aside>
+          </div>
+        </>
+      )}
 
-                <button
-                  className="insight-read"
-                  onClick={() => toggleRead(item.key || item.title)}
-                  title={read ? 'Marcar como não lido' : 'Marcar como resolvido'}
-                  style={{ alignSelf: 'flex-start', marginTop: 4 }}
-                >
-                  <span />
-                </button>
-              </article>
-            );
-          })}
-        </section>
+      {toast && (
+        <div className="z-toast" role="status">
+          <CircleCheck size={16} />{toast.text}
+          {toast.undoKey && <button type="button" className="z-btn ghost sm" onClick={() => { undo(toast.undoKey!); setToast(null); }}>Desfazer</button>}
+        </div>
       )}
     </>
   );
 }
+
 
 type AuthPage = 'loading' | 'landing' | 'login' | 'signup' | 'consent' | 'onboarding-business' | 'onboarding-source' | 'app'
 interface AnalyticsTotals { pageViews?: number, users?: number, newUsers?: number, sessions?: number, contacts?: number, whatsappContacts?: number, signUps?: number, formSubmits?: number, logins?: number, attentionSeconds?: number, contactSessions?: number }
@@ -2042,7 +2199,7 @@ function useAnalytics() {
         return;
       }
       const source = supabase ? await supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id) : null;
-      const ga4Connected = currentSite.analytics_source === 'ga4' && (source?.data?.some(item => item.kind === 'ga4' && item.status === 'connected') || false);
+      const ga4Connected = GA4_ENABLED && currentSite.analytics_source === 'ga4' && (source?.data?.some(item => item.kind === 'ga4' && item.status === 'connected') || false);
       const activeSource = ga4Connected ? 'ga4' : 'tracker';
 
       // Um site conectado somente ao GA4 não precisa, nem deve depender, de
@@ -2322,14 +2479,16 @@ function Landing({ setMode }: { setMode: (mode: AuthPage) => void }) {
 }
 
 function ConnectionStatus() {
-  const { currentSite } = useBusiness();
+  const { currentSite, loading: businessLoading } = useBusiness();
   const [state, setState] = useState<'loading' | 'none' | 'configured' | 'pending' | 'warning_24h' | 'inactive_24h' | 'ready'>('loading');
   const [updatedAt, setUpdatedAt] = useState('');
   const [ga4SyncIssue, setGa4SyncIssue] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
+    setState('loading');
     const load = async () => {
+      if (businessLoading) return;
       if (!currentSite?.id) {
         if (isMounted) { setState('none'); setGa4SyncIssue(false); }
         return;
@@ -2346,7 +2505,7 @@ function ConnectionStatus() {
           .eq('site_id', currentSite.id)
           .order('created_at', { ascending: false });
 
-        const ga4Mode = currentSite.analytics_source === 'ga4';
+        const ga4Mode = GA4_ENABLED && currentSite.analytics_source === 'ga4';
         const item = ga4Mode
           ? (source?.data ?? []).find(item => item.kind === 'ga4')
           : (source?.data ?? []).find(item => item.kind === 'tracker') || source?.data?.[0];
@@ -2482,9 +2641,16 @@ function ConnectionStatus() {
 
     void load();
     return () => { isMounted = false; };
-  }, [currentSite]);
+  }, [currentSite, businessLoading]);
 
-  if (state === 'loading') return null;
+  if (state === 'loading') {
+    return (
+      <article className="connection-status loading" aria-busy="true">
+        <b>CARREGANDO SEUS DADOS...</b>
+        <p>Estamos verificando a conexão do seu site. Isso leva só alguns segundos.</p>
+      </article>
+    );
+  }
   if (state === 'none') {
     return (
       <article className="connection-status danger">
@@ -2496,7 +2662,7 @@ function ConnectionStatus() {
   if (state === 'warning_24h') {
     return (
       <article className="connection-status danger">
-        <b>{currentSite?.analytics_source === 'ga4' ? (ga4SyncIssue ? 'A SINCRONIZAÇÃO DO GA4 PRECISA DE ATENÇÃO.' : 'DADOS DO GA4 AINDA NÃO CAPTURADOS.') : 'NENHUM EVENTO DETECTADO APÓS 24 HORAS.'}</b>
+        <b>{(GA4_ENABLED && currentSite?.analytics_source === 'ga4') ? (ga4SyncIssue ? 'A SINCRONIZAÇÃO DO GA4 PRECISA DE ATENÇÃO.' : 'DADOS DO GA4 AINDA NÃO CAPTURADOS.') : 'NENHUM EVENTO DETECTADO APÓS 24 HORAS.'}</b>
         <p>{currentSite?.analytics_source === 'ga4'
           ? (ga4SyncIssue ? `A última sincronização ${updatedAt ? `registrada em ${updatedAt} ` : ''}falhou ou está desatualizada. Verifique o erro do cron antes de considerar os dados atuais.` : 'A conexão foi autorizada, mas o cron ainda não confirmou dados persistidos. A primeira captura ocorre no próximo ciclo diário e a consulta fica disponível no dia seguinte.')
           : 'Seu site foi configurado há mais de 24 horas, mas ainda não recebemos visitas. Verifique se o código do rastreador foi publicado corretamente.'}</p>
@@ -2514,8 +2680,8 @@ function ConnectionStatus() {
   if (state === 'pending') {
     return (
       <article className="connection-status">
-        <b>{currentSite?.analytics_source === 'ga4' ? 'Google Analytics 4 conectado.' : 'Você acabou de conectar seu site.'}</b>
-        <p>{currentSite?.analytics_source === 'ga4' ? 'A conexão foi testada com sucesso. O próximo cron capturará os dados, que estarão disponíveis para consulta no dia seguinte.' : 'Seus dados serão coletados em até 24 horas.'}</p>
+        <b>{(GA4_ENABLED && currentSite?.analytics_source === 'ga4') ? 'Google Analytics 4 conectado.' : 'Você acabou de conectar seu site.'}</b>
+        <p>{(GA4_ENABLED && currentSite?.analytics_source === 'ga4') ? 'A conexão foi testada com sucesso. O próximo cron capturará os dados, que estarão disponíveis para consulta no dia seguinte.' : 'Seus dados serão coletados em até 24 horas.'}</p>
       </article>
     );
   }
@@ -2534,7 +2700,7 @@ function ConnectionStatus() {
 
   return (
     <article className="connection-status success">
-      <b>{currentSite?.analytics_source === 'ga4' ? `DADOS DO GA4 CAPTURADOS ATÉ ${yesterdayFormatted}.` : `DADOS COLETADOS ATÉ ${yesterdayFormatted}.`}</b>
+      <b>{(GA4_ENABLED && currentSite?.analytics_source === 'ga4') ? `DADOS DO GA4 CAPTURADOS ATÉ ${yesterdayFormatted}.` : `DADOS COLETADOS ATÉ ${yesterdayFormatted}.`}</b>
       <p>{updatedAt ? `Última sincronização: ${updatedAt}.` : 'A próxima atualização será exibida aqui.'}</p>
     </article>
   );
@@ -2657,7 +2823,7 @@ function Pages() {
               <div className="page-row" key={item.path}>
                 <span>
                   <b>{item.title || item.path}</b>
-                  <code className="path-code" style={{ marginTop: 3 }}>{item.path}</code>
+                  <code className="path-code" style={{ marginTop: 3 }}>{item.path}</code>{item.path === '/' && <span className="home-page-badge">Página inicial</span>}
                 </span>
                 <span><b>{Number(item.views || 0).toLocaleString('pt-BR')}</b></span>
                 <span>{duration(item.attentionSeconds)}</span>
@@ -2741,1018 +2907,713 @@ function formatSubscriptionStatus(status?: string): { label: string; badgeClass:
   }
 }
 
+type SettingsTab = 'coleta' | 'site' | 'pessoas' | 'plano' | 'avisos'
+interface TrackerStatus { received: boolean; lastEventAt: string | null }
+
+function relativeTime(iso?: string | null) {
+  if (!iso) return '—'
+  const diff = Date.now() - new Date(iso).getTime()
+  if (Number.isNaN(diff)) return '—'
+  const min = Math.round(diff / 60000)
+  if (min < 1) return 'agora'
+  if (min < 60) return `há ${min} min`
+  const h = Math.round(min / 60)
+  if (h < 24) return `há ${h} h`
+  const d = Math.round(h / 24)
+  return `há ${d} ${d === 1 ? 'dia' : 'dias'}`
+}
+
+function useTrackerStatus(trackerSiteId?: string) {
+  const [status, setStatus] = useState<TrackerStatus | null>(null)
+  const [checking, setChecking] = useState(false)
+  const check = async () => {
+    if (!trackerSiteId) { setStatus({ received: false, lastEventAt: null }); return null }
+    setChecking(true)
+    try {
+      const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${trackerSiteId}/status`)
+      const data = response.ok ? await response.json() as { received?: boolean; lastEventAt?: string | null } : null
+      const next = { received: Boolean(data?.received), lastEventAt: data?.lastEventAt || null }
+      setStatus(next)
+      return next
+    } catch {
+      setStatus((current) => current ?? { received: false, lastEventAt: null })
+      return null
+    } finally {
+      setChecking(false)
+    }
+  }
+  useEffect(() => { setStatus(null); void check() }, [trackerSiteId])
+  return { status, checking, check }
+}
+
+function SettingsToast({ text, onClose }: { text: string | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!text) return
+    const timer = window.setTimeout(onClose, 3500)
+    return () => window.clearTimeout(timer)
+  }, [text])
+  if (!text) return null
+  return <div className="z-toast" role="status"><CircleCheck size={16} />{text}</div>
+}
+
 function TeamSettings({ setPage }: { setPage: (page: Page) => void }) {
-  const {
-    currentBusiness,
-    currentSite,
-    effectivePlan,
-    subscriptionStatus,
-    subscriptionExpiresAt,
-    totalSitesCount,
-    setNewSiteModalOpen
-  } = useBusiness()
+  return <Settings setPage={setPage} initialTab="pessoas" />
+}
 
-  const businessId = currentBusiness?.id || ''
-  const siteDisplayName = currentSite?.name || currentBusiness?.name || 'Meu site'
+function DataSources({ setPage }: { setPage: (page: Page) => void }) {
+  return <Settings setPage={setPage} initialTab="coleta" />
+}
+
+function Settings({ setPage, initialTab = 'coleta' }: { setPage: (page: Page) => void; initialTab?: SettingsTab }) {
+  const { currentBusiness, currentSite, effectivePlan } = useBusiness()
+  const [tab, setTab] = useState<SettingsTab>(initialTab)
+  const [toast, setToast] = useState<string | null>(null)
+  useEffect(() => setTab(initialTab), [initialTab])
+  const tracker = useTrackerStatus(currentSite?.tracker_site_id)
+  const siteName = currentSite?.name || currentBusiness?.name || 'Meu site'
   const siteDomain = currentSite?.domain || currentBusiness?.website_url || ''
+  const initials = siteName.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'S'
+  const trackerOk = Boolean(tracker.status?.received)
 
-  const [currentUserId, setCurrentUserId] = useState<string>('')
+  const tabs: Array<{ id: SettingsTab; label: string; icon: React.ComponentType<{ size?: number }>; group?: string; dot?: 'ok' | 'warn' }> = [
+    { id: 'coleta', label: 'Coleta de dados', icon: Activity, group: 'Site', dot: tracker.status ? (trackerOk ? 'ok' : 'warn') : undefined },
+    { id: 'site', label: 'Dados do site', icon: Globe },
+    { id: 'pessoas', label: 'Pessoas com acesso', icon: Users, group: 'Conta' },
+    { id: 'plano', label: 'Plano e assinatura', icon: CreditCard },
+    { id: 'avisos', label: 'E-mails e alertas', icon: Mail }
+  ]
+
+  return (
+    <div className="z-settings">
+      <header className="z-sitebar">
+        <span className="z-sav">{initials}</span>
+        <div>
+          <span className="z-eyebrow">Configurações</span>
+          <h1>{siteName}</h1>
+          <div className="z-sd">
+            {siteDomain && <span>{siteDomain}</span>}
+            <span className="z-pill pink">{effectivePlan.name}</span>
+            {tracker.status && (trackerOk
+              ? <span className="z-pill ok"><span className="z-d" />Coletando dados</span>
+              : <span className="z-pill warn"><span className="z-d" />Rastreador sem dados</span>)}
+          </div>
+        </div>
+      </header>
+
+      <div className="z-set">
+        <nav className="z-tabs" aria-label="Seções das configurações">
+          {tabs.map(({ id, label, icon: Icon, group, dot }) => (
+            <div key={id} style={{ display: 'contents' }}>
+              {group && <span className="z-grp">{group}</span>}
+              <button type="button" className={`z-tab ${tab === id ? 'on' : ''}`} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+                <Icon size={18} />{label}{dot && <span className={`z-st ${dot}`} />}
+              </button>
+            </div>
+          ))}
+        </nav>
+        <section className="z-pane">
+          {tab === 'coleta' && <CollectionTab setPage={setPage} tracker={tracker} onToast={setToast} />}
+          {tab === 'site' && <SiteTab onToast={setToast} />}
+          {tab === 'pessoas' && <PeopleTab onToast={setToast} />}
+          {tab === 'plano' && <PlanTab />}
+          {tab === 'avisos' && <AlertsTab onToast={setToast} />}
+        </section>
+      </div>
+      <SettingsToast text={toast} onClose={() => setToast(null)} />
+    </div>
+  )
+}
+
+function CollectionTab({ setPage, tracker, onToast }: { setPage: (page: Page) => void; tracker: ReturnType<typeof useTrackerStatus>; onToast: (t: string) => void }) {
+  const { currentSite, refreshBusinesses } = useBusiness()
+  const [ga4Connected, setGa4Connected] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const domain = currentSite?.domain || 'seu site'
+  const status = tracker.status
+  const ok = Boolean(status?.received)
+
+  useEffect(() => {
+    if (!supabase || !currentSite) return
+    let active = true
+    void supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id).then(({ data }) => {
+      if (active) setGa4Connected(Boolean(data?.some((item) => item.kind === 'ga4' && item.status === 'connected')))
+    })
+    return () => { active = false }
+  }, [currentSite?.id])
+
+  const chooseSource = async (source: 'tracker' | 'ga4') => {
+    if (!supabase || !currentSite || (source === 'ga4' && (!GA4_ENABLED || !ga4Connected))) return
+    if ((currentSite.analytics_source || 'tracker') === source) return
+    setUpdating(true)
+    const { error } = await supabase.from('sites').update({ analytics_source: source }).eq('id', currentSite.id)
+    if (error) onToast(error.message)
+    else { await refreshBusinesses(); onToast(`Os relatórios agora usam ${source === 'ga4' ? 'Google Analytics 4' : 'Rastreador Analizi'}.`) }
+    setUpdating(false)
+  }
+
+  const verify = async () => {
+    const next = await tracker.check()
+    if (next?.received) {
+      onToast(`Tudo certo: último dado recebido ${relativeTime(next.lastEventAt)}`)
+      if (supabase && currentSite?.id) {
+        const nowIso = new Date().toISOString()
+        void supabase.from('data_sources').update({ status: 'connected', connected_at: nowIso, last_synced_at: next.lastEventAt || nowIso }).eq('site_id', currentSite.id).eq('kind', 'tracker')
+      }
+    } else if (next) onToast(`Ainda não recebemos dados de ${domain}`)
+  }
+
+  const usingTracker = currentSite?.analytics_source !== 'ga4'
+
+  return (
+    <>
+      <div className="z-pane-h"><h2>Coleta de dados</h2><p>Como o Analizi recebe as visitas do seu site.</p></div>
+      <div className="z-card">
+        {!status ? (
+          <div className="z-live-l"><div className="z-skel" style={{ width: '30%' }} /><div className="z-skel" style={{ width: '70%' }} /></div>
+        ) : ok ? (
+          <>
+            <div className="z-status-row">
+              <span className="z-sicon ok"><Activity size={24} /></span>
+              <div style={{ flex: '1 1 300px' }}>
+                <span className="z-pill ok"><span className="z-pulse" />Funcionando</span>
+                <h3 className="z-h-lg">O rastreador está recebendo dados</h3>
+                <p className="z-sub">Visitas, cliques, mapa de calor e rolagem de {domain} estão sendo registrados.</p>
+                <div className="z-acts">
+                  <button type="button" className="z-btn sec" onClick={() => void verify()} disabled={tracker.checking}><RefreshCw size={15} />{tracker.checking ? 'Verificando…' : 'Verificar agora'}</button>
+                  <button type="button" className="z-btn ghost" onClick={() => setPage('tracker-setup')}>Ver código de instalação</button>
+                </div>
+              </div>
+            </div>
+            <div className="z-stat-row">
+              <div className="z-stat"><small>Último dado recebido</small><b>{relativeTime(status.lastEventAt)}</b></div>
+              <div className="z-stat"><small>Data e hora</small><b className="z-b-sm">{status.lastEventAt ? new Date(status.lastEventAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}</b></div>
+              <div className="z-stat"><small>Fonte dos relatórios</small><b className="z-b-sm">{usingTracker ? 'Rastreador Analizi' : 'Google Analytics 4'}</b></div>
+            </div>
+          </>
+        ) : (
+          <div className="z-status-row">
+            <span className="z-sicon warn"><AlertTriangle size={24} /></span>
+            <div style={{ flex: '1 1 300px' }}>
+              <span className="z-pill warn"><span className="z-d" />Sem dados</span>
+              <h3 className="z-h-lg">Instale o rastreador para começar</h3>
+              <p className="z-sub">Ainda não recebemos visitas de {domain}. É só colar um código no seu site. Leva uns 5 minutos.</p>
+              <div className="z-acts">
+                <button type="button" className="z-btn pri" onClick={() => setPage('tracker-setup')}>Instalar rastreador</button>
+                <button type="button" className="z-btn sec" onClick={() => void verify()} disabled={tracker.checking}>{tracker.checking ? 'Verificando…' : 'Já instalei, verificar'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="z-card">
+        <div className="z-card-h"><div><h3>De onde vêm os números</h3><p className="z-sub">A fonte usada em todos os relatórios. Mapa de calor e rolagem sempre vêm do rastreador.</p></div></div>
+        <div className="z-opts" role="radiogroup" aria-label="Fonte dos números">
+          <button type="button" role="radio" aria-checked={usingTracker} className={`z-opt ${usingTracker ? 'on' : ''}`} disabled={updating} onClick={() => void chooseSource('tracker')}>
+            <span className="z-oi"><BrandLogo compact /></span>
+            <span><b>Rastreador Analizi</b><small>Visitas, origens, cliques e contatos do seu site</small></span>
+            <span className="z-radio" />
+          </button>
+          <button type="button" role="radio" aria-checked={!usingTracker} className={`z-opt ${!usingTracker && GA4_ENABLED ? 'on' : ''}`} disabled={!GA4_ENABLED || updating || !ga4Connected} onClick={() => void chooseSource('ga4')}>
+            <span className="z-oi"><img src="/ga4-icon.png" alt="" width={22} height={22} /></span>
+            <span><b className="z-row-8">Google Analytics 4 {!GA4_ENABLED && <span className="z-pill mute">Em breve</span>}</b><small>Use os dados que você já tem no Google</small></span>
+            <span className="z-radio" />
+          </button>
+        </div>
+      </div>
+
+      <div className="z-card">
+        <div className="z-card-h" style={{ marginBottom: 10 }}><div><h3>Detalhes técnicos</h3><p className="z-sub">Útil se o suporte pedir ou se outra pessoa cuidar do seu site.</p></div></div>
+        <div className="z-kv">
+          <div className="z-kv-r"><span>Código do site</span><span className="z-row-8"><code>{currentSite?.tracker_site_id || '—'}</code>{currentSite?.tracker_site_id && <button type="button" className="z-btn ghost sm" onClick={() => { void navigator.clipboard?.writeText(currentSite.tracker_site_id); onToast('Código do site copiado') }}>Copiar</button>}</span></div>
+          <div className="z-kv-r"><span>Endereço monitorado</span><b>{currentSite?.domain || '—'}</b></div>
+          <div className="z-kv-r"><span>Tamanho do script</span><b>menos de 2 KB</b></div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+const SEGMENT_OPTIONS: Record<'products' | 'services' | 'health', string[]> = {
+  products: ['Moda e acessórios', 'Beleza e cosméticos', 'Alimentos e bebidas', 'Casa e decoração', 'Eletrônicos', 'Saúde e bem-estar', 'Pet shop', 'Autopeças e acessórios', 'Livros e papelaria', 'Produtos infantis', 'Outros'],
+  services: ['Advocacia', 'Contabilidade', 'Arquitetura e engenharia', 'Construção e reformas', 'Tecnologia', 'Educação', 'Consultoria', 'Fotografia e eventos', 'Beleza e estética', 'Serviços automotivos', 'Outros'],
+  health: ['Clínica médica', 'Odontologia', 'Psicologia', 'Fisioterapia', 'Nutrição', 'Dermatologia', 'Exames e diagnóstico', 'Bem-estar e terapias', 'Outros']
+}
+const normalizeSegment = (value?: string | null): 'products' | 'services' | 'health' => {
+  if (value === 'products' || value === 'Produtos') return 'products'
+  if (value === 'health' || value === 'Saúde') return 'health'
+  return 'services'
+}
+
+function SiteTab({ onToast }: { onToast: (t: string) => void }) {
+  const { currentBusiness, currentSite, refreshBusinesses } = useBusiness()
+  const initial = () => ({
+    name: currentSite?.name || currentBusiness?.name || '',
+    domain: currentSite?.domain || currentBusiness?.website_url || '',
+    segment: normalizeSegment(currentBusiness?.segment),
+    subsegment: currentBusiness?.subsegment || '',
+    detail: currentBusiness?.segment_detail || ''
+  })
+  const [form, setForm] = useState(initial)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { setForm(initial()); setError(null) }, [currentSite?.id, currentBusiness?.id])
+  const base = initial()
+  const dirty = JSON.stringify(form) !== JSON.stringify(base)
+  const update = (patch: Partial<typeof form>) => { setForm({ ...form, ...patch }); setError(null) }
+
+  const save = async () => {
+    if (!currentSite || !currentBusiness) return
+    if (form.name.trim().length < 2) { setError('Digite o nome do site.'); return }
+    if (form.domain.trim().length < 4) { setError('Digite o endereço do site, como meusite.com.br.'); return }
+    if (!form.subsegment) { setError('Escolha a área de atuação.'); return }
+    if (form.subsegment === 'Outros' && form.detail.trim().length < 2) { setError('Descreva o seu negócio em uma frase.'); return }
+    setSaving(true)
+    try {
+      const domain = form.domain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+      if (supabase) {
+        const [{ error: businessError }, { error: siteError }] = await Promise.all([
+          supabase.from('businesses').update({ name: form.name.trim(), website_url: domain, segment: form.segment, subsegment: form.subsegment, segment_detail: form.detail.trim() || null }).eq('id', currentBusiness.id),
+          supabase.from('sites').update({ name: form.name.trim(), domain }).eq('id', currentSite.id)
+        ])
+        if (businessError || siteError) throw new Error(businessError?.message || siteError?.message)
+      }
+      currentSite.name = form.name.trim()
+      currentSite.domain = domain
+      currentBusiness.name = form.name.trim()
+      currentBusiness.website_url = domain
+      currentBusiness.segment = form.segment
+      currentBusiness.subsegment = form.subsegment
+      currentBusiness.segment_detail = form.detail.trim() || null
+      try {
+        const prevB = JSON.parse(localStorage.getItem('analizi-custom-businesses') || '[]') as BusinessItem[]
+        localStorage.setItem('analizi-custom-businesses', JSON.stringify(prevB.map((b) => b.id === currentBusiness.id ? { ...b, name: form.name.trim(), website_url: domain, segment: form.segment, subsegment: form.subsegment, segment_detail: form.detail.trim() || null } : b)))
+        const prevS = JSON.parse(localStorage.getItem('analizi-custom-sites') || '[]') as SiteItem[]
+        localStorage.setItem('analizi-custom-sites', JSON.stringify(prevS.map((s) => s.id === currentSite.id ? { ...s, name: form.name.trim(), domain } : s)))
+      } catch { /* armazenamento indisponível */ }
+      await refreshBusinesses()
+      setForm({ ...form, domain })
+      onToast('Alterações salvas')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Não foi possível salvar. Tente de novo.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const segments: Array<{ id: 'services' | 'products' | 'health'; label: string; hint: string }> = [
+    { id: 'services', label: 'Serviços', hint: 'Advocacia, consultoria, estética…' },
+    { id: 'products', label: 'Produtos', hint: 'Loja virtual ou catálogo' },
+    { id: 'health', label: 'Saúde', hint: 'Clínicas e consultórios' }
+  ]
+  const previewArea = form.subsegment && form.subsegment !== 'Outros' ? form.subsegment : (form.detail || 'seu segmento')
+
+  return (
+    <>
+      <div className="z-pane-h"><h2>Dados do site</h2><p>Essas informações aparecem nos relatórios e deixam os insights mais específicos para o seu negócio.</p></div>
+      <div className="z-two">
+        <div className="z-grow">
+          <div className="z-card">
+            <div className="z-card-h"><div><h3>Identificação</h3><p className="z-sub">Como o site aparece no menu, nos relatórios e nos e-mails.</p></div></div>
+            <div className="z-fields">
+              <div className="z-fld"><label htmlFor="z-f-name">Nome do site</label><input id="z-f-name" value={form.name} onChange={(e) => update({ name: e.target.value })} placeholder="Ex.: Minha Loja" /></div>
+              <div className="z-fld"><label htmlFor="z-f-url">Endereço do site</label><div className="z-pref"><span>https://</span><input id="z-f-url" value={form.domain} onChange={(e) => update({ domain: e.target.value })} placeholder="meusite.com.br" /></div></div>
+            </div>
+          </div>
+          <div className="z-card">
+            <div className="z-card-h"><div><h3>Seu negócio</h3><p className="z-sub">Usamos isso para comparar seus números com o que é comum no seu segmento.</p></div></div>
+            <div className="z-fld" style={{ marginBottom: 18 }}>
+              <span className="z-lbl" id="z-seg-l">O que o seu site oferece?</span>
+              <div className="z-opts narrow" role="radiogroup" aria-labelledby="z-seg-l">
+                {segments.map((s) => (
+                  <button key={s.id} type="button" role="radio" aria-checked={form.segment === s.id} className={`z-opt ${form.segment === s.id ? 'on' : ''}`} onClick={() => update({ segment: s.id, subsegment: '', detail: '' })}>
+                    <span><b>{s.label}</b><small>{s.hint}</small></span><span className="z-radio" />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="z-fields">
+              <div className="z-fld"><label htmlFor="z-f-area">Área de atuação</label>
+                <select id="z-f-area" value={form.subsegment} onChange={(e) => update({ subsegment: e.target.value })}>
+                  <option value="" disabled>Escolha uma opção</option>
+                  {SEGMENT_OPTIONS[form.segment].map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="z-fld"><span className="z-lbl">Fuso horário</span><div className="z-readonly">Horário de Brasília (São Paulo)</div></div>
+              <div className="z-fld full"><label htmlFor="z-f-desc">Descreva seu negócio em uma frase <span className="z-opt-t">{form.subsegment === 'Outros' ? '(obrigatório)' : '(opcional)'}</span></label><textarea id="z-f-desc" value={form.detail} onChange={(e) => update({ detail: e.target.value })} placeholder="Ex.: Clínica odontológica especializada em implantes" /><span className="z-hint">Quanto mais específico, melhores as recomendações dos insights.</span></div>
+            </div>
+          </div>
+        </div>
+        <div className="z-side">
+          <div className="z-card">
+            <h3>Como a IZI vai usar isso</h3>
+            <p className="z-sub" style={{ marginBottom: 14 }}>Prévia com os dados do formulário.</p>
+            <div className="z-prev">
+              <div className="z-prev-ws"><span className="z-ws-av">{(form.name || 'S').slice(0, 2).toUpperCase()}</span><span><b>{form.name || 'Nome do site'}</b><small>{form.domain || 'meusite.com.br'}</small></span></div>
+              <div className="z-prev-c">
+                <span className="z-pill blue">Comparado com: {previewArea}</span>
+                <p>“Sua taxa de contato está acima da média de sites de {previewArea}.”</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {error && <p className="z-err" role="alert">{error}</p>}
+      {dirty && (
+        <div className="z-savebar"><span>Você tem alterações não salvas.</span><span className="z-row-6"><button type="button" className="z-btn ghost sm" onClick={() => { setForm(base); setError(null) }}>Descartar</button><button type="button" className="z-btn pri sm" onClick={() => void save()} disabled={saving}>{saving ? 'Salvando…' : 'Salvar alterações'}</button></span></div>
+      )}
+    </>
+  )
+}
+
+const ROLE_LABEL: Record<'owner' | 'admin' | 'viewer', string> = { owner: 'Proprietário', admin: 'Administrador', viewer: 'Visualizador' }
+const PERMISSIONS: Array<[string, boolean, boolean, boolean]> = [
+  ['Ver relatórios, mapa de calor e insights', true, true, true],
+  ['Mudar os dados do site e a coleta', true, true, false],
+  ['Convidar e remover pessoas', true, true, false],
+  ['Mudar plano e assinatura', true, false, false]
+]
+
+function PeopleTab({ onToast }: { onToast: (t: string) => void }) {
+  const { currentBusiness, currentSite } = useBusiness()
+  const businessId = currentBusiness?.id || ''
+  const siteName = currentSite?.name || currentBusiness?.name || 'este site'
+  const [currentUserId, setCurrentUserId] = useState('')
   const [members, setMembers] = useState<SiteMember[]>([])
   const [invites, setInvites] = useState<SiteInvitation[]>([])
-  const [loadingMembers, setLoadingMembers] = useState(false)
-
+  const [loading, setLoading] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [modal, setModal] = useState<null | { kind: 'invite' } | { kind: 'remove-member'; member: SiteMember } | { kind: 'remove-invite'; invite: SiteInvitation }>(null)
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<'viewer' | 'admin'>('viewer')
-  const [message, setMessage] = useState('')
-  const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
-  const [loadingInvite, setLoadingInvite] = useState(false)
-  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [formError, setFormError] = useState('')
+  const [sending, setSending] = useState(false)
 
-  const loadPeopleAndAccess = async () => {
+  const load = async () => {
     if (!supabase || !businessId) return
-    setLoadingMembers(true)
+    setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) setCurrentUserId(user.id)
-
-      // 1. Busca membros vinculados ao negócio/site atual
-      const { data: memberRows } = await supabase
-        .from('business_members')
-        .select('user_id, role, creator_role, created_at')
-        .eq('business_id', businessId)
-        .order('created_at', { ascending: true })
-
+      const { data: memberRows } = await supabase.from('business_members').select('user_id, role, creator_role, created_at').eq('business_id', businessId).order('created_at', { ascending: true })
       if (memberRows && memberRows.length > 0) {
-        const userIds = memberRows.map((m) => m.user_id)
-        const { data: profileRows } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', userIds)
-
-        const profileMap = new Map(
-          (profileRows || []).map((p) => [p.id, { full_name: p.full_name || '', email: p.email || '' }])
-        )
-
-        const enriched: SiteMember[] = memberRows.map((m) => {
+        const { data: profileRows } = await supabase.from('profiles').select('id, full_name, email').in('id', memberRows.map((m) => m.user_id))
+        const profileMap = new Map((profileRows || []).map((p) => [p.id, { full_name: p.full_name || '', email: p.email || '' }]))
+        setMembers(memberRows.map((m) => {
           const prof = profileMap.get(m.user_id)
-          const isCurrentUser = user && m.user_id === user.id
+          const isSelf = user && m.user_id === user.id
           return {
             user_id: m.user_id,
             role: (m.role as 'owner' | 'admin' | 'viewer') || 'viewer',
             creator_role: m.creator_role,
             created_at: m.created_at,
-            full_name: prof?.full_name || (isCurrentUser ? user.user_metadata?.full_name || 'Você' : 'Membro da equipe'),
-            email: prof?.email || (isCurrentUser ? user.email || '' : '')
+            full_name: prof?.full_name || (isSelf ? user.user_metadata?.full_name || 'Você' : 'Membro da equipe'),
+            email: prof?.email || (isSelf ? user.email || '' : '')
           }
-        })
-        setMembers(enriched)
-      } else {
-        setMembers([])
-      }
-
-      // 2. Busca convites pendentes ou enviados para este site
-      const { data: inviteRows } = await supabase
-        .from('business_invitations')
-        .select('id, email, role, status, created_at')
-        .eq('business_id', businessId)
-        .order('created_at', { ascending: false })
-
-      setInvites(
-        (inviteRows || [])
-          .filter((inv) => inv.status !== 'accepted')
-          .map((inv) => ({
-            id: inv.id,
-            email: inv.email,
-            role: (inv.role as 'admin' | 'viewer') || 'viewer',
-            status: inv.status,
-            created_at: inv.created_at
-          }))
-      )
+        }))
+      } else setMembers([])
+      const { data: inviteRows } = await supabase.from('business_invitations').select('id, email, role, status, created_at').eq('business_id', businessId).order('created_at', { ascending: false })
+      setInvites((inviteRows || []).filter((inv) => inv.status !== 'accepted').map((inv) => ({ id: inv.id, email: inv.email, role: (inv.role as 'admin' | 'viewer') || 'viewer', status: inv.status, created_at: inv.created_at })))
     } finally {
-      setLoadingMembers(false)
+      setLoading(false)
     }
   }
+  useEffect(() => { void load() }, [businessId])
 
-  useEffect(() => {
-    void loadPeopleAndAccess()
-  }, [businessId])
-
-  const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
-    setMessage(text)
-    setFeedbackType(type)
-  }
-
-  const handleUpdateMemberRole = async (targetUserId: string, nextRole: 'owner' | 'admin' | 'viewer') => {
+  const changeMemberRole = async (member: SiteMember, next: 'owner' | 'admin' | 'viewer') => {
     if (!supabase || !businessId) return
-    setUpdatingId(targetUserId)
-    setMessage('')
-    try {
-      const { error } = await supabase
-        .from('business_members')
-        .update({ role: nextRole })
-        .eq('business_id', businessId)
-        .eq('user_id', targetUserId)
-
-      if (error) {
-        showFeedback(error.message || 'Não foi possível atualizar a permissão.', 'error')
-      } else {
-        setMembers((prev) =>
-          prev.map((m) => (m.user_id === targetUserId ? { ...m, role: nextRole } : m))
-        )
-        showFeedback('Permissão da pessoa atualizada com sucesso.')
-      }
-    } finally {
-      setUpdatingId(null)
-    }
+    if (member.role === 'owner' && next !== 'owner' && members.filter((m) => m.role === 'owner').length <= 1) { onToast('O site precisa ter pelo menos um proprietário.'); return }
+    setBusyId(member.user_id)
+    const { error } = await supabase.from('business_members').update({ role: next }).eq('business_id', businessId).eq('user_id', member.user_id)
+    if (error) onToast(error.message || 'Não foi possível mudar o nível de acesso.')
+    else { setMembers((prev) => prev.map((m) => m.user_id === member.user_id ? { ...m, role: next } : m)); onToast(`${member.full_name || member.email} agora é ${ROLE_LABEL[next]}`) }
+    setBusyId(null)
   }
-
-  const handleRemoveMember = async (member: SiteMember) => {
-    if (!supabase || !businessId) return
-    const ownersCount = members.filter((m) => m.role === 'owner').length
-    if (member.role === 'owner' && ownersCount <= 1) {
-      showFeedback('O site precisa ter pelo menos um proprietário ativo.', 'error')
-      return
-    }
-    if (!window.confirm(`Deseja realmente remover o acesso de ${member.full_name || member.email} a este site?`)) {
-      return
-    }
-    setUpdatingId(member.user_id)
-    setMessage('')
-    try {
-      const { error } = await supabase
-        .from('business_members')
-        .delete()
-        .eq('business_id', businessId)
-        .eq('user_id', member.user_id)
-
-      if (error) {
-        showFeedback(error.message || 'Não foi possível remover o acesso.', 'error')
-      } else {
-        setMembers((prev) => prev.filter((m) => m.user_id !== member.user_id))
-        showFeedback(`Acesso de ${member.full_name || member.email} removido.`)
-      }
-    } finally {
-      setUpdatingId(null)
-    }
-  }
-
-  const handleUpdateInviteRole = async (inviteId: string, nextRole: 'admin' | 'viewer') => {
+  const changeInviteRole = async (inv: SiteInvitation, next: 'admin' | 'viewer') => {
     if (!supabase) return
-    setUpdatingId(inviteId)
-    setMessage('')
-    try {
-      const { error } = await supabase
-        .from('business_invitations')
-        .update({ role: nextRole })
-        .eq('id', inviteId)
-
-      if (error) {
-        showFeedback(error.message || 'Não foi possível alterar a permissão do convite.', 'error')
-      } else {
-        setInvites((prev) => prev.map((inv) => (inv.id === inviteId ? { ...inv, role: nextRole } : inv)))
-        showFeedback('Permissão do convite atualizada.')
-      }
-    } finally {
-      setUpdatingId(null)
-    }
+    setBusyId(inv.id)
+    const { error } = await supabase.from('business_invitations').update({ role: next }).eq('id', inv.id)
+    if (error) onToast(error.message || 'Não foi possível mudar o convite.')
+    else { setInvites((prev) => prev.map((i) => i.id === inv.id ? { ...i, role: next } : i)); onToast('Nível de acesso do convite atualizado') }
+    setBusyId(null)
   }
-
-  const handleRemoveInvite = async (inv: SiteInvitation) => {
-    if (!supabase) return
-    if (!window.confirm(`Deseja cancelar e excluir o convite enviado para ${inv.email}?`)) {
-      return
+  const confirmRemove = async () => {
+    if (!supabase || !modal || modal.kind === 'invite') return
+    if (modal.kind === 'remove-member') {
+      const member = modal.member
+      if (member.role === 'owner' && members.filter((m) => m.role === 'owner').length <= 1) { onToast('O site precisa ter pelo menos um proprietário.'); setModal(null); return }
+      setBusyId(member.user_id)
+      const { error } = await supabase.from('business_members').delete().eq('business_id', businessId).eq('user_id', member.user_id)
+      if (error) onToast(error.message || 'Não foi possível remover o acesso.')
+      else { setMembers((prev) => prev.filter((m) => m.user_id !== member.user_id)); onToast('Acesso removido') }
+    } else {
+      const inv = modal.invite
+      setBusyId(inv.id)
+      const { error } = await supabase.from('business_invitations').delete().eq('id', inv.id)
+      if (error) onToast(error.message || 'Não foi possível cancelar o convite.')
+      else { setInvites((prev) => prev.filter((i) => i.id !== inv.id)); onToast('Convite cancelado') }
     }
-    setUpdatingId(inv.id)
-    setMessage('')
-    try {
-      const { error } = await supabase
-        .from('business_invitations')
-        .delete()
-        .eq('id', inv.id)
-
-      if (error) {
-        showFeedback(error.message || 'Não foi possível excluir o convite.', 'error')
-      } else {
-        setInvites((prev) => prev.filter((item) => item.id !== inv.id))
-        showFeedback(`Convite para ${inv.email} excluído.`)
-      }
-    } finally {
-      setUpdatingId(null)
-    }
+    setBusyId(null)
+    setModal(null)
   }
-
-  const invite = async () => {
-    setMessage('')
-    if (!businessId) {
-      showFeedback('Não foi possível identificar o site selecionado.', 'error')
-      return
-    }
+  const sendInvite = async () => {
+    setFormError('')
     const address = email.trim().toLowerCase()
-    if (!/^\S+@\S+\.\S+$/.test(address)) {
-      showFeedback('Informe um e-mail válido.', 'error')
-      return
-    }
-    setLoadingInvite(true)
+    if (!/^\S+@\S+\.\S+$/.test(address)) { setFormError('Digite um e-mail válido, como nome@empresa.com.br.'); return }
+    if (!supabase || !businessId) { setFormError('Não foi possível identificar o site selecionado.'); return }
+    setSending(true)
     try {
-      const { data: { user } } = await supabase!.auth.getUser()
-
-      // Verifica se já existe um perfil cadastrado com esse e-mail para vinculá-lo imediatamente ao site
-      const { data: existingProfile } = await supabase!
-        .from('profiles')
-        .select('id, full_name, email')
-        .ilike('email', address)
-        .maybeSingle()
-
+      const { data: { user } } = await supabase.auth.getUser()
+      const { data: existingProfile } = await supabase.from('profiles').select('id, full_name, email').ilike('email', address).maybeSingle()
       if (existingProfile?.id) {
-        const { error: memberErr } = await supabase!
-          .from('business_members')
-          .upsert(
-            { business_id: businessId, user_id: existingProfile.id, role },
-            { onConflict: 'business_id,user_id' }
-          )
-
-        if (memberErr) {
-          showFeedback(memberErr.message, 'error')
-        } else {
-          setEmail('')
-          showFeedback(`${existingProfile.full_name || address} já possui conta no Analizi e foi adicionado(a) diretamente com acesso a este site!`)
-          await loadPeopleAndAccess()
-        }
-        return
+        const { error } = await supabase.from('business_members').upsert({ business_id: businessId, user_id: existingProfile.id, role }, { onConflict: 'business_id,user_id' })
+        if (error) { setFormError(error.message); return }
+        onToast(`${existingProfile.full_name || address} já usa o Analizi e recebeu acesso na hora`)
+        await load()
+      } else {
+        const { error } = await supabase.from('business_invitations').upsert({ business_id: businessId, email: address, role, invited_by: user?.id, status: 'pending' }, { onConflict: 'business_id,email' })
+        if (error) { setFormError(error.message); return }
+        onToast(`Convite enviado para ${address}`)
+        await load()
       }
-
-      const { data, error } = await supabase!
-        .from('business_invitations')
-        .upsert(
-          { business_id: businessId, email: address, role, invited_by: user?.id, status: 'pending' },
-          { onConflict: 'business_id,email' }
-        )
-        .select('id,email,role,status,created_at')
-        .single()
-
-      if (error) {
-        showFeedback(error.message, 'error')
-      } else if (data) {
-        setInvites((current) => [
-          {
-            id: data.id,
-            email: data.email,
-            role: (data.role as 'admin' | 'viewer') || 'viewer',
-            status: data.status,
-            created_at: data.created_at
-          },
-          ...current.filter((item) => item.id !== data.id)
-        ])
-        setEmail('')
-        showFeedback('Convite salvo! Assim que a pessoa entrar com este e-mail Google, o acesso ao site será liberado automaticamente.')
-      }
+      setModal(null)
+      setEmail('')
     } finally {
-      setLoadingInvite(false)
+      setSending(false)
     }
   }
 
-  const subBadge = formatSubscriptionStatus(subscriptionStatus)
-  const expText = formatExpirationDate(subscriptionExpiresAt, effectivePlan.id)
+  const q = query.trim().toLowerCase()
+  const shownMembers = members.filter((m) => !q || `${m.full_name} ${m.email}`.toLowerCase().includes(q))
+  const shownInvites = invites.filter((i) => !q || i.email.toLowerCase().includes(q))
+  const totalPeople = members.length + invites.length
+  const avatarColors = ['c1', 'c2', 'c3']
+  const fmtDate = (iso?: string) => iso ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(iso)) : '—'
 
   return (
     <>
-      <div className="source-header meu-site-header">
-        <div>
-          <button className="back-link" onClick={() => setPage('settings')}>
-            <ArrowLeft size={16} /> Configurações
-          </button>
-          <span className="eyebrow">MEU SITE · EQUIPE & ASSINATURA</span>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Globe size={27} style={{ color: '#ff3cac' }} /> Meu Site: {siteDisplayName}
-          </h1>
-          <p className="subtitle">
-            Gerencie as pessoas com acesso a <b>{siteDomain || siteDisplayName}</b>, suas permissões no Analizi e os detalhes do seu plano.
-          </p>
+      <div className="z-pane-h z-pane-h-row">
+        <div><h2>Pessoas com acesso</h2><p>Quem pode ver os dados de {siteName}. Cada pessoa entra com a própria conta Google.</p></div>
+        <button type="button" className="z-btn pri" onClick={() => { setModal({ kind: 'invite' }); setFormError(''); setEmail(''); setRole('viewer') }}><UserPlus size={16} />Convidar pessoa</button>
+      </div>
+      <div className="z-tbl-w">
+        <div className="z-tbl-top">
+          <b>{totalPeople} {totalPeople === 1 ? 'pessoa' : 'pessoas'}</b>
+          <label className="z-search"><Search size={16} /><input aria-label="Buscar pessoa" placeholder="Buscar por nome ou e-mail" value={query} onChange={(e) => setQuery(e.target.value)} /></label>
         </div>
-
-        <Button onClick={() => setNewSiteModalOpen(true)}>
-          <Plus size={17} /> Adicionar novo site
-        </Button>
+        <table className="z-tbl">
+          <thead><tr><th scope="col">Pessoa</th><th scope="col">Nível de acesso</th><th scope="col">Desde</th><th scope="col"><span className="z-sr">Ações</span></th></tr></thead>
+          <tbody>
+            {loading && !members.length && <tr><td colSpan={4} className="z-muted-sm">Carregando pessoas…</td></tr>}
+            {shownMembers.map((m, i) => {
+              const isSelf = m.user_id === currentUserId
+              const initials = (m.full_name || m.email || 'U').split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase()
+              return (
+                <tr key={m.user_id}>
+                  <td><div className="z-who"><span className={`z-av ${avatarColors[i % 3]}`}>{initials}</span><div><b>{m.full_name || m.email}{isSelf && <span className="z-pill pink">Você</span>}</b><small>{m.email || 'Acesso pela conta Google'}</small></div></div></td>
+                  <td>{isSelf
+                    ? <span className="z-role-ro">{ROLE_LABEL[m.role]}</span>
+                    : <select aria-label={`Nível de acesso de ${m.full_name || m.email}`} value={m.role} disabled={busyId === m.user_id} onChange={(e) => void changeMemberRole(m, e.target.value as 'owner' | 'admin' | 'viewer')}>
+                        <option value="owner">Proprietário</option><option value="admin">Administrador</option><option value="viewer">Visualizador</option>
+                      </select>}
+                  </td>
+                  <td className="z-muted-sm z-nowrap">{fmtDate(m.created_at)}</td>
+                  <td className="z-right">{!isSelf && <button type="button" className="z-btn ghost sm" disabled={busyId === m.user_id} onClick={() => setModal({ kind: 'remove-member', member: m })}>Remover</button>}</td>
+                </tr>
+              )
+            })}
+            {shownInvites.map((inv) => (
+              <tr key={inv.id} className="pend">
+                <td><div className="z-who"><span className="z-av inv">@</span><div><b>{inv.email}<span className="z-pill warn">Convite pendente</span></b><small>Ainda não entrou no Analizi</small></div></div></td>
+                <td><select aria-label={`Nível de acesso do convite para ${inv.email}`} value={inv.role} disabled={busyId === inv.id} onChange={(e) => void changeInviteRole(inv, e.target.value as 'admin' | 'viewer')}><option value="admin">Administrador</option><option value="viewer">Visualizador</option></select></td>
+                <td className="z-muted-sm z-nowrap">Convidado em {fmtDate(inv.created_at)}</td>
+                <td className="z-right"><button type="button" className="z-btn ghost sm" disabled={busyId === inv.id} onClick={() => setModal({ kind: 'remove-invite', invite: inv })}>Cancelar convite</button></td>
+              </tr>
+            ))}
+            {!loading && !shownMembers.length && !shownInvites.length && <tr><td colSpan={4} className="z-muted-sm">{q ? 'Ninguém encontrado com essa busca.' : 'Nenhuma pessoa encontrada para este site.'}</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <div className="z-card z-flush">
+        <div className="z-flush-h"><h3>O que cada nível pode fazer</h3></div>
+        <table className="z-tbl z-ltab">
+          <thead><tr><th scope="col">Pode…</th><th scope="col">Proprietário</th><th scope="col">Administrador</th><th scope="col">Visualizador</th></tr></thead>
+          <tbody>
+            {PERMISSIONS.map(([label, ...flags]) => (
+              <tr key={label}><td>{label}</td>{flags.map((f, i) => <td key={i}>{f ? <Check size={18} className="z-yes" aria-label="Sim" /> : <Minus size={18} className="z-no" aria-label="Não" />}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* Seção 1: Plano, Assinatura, Expiração e Botão de Novos Sites */}
-      <section className="team-card plan-subscription-card">
-        <div className="plan-card-top">
-          <div className="plan-card-title-group">
-            <div className="plan-icon-badge">
-              <Crown size={22} />
-            </div>
-            <div>
-              <div className="plan-title-row">
-                <h2>Plano & Assinatura</h2>
-                <span className={`sub-status-pill ${subBadge.badgeClass}`}>{subBadge.label}</span>
-                {effectivePlan.id === 'admin' && (
-                  <span className="sub-status-pill admin-pill">
-                    <Sparkles size={12} /> Todas as funções liberadas
-                  </span>
-                )}
+      {modal?.kind === 'invite' && (
+        <div className="z-ov" onClick={(e) => { if (e.target === e.currentTarget) setModal(null) }}>
+          <div className="z-modal" role="dialog" aria-modal="true" aria-labelledby="z-inv-t">
+            <span className="z-m-ic"><UserPlus size={22} /></span>
+            <div><h2 id="z-inv-t">Convidar pessoa</h2><p className="z-mlead">Ela vai ver os dados de {siteName} depois de entrar com a conta Google deste e-mail.</p></div>
+            <div className="z-fld"><label htmlFor="z-inv-mail">E-mail</label><input id="z-inv-mail" type="email" autoFocus placeholder="nome@empresa.com.br" value={email} onChange={(e) => { setEmail(e.target.value); setFormError('') }} onKeyDown={(e) => { if (e.key === 'Enter') void sendInvite() }} />{formError && <span className="z-err">{formError}</span>}</div>
+            <div className="z-fld">
+              <span className="z-lbl" id="z-inv-r">Nível de acesso</span>
+              <div className="z-stack-8" role="radiogroup" aria-labelledby="z-inv-r">
+                {([['viewer', 'Visualizador', 'Vê relatórios, mapa de calor e insights. Não muda nada.'], ['admin', 'Administrador', 'Também muda os dados do site, a coleta e convida pessoas.']] as const).map(([id, label, hint]) => (
+                  <button key={id} type="button" role="radio" aria-checked={role === id} className={`z-opt ${role === id ? 'on' : ''}`} onClick={() => setRole(id)}><span><b>{label}</b><small>{hint}</small></span><span className="z-radio" /></button>
+                ))}
               </div>
-              <p>{effectivePlan.description}</p>
             </div>
-          </div>
-
-          <div className="plan-card-actions">
-            <Button onClick={() => setNewSiteModalOpen(true)}>
-              <Plus size={17} /> Adicionar novo site
-            </Button>
+            <div className="z-note"><Info size={16} /><span>Não precisa criar senha. Se a pessoa já usa o Analizi, o acesso é liberado na hora.</span></div>
+            <div className="z-mfoot"><button type="button" className="z-btn sec" onClick={() => setModal(null)}>Cancelar</button><button type="button" className="z-btn pri" onClick={() => void sendInvite()} disabled={sending}>{sending ? 'Enviando…' : 'Enviar convite'}</button></div>
           </div>
         </div>
-
-        <div className="plan-metrics-grid">
-          <div className="plan-metric-item">
-            <span className="plan-metric-label">PLANO ATUAL</span>
-            <strong className="plan-metric-value highlight">{effectivePlan.name}</strong>
-            <small>{effectivePlan.priceLabel}</small>
-          </div>
-
-          <div className="plan-metric-item">
-            <span className="plan-metric-label">STATUS DA ASSINATURA</span>
-            <strong className="plan-metric-value">{subBadge.label}</strong>
-            <small>
-              {effectivePlan.allFeaturesUnlocked
-                ? 'Acesso completo a todos os recursos'
-                : 'Recursos essenciais ativos'}
-            </small>
-          </div>
-
-          <div className="plan-metric-item">
-            <span className="plan-metric-label">EXPIRAÇÃO DA ASSINATURA ATUAL</span>
-            <strong className="plan-metric-value">
-              <Calendar size={16} style={{ display: 'inline', marginRight: 6, verticalAlign: 'text-bottom', color: '#ff8a3d' }} />
-              {expText}
-            </strong>
-            <small>Ciclo vigente da conta</small>
-          </div>
-
-          <div className="plan-metric-item">
-            <span className="plan-metric-label">LIMITE DE SITES DO PLANO</span>
-            <strong className="plan-metric-value">
-              {totalSitesCount} / {effectivePlan.id === 'admin' ? 'N sites (Ilimitado)' : `${effectivePlan.maxSites} site(s)`}
-            </strong>
-            <small>
-              Plano R$ 39,90 (1 site) · R$ 79 (2 sites) · Admin (N sites)
-            </small>
+      )}
+      {(modal?.kind === 'remove-member' || modal?.kind === 'remove-invite') && (
+        <div className="z-ov" onClick={(e) => { if (e.target === e.currentTarget) setModal(null) }}>
+          <div className="z-modal narrow" role="alertdialog" aria-modal="true" aria-labelledby="z-rm-t">
+            <span className="z-m-ic red"><UserMinus size={22} /></span>
+            {modal.kind === 'remove-member'
+              ? <div><h2 id="z-rm-t">Remover o acesso de {modal.member.full_name || modal.member.email}?</h2><p className="z-mlead">{modal.member.email ? `${modal.member.email} deixa` : 'Essa pessoa deixa'} de ver os dados de {siteName} na hora. Você pode convidar de novo quando quiser.</p></div>
+              : <div><h2 id="z-rm-t">Cancelar o convite?</h2><p className="z-mlead">{modal.invite.email} não vai mais conseguir entrar com este convite. Você pode convidar de novo quando quiser.</p></div>}
+            <div className="z-mfoot"><button type="button" className="z-btn sec" onClick={() => setModal(null)}>Voltar</button><button type="button" className="z-btn danger" onClick={() => void confirmRemove()} disabled={!!busyId}>{modal.kind === 'remove-member' ? 'Remover acesso' : 'Cancelar convite'}</button></div>
           </div>
         </div>
-
-        <div className="plan-features-strip">
-          {effectivePlan.features.map((feat) => (
-            <span key={feat} className="plan-feature-tag">
-              <Check size={14} /> {feat}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      {/* Seção 2: Pessoas relacionadas a este site e suas permissões */}
-      <section className="team-card">
-        <div className="section-heading">
-          <div>
-            <h2>Pessoas relacionadas a este site</h2>
-            <p>
-              Veja quem tem acesso a <b>{siteDisplayName}</b> ({siteDomain}), consulte suas permissões no Analizi, edite o nível de acesso ou remova a pessoa.
-            </p>
-          </div>
-          <span className="members-count-badge">
-            {members.length + invites.length} {members.length + invites.length === 1 ? 'pessoa' : 'pessoas'}
-          </span>
-        </div>
-
-        {message && (
-          <p className={`form-feedback ${feedbackType === 'error' ? 'error' : ''}`} style={{ marginTop: 14 }}>
-            {message}
-          </p>
-        )}
-
-        <div className="site-people-list">
-          <div className="site-people-head">
-            <span>Pessoa</span>
-            <span>Permissões no Analizi</span>
-            <span>Nível de acesso</span>
-            <span>Ações</span>
-          </div>
-
-          {loadingMembers && members.length === 0 ? (
-            <p className="empty-team">Carregando pessoas vinculadas a este site...</p>
-          ) : (
-            members.map((member) => {
-              const roleMeta = ROLE_DESCRIPTIONS[member.role] || ROLE_DESCRIPTIONS.viewer
-              const isSelf = member.user_id === currentUserId
-              const isBusy = updatingId === member.user_id
-              const initials = (member.full_name || member.email || 'U')
-                .split(' ')
-                .filter(Boolean)
-                .slice(0, 2)
-                .map((part) => part[0])
-                .join('')
-                .toUpperCase()
-
-              return (
-                <div className="site-person-row" key={member.user_id}>
-                  <div className="site-person-identity">
-                    <span className="site-person-avatar">{initials}</span>
-                    <div>
-                      <b>
-                        {member.full_name || member.email}
-                        {isSelf && <em className="you-tag">Você</em>}
-                      </b>
-                      <small>{member.email || 'Acesso autenticado via Google'}</small>
-                    </div>
-                  </div>
-
-                  <div className="site-person-permissions">
-                    <span className={`role-badge ${roleMeta.badgeClass}`}>{roleMeta.label}</span>
-                    <small>{roleMeta.permissions}</small>
-                  </div>
-
-                  <div className="site-person-role-edit">
-                    <select
-                      aria-label={`Editar permissão de ${member.full_name || member.email}`}
-                      value={member.role}
-                      disabled={isBusy}
-                      onChange={(e) =>
-                        handleUpdateMemberRole(member.user_id, e.target.value as 'owner' | 'admin' | 'viewer')
-                      }
-                    >
-                      <option value="owner">Proprietário(a)</option>
-                      <option value="admin">Administrador(a)</option>
-                      <option value="viewer">Visualizador(a)</option>
-                    </select>
-                  </div>
-
-                  <div className="site-person-actions">
-                    <button
-                      type="button"
-                      className="person-remove-btn"
-                      disabled={isBusy}
-                      onClick={() => handleRemoveMember(member)}
-                      title="Excluir acesso desta pessoa"
-                    >
-                      <Trash2 size={15} />
-                      <span>Excluir acesso</span>
-                    </button>
-                  </div>
-                </div>
-              )
-            })
-          )}
-
-          {/* Convites pendentes exibidos na mesma relação com opção de editar permissão ou excluir */}
-          {invites.map((inv) => {
-            const roleMeta = ROLE_DESCRIPTIONS[inv.role] || ROLE_DESCRIPTIONS.viewer
-            const isBusy = updatingId === inv.id
-            return (
-              <div className="site-person-row pending-invite" key={inv.id}>
-                <div className="site-person-identity">
-                  <span className="site-person-avatar invite">@</span>
-                  <div>
-                    <b>
-                      {inv.email}
-                      <em className="invite-status-tag">Convite pendente</em>
-                    </b>
-                    <small>Aguardando primeiro acesso com este e-mail Google</small>
-                  </div>
-                </div>
-
-                <div className="site-person-permissions">
-                  <span className={`role-badge ${roleMeta.badgeClass}`}>{roleMeta.label}</span>
-                  <small>{roleMeta.permissions}</small>
-                </div>
-
-                <div className="site-person-role-edit">
-                  <select
-                    aria-label={`Editar permissão do convite para ${inv.email}`}
-                    value={inv.role}
-                    disabled={isBusy}
-                    onChange={(e) =>
-                      handleUpdateInviteRole(inv.id, e.target.value as 'admin' | 'viewer')
-                    }
-                  >
-                    <option value="admin">Administrador(a)</option>
-                    <option value="viewer">Visualizador(a)</option>
-                  </select>
-                </div>
-
-                <div className="site-person-actions">
-                  <button
-                    type="button"
-                    className="person-remove-btn"
-                    disabled={isBusy}
-                    onClick={() => handleRemoveInvite(inv)}
-                    title="Cancelar e excluir acesso convidado"
-                  >
-                    <Trash2 size={15} />
-                    <span>Excluir acesso</span>
-                  </button>
-                </div>
-              </div>
-            )
-          })}
-
-          {!loadingMembers && members.length === 0 && invites.length === 0 && (
-            <p className="empty-team">Nenhuma pessoa encontrada para este site.</p>
-          )}
-        </div>
-      </section>
-
-      {/* Seção 3: Slot mantido de Convidar uma pessoa */}
-      <section className="team-card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <UserPlus size={19} style={{ color: '#ff3cac' }} />
-          <h2 style={{ margin: 0 }}>Convidar uma pessoa</h2>
-        </div>
-        <p>Quem for convidado poderá entrar com o Google usando este mesmo e-mail para acessar os dados de <b>{siteDisplayName}</b>.</p>
-        <div className="team-invite-form">
-          <label>
-            E-mail
-            <input
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="nome@empresa.com.br"
-              type="email"
-            />
-          </label>
-          <label>
-            Permissão no Analizi
-            <select value={role} onChange={(event) => setRole(event.target.value as 'viewer' | 'admin')}>
-              <option value="viewer">Visualizador (Somente leitura)</option>
-              <option value="admin">Administrador (Acesso total)</option>
-            </select>
-          </label>
-          <Button onClick={invite} disabled={loadingInvite}>
-            {loadingInvite ? 'Salvando...' : 'Convidar pessoa'}
-          </Button>
-        </div>
-      </section>
+      )}
     </>
   )
 }
 
-function Settings({ setPage }: { setPage: (page: Page) => void }) {
-  const {
-    currentBusiness,
-    currentSite,
-    effectivePlan,
-    totalSitesCount,
-    setNewSiteModalOpen,
-    refreshBusinesses
-  } = useBusiness()
-
-  const [activeTab, setActiveTab] = useState<'general' | 'sources' | 'plan' | 'team' | 'notifications'>('sources')
-
-  // Geral form
-  const [siteName, setSiteName] = useState(currentSite?.name || currentBusiness?.name || '')
-  const [siteDomain, setSiteDomain] = useState(currentSite?.domain || currentBusiness?.website_url || '')
-  const normalizeSegment = (value?: string | null): 'products' | 'services' | 'health' => {
-    if (value === 'products' || value === 'Produtos') return 'products'
-    if (value === 'health' || value === 'Saúde') return 'health'
-    return 'services'
-  }
-  const subsegmentOptions: Record<'products' | 'services' | 'health', string[]> = {
-    products: ['Moda e acessórios', 'Beleza e cosméticos', 'Alimentos e bebidas', 'Casa e decoração', 'Eletrônicos', 'Saúde e bem-estar', 'Pet shop', 'Autopeças e acessórios', 'Livros e papelaria', 'Produtos infantis', 'Outros'],
-    services: ['Advocacia', 'Contabilidade', 'Arquitetura e engenharia', 'Construção e reformas', 'Tecnologia', 'Educação', 'Consultoria', 'Fotografia e eventos', 'Beleza e estética', 'Serviços automotivos', 'Outros'],
-    health: ['Clínica médica', 'Odontologia', 'Psicologia', 'Fisioterapia', 'Nutrição', 'Dermatologia', 'Exames e diagnóstico', 'Bem-estar e terapias', 'Outros']
-  }
-  const [segment, setSegment] = useState<'products' | 'services' | 'health'>(normalizeSegment(currentBusiness?.segment))
-  const [subsegment, setSubsegment] = useState(currentBusiness?.subsegment || '')
-  const [segmentDetail, setSegmentDetail] = useState(currentBusiness?.segment_detail || '')
-  const [timezone, setTimezone] = useState('America/Sao_Paulo')
-  const [generalFeedback, setGeneralFeedback] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (currentSite) {
-      setSiteName(currentSite.name || currentBusiness?.name || '')
-      setSiteDomain(currentSite.domain || currentBusiness?.website_url || '')
-    }
-    setSegment(normalizeSegment(currentBusiness?.segment))
-    setSubsegment(currentBusiness?.subsegment || '')
-    setSegmentDetail(currentBusiness?.segment_detail || '')
-  }, [currentSite?.id, currentBusiness?.id])
-
-  const handleSaveGeneral = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (currentSite && currentBusiness) {
-      if (!subsegment) {
-        setGeneralFeedback('Selecione o segmento secundário do seu site.')
-        return
-      }
-      if (subsegment === 'Outros' && segmentDetail.trim().length < 2) {
-        setGeneralFeedback('Descreva os detalhes do segmento do seu site.')
-        return
-      }
-      try {
-        if (supabase) {
-          const [{ error: businessError }, { error: siteError }] = await Promise.all([
-            supabase.from('businesses').update({ name: siteName, website_url: siteDomain, segment, subsegment, segment_detail: segmentDetail.trim() || null }).eq('id', currentBusiness.id),
-            supabase.from('sites').update({ name: siteName, domain: siteDomain }).eq('id', currentSite.id)
-          ])
-          if (businessError || siteError) throw new Error(businessError?.message || siteError?.message)
-        }
-      currentSite.name = siteName
-      currentSite.domain = siteDomain
-      currentBusiness.name = siteName
-      currentBusiness.website_url = siteDomain
-      currentBusiness.segment = segment
-      currentBusiness.subsegment = subsegment
-      currentBusiness.segment_detail = segmentDetail.trim() || null
-      try {
-        const prevB = JSON.parse(localStorage.getItem('analizi-custom-businesses') || '[]') as BusinessItem[]
-        const updatedB = prevB.map(b => b.id === currentBusiness.id ? { ...b, name: siteName, website_url: siteDomain, segment, subsegment, segment_detail: segmentDetail.trim() || null } : b)
-        localStorage.setItem('analizi-custom-businesses', JSON.stringify(updatedB))
-
-        const prevS = JSON.parse(localStorage.getItem('analizi-custom-sites') || '[]') as SiteItem[]
-        const updatedS = prevS.map(s => s.id === currentSite.id ? { ...s, name: siteName, domain: siteDomain } : s)
-        localStorage.setItem('analizi-custom-sites', JSON.stringify(updatedS))
-      } catch {}
-      await refreshBusinesses()
-      setGeneralFeedback('Configurações do site salvas com sucesso!')
-      setTimeout(() => setGeneralFeedback(null), 4000)
-      } catch (error) {
-        setGeneralFeedback(error instanceof Error ? error.message : 'Não foi possível salvar as configurações do site.')
-      }
-    }
-  }
-
-  // Equipe & Membros
-  const [teamMembers, setTeamMembers] = useState([
-    { id: '1', name: 'Administrador Principal', email: 'contato@analizi.com.br', role: 'owner', date: 'Proprietário da conta' },
-    { id: '2', name: 'Equipe de Tráfego', email: 'trafego@empresa.com.br', role: 'admin', date: 'Adicionado há 10 dias' }
-  ])
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<'viewer' | 'admin'>('viewer')
-  const [teamFeedback, setTeamFeedback] = useState<string | null>(null)
-
-  const handleInviteTeam = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!inviteEmail.trim() || !inviteEmail.includes('@')) return
-    setTeamMembers(prev => [
-      ...prev,
-      {
-        id: String(Date.now()),
-        name: inviteEmail.split('@')[0],
-        email: inviteEmail.trim(),
-        role: inviteRole,
-        date: 'Convite enviado agora'
-      }
-    ])
-    setTeamFeedback(`Convite enviado com sucesso para ${inviteEmail}!`)
-    setInviteEmail('')
-    setTimeout(() => setTeamFeedback(null), 4000)
-  }
-
-  const handleRemoveMember = (id: string) => {
-    setTeamMembers(prev => prev.filter(m => m.id !== id))
-    setTeamFeedback('Acesso do membro revogado.')
-    setTimeout(() => setTeamFeedback(null), 3000)
-  }
-
-  // Notificações
-  const [weeklyReport, setWeeklyReport] = useState(true)
-  const [anomalyAlert, setAnomalyAlert] = useState(true)
-  const [notifEmail, setNotifEmail] = useState('contato@empresa.com.br')
-  const [notifFeedback, setNotifFeedback] = useState<string | null>(null)
-
-  const handleSaveNotifications = (e: React.FormEvent) => {
-    e.preventDefault()
-    setNotifFeedback('Preferências de relatórios e alertas salvas com sucesso!')
-    setTimeout(() => setNotifFeedback(null), 4000)
-  }
+function PlanTab() {
+  const { effectivePlan, subscriptionStatus, subscriptionExpiresAt, totalSitesCount, setNewSiteModalOpen, canAddMoreSites } = useBusiness()
+  const sub = formatSubscriptionStatus(subscriptionStatus)
+  const exp = formatExpirationDate(subscriptionExpiresAt, effectivePlan.id)
+  const unlimited = effectivePlan.id === 'admin'
+  const usage = unlimited ? 12 : Math.min(100, Math.round((totalSitesCount / Math.max(1, effectivePlan.maxSites)) * 100))
+  const [price, per] = effectivePlan.priceLabel.split('/')
+  const pillClass = sub.badgeClass === 'active' ? 'ok' : sub.badgeClass === 'trial' ? 'blue' : 'warn'
+  const compare: PlanMetadata[] = [PLAN_DEFINITIONS.essential, PLAN_DEFINITIONS.growth]
 
   return (
-    <div className="settings-hub">
-      <PageHeader
-        title="Configurações"
-        subtitle={`Gerencie preferências, código de rastreamento, acessos e plano do site ${currentSite?.name || 'ativo'}.`}
-      />
-
-      {/* Barra de Abas de Navegação Interna */}
-      <div className="settings-tab-bar">
-        <button
-          type="button"
-          className={`settings-tab-btn ${activeTab === 'sources' ? 'active' : ''}`}
-          onClick={() => setActiveTab('sources')}
-        >
-          <Link2 size={16} /> Fontes de Dados
-        </button>
-        <button
-          type="button"
-          className={`settings-tab-btn ${activeTab === 'general' ? 'active' : ''}`}
-          onClick={() => setActiveTab('general')}
-        >
-          <Globe size={16} /> Meu Site & Geral
-        </button>
-        <button
-          type="button"
-          className={`settings-tab-btn ${activeTab === 'plan' ? 'active' : ''}`}
-          onClick={() => setActiveTab('plan')}
-        >
-          <Crown size={16} /> Plano & Assinatura
-        </button>
-        <button
-          type="button"
-          className={`settings-tab-btn ${activeTab === 'team' ? 'active' : ''}`}
-          onClick={() => setActiveTab('team')}
-        >
-          <Users size={16} /> Equipe & Acessos
-        </button>
-        <button
-          type="button"
-          className={`settings-tab-btn ${activeTab === 'notifications' ? 'active' : ''}`}
-          onClick={() => setActiveTab('notifications')}
-        >
-          <Calendar size={16} /> Relatórios & Alertas
-        </button>
+    <>
+      <div className="z-pane-h"><h2>Plano e assinatura</h2><p>Seu plano, quanto dele você está usando e as opções para crescer.</p></div>
+      <div className="z-plan-hero">
+        <div className="z-plan-in">
+          <div className="z-plan-l">
+            <div className="z-row-8"><span className="z-pill pink">Seu plano</span><span className={`z-pill ${pillClass}`}><span className="z-d" />{sub.label}</span></div>
+            <h3 className="z-plan-name">{effectivePlan.name}</h3>
+            <div className="z-price">{price}{per && <small> /{per}</small>}</div>
+            <p className="z-sub">{exp.includes('/') ? `Próxima renovação em ${exp}.` : exp}</p>
+            <div className="z-acts">
+              <button type="button" className="z-btn pri" onClick={() => setNewSiteModalOpen(true)}><Plus size={16} />Adicionar site</button>
+              <a className="z-btn sec" href="mailto:suporte@analizi.com.br?subject=Mudan%C3%A7a%20de%20plano">Falar sobre mudança de plano</a>
+            </div>
+          </div>
+          <div className="z-meters">
+            <div className="z-meter">
+              <div className="z-ml"><b>Sites</b><span>{totalSitesCount} de {unlimited ? 'ilimitados' : effectivePlan.maxSites}</span></div>
+              <div className="z-bar"><i style={{ width: `${usage}%` }} /></div>
+              <p className="z-sub" style={{ marginTop: 6 }}>{unlimited ? 'Seu plano não tem limite de sites.' : canAddMoreSites ? `Você ainda pode adicionar ${effectivePlan.maxSites - totalSitesCount} ${effectivePlan.maxSites - totalSitesCount === 1 ? 'site' : 'sites'}.` : 'Você está usando todos os sites do plano.'}</p>
+            </div>
+            <div className="z-meter">
+              <div className="z-ml"><b>Recursos</b><span>{effectivePlan.allFeaturesUnlocked ? 'Todos liberados' : 'Essenciais'}</span></div>
+              <div className="z-bar"><i className="green" style={{ width: effectivePlan.allFeaturesUnlocked ? '100%' : '70%' }} /></div>
+            </div>
+          </div>
+        </div>
       </div>
-
-      {/* ABA 1: GERAL */}
-      {activeTab === 'general' && (
-        <section className="settings-section-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 10 }}>
-            <h3 style={{ margin: 0 }}>Informações do Site Ativo</h3>
-            <span className="settings-connection-status-pill active">
-              ● RASTREADOR ATIVO ({currentSite?.tracker_site_id})
-            </span>
-          </div>
-          <p className="section-desc">Altere o nome, domínio e a classificação usada no cadastro deste site.</p>
-
-          {generalFeedback && (
-            <div className="settings-feedback-banner">
-              <CircleCheck size={16} /> {generalFeedback}
-            </div>
-          )}
-
-          <form onSubmit={handleSaveGeneral}>
-            <div className="settings-form-grid">
-              <div className="settings-field">
-                <label>Nome do Site ou Projeto</label>
-                <input
-                  type="text"
-                  required
-                  value={siteName}
-                  onChange={(e) => setSiteName(e.target.value)}
-                  placeholder="Ex.: Meu E-commerce Principal"
-                />
+      {!unlimited && (
+        <div className="z-compare">
+          {compare.map((plan) => {
+            const current = plan.id === effectivePlan.id
+            const [pp, pper] = plan.priceLabel.split('/')
+            return (
+              <div key={plan.id} className={`z-pcard ${current ? 'cur' : ''}`}>
+                <div className="z-row-between"><b>{plan.name}</b>{current && <span className="z-pill pink">Atual</span>}</div>
+                <div className="z-pp">{pp}{pper && <small> /{pper}</small>}</div>
+                <ul className="z-feat">{plan.features.map((f) => <li key={f}><Check size={15} />{f}</li>)}</ul>
+                {!current && <a className="z-btn sec sm" style={{ alignSelf: 'flex-start', marginTop: 6 }} href={`mailto:suporte@analizi.com.br?subject=${encodeURIComponent(`Quero mudar para o ${plan.name}`)}`}>Quero este plano</a>}
               </div>
-
-              <div className="settings-field">
-                <label>Endereço / Domínio do Site</label>
-                <input
-                  type="text"
-                  required
-                  value={siteDomain}
-                  onChange={(e) => setSiteDomain(e.target.value)}
-                  placeholder="Ex.: meusite.com.br"
-                />
-              </div>
-
-              <div className="settings-field">
-                <label>Segmento principal</label>
-                <select value={segment} onChange={(e) => { setSegment(e.target.value as 'products' | 'services' | 'health'); setSubsegment(''); setSegmentDetail('') }}>
-                  <option value="services">Serviços</option>
-                  <option value="products">Produtos / E-commerce</option>
-                  <option value="health">Saúde e Bem-estar</option>
-                </select>
-              </div>
-
-              <div className="settings-field">
-                <label>Segmento secundário</label>
-                <select required value={subsegment} onChange={(e) => { setSubsegment(e.target.value); setSegmentDetail('') }}>
-                  <option value="" disabled>Selecione uma opção</option>
-                  {subsegmentOptions[segment].map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </div>
-
-              <div className="settings-field">
-                <label>{subsegment === 'Outros' ? 'Detalhes do segmento (obrigatório)' : 'Detalhes do segmento (opcional)'}</label>
-                <input type="text" required={subsegment === 'Outros'} value={segmentDetail} onChange={(e) => setSegmentDetail(e.target.value)} placeholder="Ex.: Clínica odontológica especializada em implantes" />
-              </div>
-            </div>
-
-            <div className="settings-actions">
-              <Button type="submit">
-                <Check size={16} /> Salvar Alterações
-              </Button>
-            </div>
-          </form>
-        </section>
+            )
+          })}
+        </div>
       )}
-
-      {activeTab === 'sources' && <DataSources setPage={setPage} embedded />}
-
-      {/* ABA 4: PLANO & ASSINATURA */}
-      {activeTab === 'plan' && (
-        <section className="settings-section-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
-            <h3 style={{ margin: 0 }}>Plano Atual: {effectivePlan.name}</h3>
-            <span style={{ background: 'rgba(255, 60, 172, 0.12)', color: '#ff3cac', border: '1px solid rgba(255, 60, 172, 0.3)', borderRadius: 999, padding: '3px 10px', fontSize: 11, fontWeight: 800 }}>
-              {effectivePlan.priceLabel}
-            </span>
-          </div>
-          <p className="section-desc">{effectivePlan.description}</p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, margin: '20px 0' }}>
-            <div style={{ background: 'var(--surface-subtle, #F9FAFB)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
-              <span style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 700 }}>SITES CADASTRADOS</span>
-              <h2 style={{ margin: '6px 0 2px', fontSize: 24, fontWeight: 800 }}>
-                {totalSitesCount} / {effectivePlan.id === 'admin' ? 'Ilimitados' : effectivePlan.maxSites}
-              </h2>
-              <p style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>Limite de sites ativos simultaneamente.</p>
-            </div>
-
-            <div style={{ background: 'var(--surface-subtle, #F9FAFB)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 }}>
-              <span style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 700 }}>STATUS DA ASSINATURA</span>
-              <h2 style={{ margin: '6px 0 2px', fontSize: 24, fontWeight: 800, color: '#059669' }}>
-                ATIVA
-              </h2>
-              <p style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>Todos os recursos e métricas desbloqueados.</p>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 18 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', color: 'var(--muted-foreground)', letterSpacing: '0.04em' }}>
-              RECURSOS INCLUSOS NO SEU PLANO:
-            </span>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10 }}>
-              {effectivePlan.features.map(f => (
-                <li key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--foreground)' }}>
-                  <CircleCheck size={16} style={{ color: '#059669', flexShrink: 0 }} /> {f}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div style={{ display: 'flex', gap: 12 }}>
-            <Button type="button" onClick={() => setNewSiteModalOpen(true)}>
-              <Plus size={16} /> Cadastrar Novo Site
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setPage('team')}>
-              Gerenciar Membros & Permissões
-            </Button>
-          </div>
-        </section>
+      {unlimited && (
+        <div className="z-card">
+          <h3>Incluído no seu plano</h3>
+          <ul className="z-feat">{effectivePlan.features.map((f) => <li key={f}><Check size={15} />{f}</li>)}</ul>
+        </div>
       )}
+    </>
+  )
+}
 
-      {/* ABA 5: EQUIPE & ACESSOS */}
-      {activeTab === 'team' && (
-        <section className="settings-section-card">
-          <h3>Pessoas e Permissões de Acesso</h3>
-          <p className="section-desc">Gerencie quem pode visualizar ou administrar os dados deste site no Analizi.</p>
+function AlertsTab({ onToast }: { onToast: (t: string) => void }) {
+  const { currentSite } = useBusiness()
+  const storageKey = `analizi-alert-prefs-${currentSite?.id || 'site'}`
+  const read = () => {
+    try { return { weekly: true, stopped: true, drop: false, mailTo: '', ...JSON.parse(localStorage.getItem(storageKey) || '{}') } as { weekly: boolean; stopped: boolean; drop: boolean; mailTo: string } }
+    catch { return { weekly: true, stopped: true, drop: false, mailTo: '' } }
+  }
+  const [saved, setSaved] = useState(read)
+  const [prefs, setPrefs] = useState(read)
+  useEffect(() => {
+    const load = async () => {
+      const base = read()
+      if (!base.mailTo && supabase) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.email) base.mailTo = user.email
+      }
+      setSaved(base); setPrefs(base)
+    }
+    void load()
+  }, [storageKey])
+  const dirty = JSON.stringify(prefs) !== JSON.stringify(saved)
+  const save = () => {
+    try { localStorage.setItem(storageKey, JSON.stringify(prefs)) } catch { /* armazenamento indisponível */ }
+    setSaved(prefs)
+    onToast('Preferências salvas')
+  }
+  const rows: Array<{ k: 'weekly' | 'stopped' | 'drop'; title: string; text: string; icon: React.ComponentType<{ size?: number }> }> = [
+    { k: 'weekly', title: 'Resumo semanal', text: 'Toda segunda às 8h: visitas, contatos e os insights da semana. Veja o exemplo ao lado.', icon: Mail },
+    { k: 'stopped', title: 'Aviso se o rastreador parar', text: 'Se o site ficar 24 horas sem enviar dados, avisamos para você conferir a instalação.', icon: Activity },
+    { k: 'drop', title: 'Aviso de queda nas visitas', text: 'Quando as visitas de um dia ficarem 30% abaixo da média das últimas 4 semanas.', icon: TrendingDown }
+  ]
 
-          {teamFeedback && (
-            <div className="settings-feedback-banner">
-              <CircleCheck size={16} /> {teamFeedback}
-            </div>
-          )}
-
-          {/* Lista de Membros */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-            {teamMembers.map(m => (
-              <div
-                key={m.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  background: 'var(--surface-subtle, #F9FAFB)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 34, height: 34, borderRadius: '50%', background: '#2563EB', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13 }}>
-                    {m.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <b style={{ fontSize: 13, display: 'block', color: 'var(--foreground)' }}>{m.name}</b>
-                    <small style={{ color: 'var(--muted-foreground)', fontSize: 11 }}>{m.email} · {m.date}</small>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, background: m.role === 'owner' ? 'rgba(37, 99, 235, 0.1)' : 'rgba(16, 185, 129, 0.1)', color: m.role === 'owner' ? '#2563EB' : '#059669', padding: '3px 8px', borderRadius: 6 }}>
-                    {m.role === 'owner' ? 'Proprietário' : m.role === 'admin' ? 'Administrador' : 'Visualizador'}
-                  </span>
-                  {m.role !== 'owner' && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveMember(m.id)}
-                      style={{ background: 'transparent', border: 0, color: '#EF4444', cursor: 'pointer', padding: 4 }}
-                      title="Revogar acesso"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </div>
+  return (
+    <>
+      <div className="z-pane-h"><h2>E-mails e alertas</h2><p>O que o Analizi envia para você sem precisar abrir o painel.</p></div>
+      <div className="z-note"><Info size={16} /><span>Os envios por e-mail estão chegando em breve. Suas escolhas ficam salvas e passam a valer assim que forem liberados.</span></div>
+      <div className="z-two">
+        <div className="z-grow">
+          <div className="z-card">
+            {rows.map(({ k, title, text, icon: Icon }) => (
+              <div className="z-sw-row" key={k}>
+                <span className="z-swi"><Icon size={18} /></span>
+                <div className="z-swt"><b id={`z-sw-${k}`}>{title}</b><small>{text}</small></div>
+                <button type="button" role="switch" aria-checked={prefs[k]} aria-labelledby={`z-sw-${k}`} className={`z-sw ${prefs[k] ? 'on' : ''}`} onClick={() => setPrefs({ ...prefs, [k]: !prefs[k] })} />
               </div>
             ))}
           </div>
-
-          {/* Convidar nova pessoa */}
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 20 }}>
-            <h4 style={{ fontSize: 14, fontWeight: 750, margin: '0 0 6px' }}>Convidar novo membro</h4>
-            <p style={{ fontSize: 12, color: 'var(--muted-foreground)', margin: '0 0 14px' }}>
-              O convidado receberá acesso aos painéis de relatórios deste site.
-            </p>
-
-            <form onSubmit={handleInviteTeam} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-              <input
-                type="email"
-                required
-                placeholder="email@empresa.com.br"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                style={{ flex: 1, minWidth: 220, padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)' }}
-              />
-              <select
-                value={inviteRole}
-                onChange={(e) => setInviteRole(e.target.value as 'viewer' | 'admin')}
-                style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--foreground)' }}
-              >
-                <option value="viewer">Visualizador (Somente Leitura)</option>
-                <option value="admin">Administrador (Acesso Total)</option>
-              </select>
-              <Button type="submit">
-                <UserPlus size={16} /> Convidar Membro
-              </Button>
-            </form>
+          <div className="z-card">
+            <div className="z-fld"><label htmlFor="z-f-mail">Enviar para</label><input id="z-f-mail" value={prefs.mailTo} onChange={(e) => setPrefs({ ...prefs, mailTo: e.target.value })} placeholder="nome@empresa.com.br" /><span className="z-hint">Para mais de um e-mail, separe com vírgula.</span></div>
           </div>
-        </section>
+        </div>
+        <div className="z-side">
+          <div className="z-mail" aria-label="Exemplo do resumo semanal">
+            <div className="z-mail-h"><span className="z-ws-av sm">AZ</span><div><b>Resumo semanal · {currentSite?.name || 'Seu site'}</b>Exemplo · toda segunda às 8h</div></div>
+            <div className="z-mail-b">
+              <div className="z-mail-top"><b>Sua semana em 30 segundos</b><div>Visitas, contatos e o que fazer a seguir</div></div>
+              <div className="z-mail-k"><div><small>Visitas</small><b>—</b></div><div><small>Contatos</small><b>—</b></div><div><small>Taxa</small><b>—</b></div></div>
+              <div className="z-mail-l"><b>Pontos de atenção da semana</b><span>· Os insights da IZI aparecem aqui</span><span className="z-mail-cta">Ver todos os insights</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {dirty && (
+        <div className="z-savebar"><span>Você tem alterações não salvas.</span><span className="z-row-6"><button type="button" className="z-btn ghost sm" onClick={() => setPrefs(saved)}>Descartar</button><button type="button" className="z-btn pri sm" onClick={save}>Salvar preferências</button></span></div>
       )}
-
-      {/* ABA 6: NOTIFICAÇÕES & RELATÓRIOS */}
-      {activeTab === 'notifications' && (
-        <section className="settings-section-card">
-          <h3>Relatório Semanal & Alertas Automáticos</h3>
-          <p className="section-desc">Defina como e quando você deseja ser notificado sobre as métricas do seu site.</p>
-
-          {notifFeedback && (
-            <div className="settings-feedback-banner">
-              <CircleCheck size={16} /> {notifFeedback}
-            </div>
-          )}
-
-          <form onSubmit={handleSaveNotifications}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 600 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14, background: 'var(--surface-subtle, #F9FAFB)', border: '1px solid var(--border)', borderRadius: 10 }}>
-                <input
-                  type="checkbox"
-                  id="weekly-check"
-                  checked={weeklyReport}
-                  onChange={(e) => setWeeklyReport(e.target.checked)}
-                  style={{ marginTop: 3 }}
-                />
-                <label htmlFor="weekly-check" style={{ cursor: 'pointer' }}>
-                  <b style={{ fontSize: 13, display: 'block', color: 'var(--foreground)' }}>Relatório Semanal Consolidado</b>
-                  <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
-                    Receba toda segunda-feira às 08h um resumo com visitantes, páginas mais acessadas e contatos pelo WhatsApp.
-                  </span>
-                </label>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14, background: 'var(--surface-subtle, #F9FAFB)', border: '1px solid var(--border)', borderRadius: 10 }}>
-                <input
-                  type="checkbox"
-                  id="anomaly-check"
-                  checked={anomalyAlert}
-                  onChange={(e) => setAnomalyAlert(e.target.checked)}
-                  style={{ marginTop: 3 }}
-                />
-                <label htmlFor="anomaly-check" style={{ cursor: 'pointer' }}>
-                  <b style={{ fontSize: 13, display: 'block', color: 'var(--foreground)' }}>Alertas de Picos ou Queda de Tráfego</b>
-                  <span style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>
-                    Notificação imediata caso o site registre aumento anormal de taxa de saída ou perda de conexão.
-                  </span>
-                </label>
-              </div>
-
-              <div className="settings-field">
-                <label>E-mail Destinatário dos Relatórios</label>
-                <input
-                  type="email"
-                  required
-                  value={notifEmail}
-                  onChange={(e) => setNotifEmail(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="settings-actions">
-              <Button type="submit">
-                <Check size={16} /> Salvar Preferências
-              </Button>
-            </div>
-          </form>
-        </section>
-      )}
-    </div>
+    </>
   )
 }
+
 
 function SourceHeader({
   title,
@@ -3788,112 +3649,17 @@ function SourceHeader({
   );
 }
 
-function DataSources({ setPage, embedded = false }: { setPage: (page: Page) => void; embedded?: boolean }) {
-  const { currentSite, refreshBusinesses } = useBusiness();
-  const [ga4Connected, setGa4Connected] = useState(false);
-  const [trackerConnected, setTrackerConnected] = useState(false);
-  const [updating, setUpdating] = useState(false);
-  const [message, setMessage] = useState('');
-  useEffect(() => {
-    if (!supabase || !currentSite) return;
-    let active = true;
-    setGa4Connected(false);
-    setTrackerConnected(false);
-    void (async () => {
-      const { data } = await supabase.from('data_sources').select('kind,status').eq('site_id', currentSite.id);
-      if (!active) return;
-      setGa4Connected(Boolean(data?.some(item => item.kind === 'ga4' && item.status === 'connected')));
-      const sourceReportsActive = Boolean(data?.some(item => item.kind === 'tracker' && item.status === 'connected'));
-      if (!currentSite.tracker_site_id) return;
-      try {
-        const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${currentSite.tracker_site_id}/status`);
-        const status = response.ok ? await response.json() as { received?: boolean } : null;
-        if (active) setTrackerConnected(Boolean(status?.received) || sourceReportsActive);
-      } catch {
-        if (active) setTrackerConnected(sourceReportsActive);
-      }
-    })();
-    return () => { active = false; };
-  }, [currentSite?.id]);
-  const chooseSource = async (source: 'tracker' | 'ga4') => {
-    if (!supabase || !currentSite || (source === 'ga4' && !ga4Connected)) return;
-    setUpdating(true); setMessage('');
-    const { error } = await supabase.from('sites').update({ analytics_source: source }).eq('id', currentSite.id);
-    if (error) setMessage(error.message);
-    else { await refreshBusinesses(); setMessage(`Os painéis agora usam ${source === 'ga4' ? 'Google Analytics 4' : 'Rastreador Analizi'}.`); }
-    setUpdating(false);
-  };
+function GA4ComingSoon({ setPage }: { setPage: (page: Page) => void }) {
   return (
     <>
-      {!embedded && <SourceHeader
-        eyebrow="INTEGRAÇÕES DE DADOS"
-        icon={Link2}
-        iconColor="#2563EB"
-        title="Fontes de Dados"
-        subtitle="Escolha de onde o Analizi vai receber os eventos e métricas do seu site."
-        setPage={setPage}
-      />}
-      <section className="data-source-selector">
-        <div>
-          <span className="eyebrow">FONTE DOS PAINÉIS</span>
-          <h2>Qual fonte você quer usar?</h2>
-          <p>Esta escolha atualiza os números de todo o Analizi. Heatmap e rolagem continuam usando o Rastreador Analizi.</p>
-        </div>
-        <div className="data-source-choices" role="radiogroup" aria-label="Fonte de dados dos painéis">
-          <button type="button" role="radio" aria-checked={currentSite?.analytics_source !== 'ga4'} className={currentSite?.analytics_source !== 'ga4' ? 'selected' : ''} disabled={updating || !trackerConnected} onClick={() => void chooseSource('tracker')}>
-            <span className="source-icon source-icon-with-status"><BrandLogo compact />{trackerConnected && <CircleCheck className="source-icon-check" aria-label="Rastreador conectado" />}</span>
-            <span><b>Rastreador Analizi</b><small>{trackerConnected ? 'Selecionar como fonte' : 'Não configurado'}</small></span>
-            {currentSite?.analytics_source !== 'ga4' && <Check size={18}/>}
-          </button>
-          <button type="button" role="radio" aria-checked={currentSite?.analytics_source === 'ga4'} className={currentSite?.analytics_source === 'ga4' ? 'selected' : ''} disabled={updating || !ga4Connected} onClick={() => void chooseSource('ga4')}>
-            <span className="source-icon ga"><img className="ga4-logo" src="/ga4-icon.png" alt="" /></span>
-            <span><b>Google Analytics 4</b><small>{ga4Connected ? 'Selecionar como fonte' : 'Conecte o GA4 primeiro'}</small></span>
-            {currentSite?.analytics_source === 'ga4' && <Check size={18}/>}
-          </button>
-        </div>
-        {message && <p className="data-source-feedback" style={{ color: message.includes('agora usam') ? '#087f5b' : '#b42318' }}>{message}</p>}
-      </section>
-      <section className="source-options">
-        <article className={`source-config-card ${currentSite?.analytics_source !== 'ga4' ? 'is-active' : ''}`}>
-          <div className="source-card-heading">
-            <span className="source-icon"><BrandLogo compact /></span>
-            <div>
-              <span className={`source-status ${trackerConnected ? 'connected' : 'not-configured'}`}>{trackerConnected ? <><CircleCheck size={14}/> CONECTADO</> : <><AlertTriangle size={14}/> NÃO CONFIGURADO</>}</span>
-              <h2>Rastreador Analizi</h2>
-              <p>Captura cliques, heatmap e rolagem, independentemente da fonte escolhida para os painéis.</p>
-            </div>
-          </div>
-          <ul>
-            <li><Check size={16}/>Script leve (&lt; 2 KB), compatível com qualquer site</li>
-            <li><Check size={16}/>Captura automática de WhatsApp, cliques e rolagem</li>
-            <li><Check size={16}/>Privacidade total conforme LGPD/GDPR</li>
-          </ul>
-          <Button variant="secondary" onClick={() => setPage('tracker-setup')}>{trackerConnected ? 'Gerenciar rastreador' : 'Configurar rastreador'} <ArrowRight size={17}/></Button>
-        </article>
-
-        <article className={`source-config-card ${currentSite?.analytics_source === 'ga4' ? 'is-active' : ''}`}>
-          <div className="source-card-heading">
-            <span className="source-icon ga source-icon-with-status"><img className="ga4-logo" src="/ga4-icon.png" alt="Google Analytics 4" />{ga4Connected && <CircleCheck className="source-icon-check" aria-label="GA4 conectado" />}</span>
-            <div>
-              <span className={`source-status ${ga4Connected ? 'connected' : 'not-configured'}`}>{ga4Connected ? <><CircleCheck size={14}/> CONECTADO</> : <><AlertTriangle size={14}/> NÃO CONFIGURADO</>}</span>
-              <h2>Google Analytics 4</h2>
-              <p>Traga os dados que você já acompanha no Google Analytics.</p>
-            </div>
-          </div>
-          <ul>
-            <li><Check size={16}/>Captura sessões e acessos diariamente pelo cron</li>
-            <li><Check size={16}/>Leitura segura, sem alterar sua conta Google</li>
-          </ul>
-          <Button variant="secondary" onClick={() => setPage('ga4-setup')}>{ga4Connected ? 'Gerenciar GA4' : 'Configurar GA4'} <ArrowRight size={17}/></Button>
+      <SourceHeader eyebrow="CONFIGURAÇÃO GOOGLE" iconImage="/ga4-icon.png" title="Google Analytics 4" subtitle="Integração com o Google Analytics 4." setPage={setPage} />
+      <section className="setup-layout">
+        <article className="setup-card" style={{ textAlign: 'center', padding: 48 }}>
+          <h2>EM BREVE</h2>
+          <p>A conexão com o Google Analytics 4 estará disponível em breve. Enquanto isso, use o Rastreador Analizi.</p>
+          <Button variant="secondary" onClick={() => setPage('tracker-setup')}>Configurar rastreador <ArrowRight size={17}/></Button>
         </article>
       </section>
-      <article className="source-note">
-        <ShieldCheck size={21}/>
-        <div>
-          <b>Você pode manter o rastreador ativo como fonte principal.</b>
-          <p>Isso garante que cliques comerciais e mapa de calor continuem gravando perfeitamente.</p>
-        </div>
-      </article>
     </>
   );
 }
@@ -4111,140 +3877,162 @@ function GA4Setup({ setPage }: { setPage: (page: Page) => void }) {
   );
 }
 
+const TRACKER_GUIDES = {
+    wordpress: ['WordPress', 'WP', ['Instale um plugin de código no cabeçalho, como o WPCode.', 'Abra a área “Cabeçalho” (Header) do plugin.', 'Cole o código e clique em Salvar.']],
+    wix: ['Wix', 'Wx', ['Abra Configurações › Avançado › Código personalizado.', 'Escolha “Cabeçalho” e “Todas as páginas”.', 'Cole o código, salve e publique o site.']],
+    shopify: ['Shopify', 'Sh', ['Abra Loja virtual › Temas › Editar código.', 'Abra o arquivo layout/theme.liquid.', 'Cole o código logo antes de </head> e salve.']],
+    squarespace: ['Squarespace', 'Sq', ['Abra Configurações › Avançado › Injeção de código.', 'Cole o código no campo “Header”.', 'Salve as alterações.']],
+    html: ['HTML próprio', '</>', ['Abra o arquivo que contém a tag <head> do site.', 'Cole o código logo antes de </head>.', 'Publique a alteração no servidor.']],
+    other: ['Outra plataforma', '?', ['Procure por “código personalizado”, “cabeçalho” ou “scripts”.', 'Cole o código no cabeçalho de todas as páginas.', 'Se não encontrar, peça ajuda ao suporte da plataforma.']]
+  } as const;
+
 function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
   const { currentSite } = useBusiness();
   const siteId = currentSite?.tracker_site_id || '';
   const domain = currentSite?.domain || '';
-  const [open, setOpen] = useState('html');
+  const [platform, setPlatform] = useState<keyof typeof TRACKER_GUIDES>('wordpress');
   const [copied, setCopied] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState('');
-  const [installed, setInstalled] = useState(false);
-  const [lastEventAt, setLastEventAt] = useState<string | null>(null);
-  const [showInstallation, setShowInstallation] = useState(false);
+  const [verify, setVerify] = useState<'idle' | 'wait' | 'ok' | 'fail' | 'error'>('idle');
+  const [toast, setToast] = useState<string | null>(null);
+  const tracker = useTrackerStatus(siteId);
+  const alreadyInstalled = Boolean(tracker.status?.received);
+
   useEffect(() => {
-    const init = async () => {
-      if (!siteId || !domain) return;
-      await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ trackerSiteId: siteId, domain })
-      }).catch(() => {});
-    };
-    void init();
+    if (!siteId || !domain) return;
+    void fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ trackerSiteId: siteId, domain })
+    }).catch(() => {});
   }, [siteId, domain]);
-  useEffect(() => {
-    if (!siteId) return;
-    let active = true;
-    void fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${siteId}/status`)
-      .then(async response => response.ok ? await response.json() as { received?: boolean; lastEventAt?: string | null } : null)
-      .then(status => {
-        if (!active || !status?.received) return;
-        setInstalled(true);
-        setLastEventAt(status.lastEventAt || null);
-      })
-      .catch(() => {});
-    return () => { active = false; };
-  }, [siteId]);
+
   const testInstallation = async () => {
     if (!siteId) return;
-    setTesting(true);
-    setTestResult('Verificando se o seu site enviou um evento...');
-    try {
-      const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${siteId}/status`);
-      const status = await response.json() as { received?: boolean; lastEventAt?: string | null };
-      if (status.received) {
-        setInstalled(true);
-        setLastEventAt(status.lastEventAt || null);
-        setShowInstallation(false);
-        setTestResult('Instalação confirmada. Recebemos um evento do seu site.');
-        if (supabase && currentSite?.id) {
-          const nowIso = new Date().toISOString();
-          void supabase.from('data_sources').update({
-            status: 'connected',
-            connected_at: nowIso,
-            last_synced_at: status.lastEventAt || nowIso
-          }).eq('site_id', currentSite.id);
-        }
-      } else {
-        setTestResult(`Ainda não recebemos um evento de ${domain || 'seu site'}. Publique o código, abra o site em outra aba e tente novamente.`);
+    setVerify('wait');
+    const status = await tracker.check();
+    if (!status) { setVerify('error'); return; }
+    if (status.received) {
+      setVerify('ok');
+      if (supabase && currentSite?.id) {
+        const nowIso = new Date().toISOString();
+        void supabase.from('data_sources').update({ status: 'connected', connected_at: nowIso, last_synced_at: status.lastEventAt || nowIso }).eq('site_id', currentSite.id);
       }
-    } catch {
-      setTestResult('Não foi possível verificar agora. Tente novamente em alguns instantes.');
-    } finally {
-      setTesting(false);
-    }
+    } else setVerify('fail');
   };
+
   const snippet = siteId ? `<script async src="https://analizi.carvalhopaula1990.workers.dev/izi.js" data-site="${siteId}"></script>` : '';
-  const guides = {
-    html: ['Sites próprios em HTML', 'Abra o arquivo que contém a tag <head> do seu site.', 'Cole o código logo antes de </head>.', 'Publique a alteração no seu servidor.'],
-    wordpress: ['WordPress', 'Instale um plugin de inserção de código no cabeçalho.', 'Abra a área Header / Cabeçalho do plugin.', 'Cole o código e salve.'],
-    wix: ['Wix', 'Abra Configurações → Avançado → Código personalizado.', 'Escolha Cabeçalho e todas as páginas.', 'Cole o código, salve e publique.'],
-    shopify: ['Shopify', 'Abra Temas → Editar código e o arquivo layout/theme.liquid.', 'Cole o código antes de </head>.', 'Salve a alteração.'],
-    squarespace: ['Squarespace', 'Abra Configurações → Avançado → Injeção de código.', 'Cole o código no campo Header.', 'Salve as alterações.'],
-    other: ['Outra plataforma', 'Procure por código personalizado, cabeçalho ou scripts.', 'Cole o código antes de </head>.', 'Peça ajuda à plataforma, se necessário.']
-  } as const;
-  return <>
-    <SourceHeader
-      eyebrow="INSTALAÇÃO RÁPIDA"
-      icon={Compass}
-      iconColor="#10b981"
-      title={installed && !showInstallation ? 'Rastreador Analizi ativo' : 'Instalar o Rastreador Analizi'}
-      subtitle={installed && !showInstallation ? 'Seu site está enviando eventos com segurança para o Analizi.' : 'Meça visitas e ações importantes no seu site sem coletar conteúdo de formulários.'}
-      setPage={setPage}
-    />
-    <section className="setup-layout">
-      <article className="setup-card tracker-card">
-        {installed && !showInstallation ? <>
-          <div className="step-label">RASTREADOR ATIVO</div>
-          <div className="tracker-connected-icon"><span className="source-icon large"><BrandLogo compact /></span><CircleCheck aria-label="Rastreador conectado" /></div>
-          <h2>O rastreador está funcionando</h2>
-          <p>Já recebemos eventos de <b>{domain || currentSite?.name || 'seu site'}</b>. Heatmap, rolagem e cliques comerciais estão disponíveis conforme novas visitas chegam.</p>
-          <div className="tracker-active-note"><ShieldCheck size={19}/><span>{lastEventAt ? `Último evento recebido em ${new Date(lastEventAt).toLocaleString('pt-BR')}.` : 'Conexão confirmada com o seu site.'}</span></div>
-          <Button className="full" onClick={testInstallation} disabled={testing}>{testing ? 'Verificando conexão...' : 'Verificar conexão'} <RefreshCw size={17}/></Button>
-          <Button variant="secondary" className="full" onClick={() => setPage('heatmap')}>Ver heatmap e rolagem <ArrowRight size={17}/></Button>
-          <Button variant="ghost" className="full" onClick={() => setShowInstallation(true)}>Ver código de instalação</Button>
-          {testResult && <p className="form-feedback">{testResult}</p>}
-        </> : <>
-        <div className="step-label">PASSO 1 DE 2</div>
-        <span className="source-icon large"><BrandLogo compact /></span>
-        <h2>Instale o código do Analizi</h2>
-        <p>Copie este código para o cabeçalho do seu site.</p>
-        <div className="account-id">
-          <span>IDENTIFICAÇÃO DA SUA CONTA ANALIZI</span>
-          <code>{siteId || 'Carregando identificação...'}</code>
-          <small>Esta identificação liga as métricas ao seu negócio ({currentSite?.name || domain || 'Seu site'}).</small>
+  const guides = TRACKER_GUIDES;
+
+  const copyCode = () => {
+    if (!snippet) return;
+    void navigator.clipboard?.writeText(snippet);
+    setCopied(true);
+  };
+  const copyInstructions = () => {
+    const [name, , steps] = guides[platform];
+    const text = `Instalar o Analizi no site ${domain || ''} (${name}):\n\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}\n\nCódigo para colar no cabeçalho de todas as páginas:\n${snippet}`;
+    void navigator.clipboard?.writeText(text);
+    setToast('Instruções copiadas. Cole no e-mail ou WhatsApp para quem cuida do site.');
+  };
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const isOk = verify === 'ok';
+  const step1 = copied || isOk ? 'ok' : 'cur';
+  const step2 = isOk ? 'ok' : copied ? 'cur' : '';
+  const step3 = isOk ? 'ok' : verify !== 'idle' ? 'cur' : '';
+
+  return (
+    <div className="z-install">
+      <header className="z-ph">
+        <div>
+          <button type="button" className="z-lnk" onClick={() => setPage('settings')}><ArrowLeft size={15} />Voltar para Coleta de dados</button>
+          <h1>Instalar o rastreador</h1>
+          <p>Leva uns 5 minutos. Você só precisa colar um código no seu site e confirmar aqui.</p>
         </div>
-        <div className="code-block">
-          <code>{snippet || 'Carregando código de instalação...'}</code>
-          <button aria-label="Copiar código" disabled={!snippet} onClick={() => { void navigator.clipboard.writeText(snippet); setCopied(true) }}><Copy size={17}/></button>
+      </header>
+
+      {alreadyInstalled && verify === 'idle' && (
+        <div className="z-res ok" role="status" style={{ marginTop: 0, marginBottom: 18 }}>
+          <CircleCheck size={20} />
+          <div><b>O rastreador já está funcionando em {domain || 'seu site'}.</b><div className="z-res-sub">Último dado recebido {relativeTime(tracker.status?.lastEventAt)}. Use esta página só se precisar reinstalar o código.</div></div>
         </div>
-        {copied && <p className="form-feedback">Código copiado.</p>}
-        <h3>Passo a passo por plataforma</h3>
-        <div className="install-accordion">
-          {Object.entries(guides).map(([key, [title, ...steps]]) => (
-            <div key={key}>
-              <button type="button" onClick={() => setOpen(open === key ? '' : key)}>{title}<ChevronDown size={17}/></button>
-              {open === key && <ol>{steps.map((step) => <li key={step}>{step}</li>)}</ol>}
+      )}
+
+      <div className="z-stepper" aria-label="Etapas da instalação">
+        <div className={`z-stp ${step1}`}><span className="z-n">{step1 === 'ok' ? <Check size={15} /> : 1}</span>Copiar o código</div><span className={`z-stp-l ${copied || isOk ? 'ok' : ''}`} />
+        <div className={`z-stp ${step2}`}><span className="z-n">{step2 === 'ok' ? <Check size={15} /> : 2}</span>Colar no site</div><span className={`z-stp-l ${isOk ? 'ok' : ''}`} />
+        <div className={`z-stp ${step3}`}><span className="z-n">{step3 === 'ok' ? <Check size={15} /> : 3}</span>Confirmar</div>
+      </div>
+
+      <div className="z-inst">
+        <div className="z-steps">
+          <div className="z-card">
+            <div className="z-sh"><span className={`z-n ${copied ? 'ok' : ''}`}>1</span><div><h3>Copie o código</h3><p className="z-sub">Este código é só do seu site{domain ? `, ${domain}` : ''}.</p></div></div>
+            <div className="z-editor">
+              <div className="z-ed-top"><span className="z-dots"><i /><i /><i /></span><span>cabeçalho do site</span><button type="button" className="z-btn sm" onClick={copyCode} disabled={!snippet}><Copy size={14} />{copied ? 'Copiado' : 'Copiar código'}</button></div>
+              {snippet ? (
+                <div className="z-ed-code"><span className="z-ln">1<br />2<br />3</span><code><span className="tk-t">&lt;script</span> <span className="tk-a">async</span>{'\n  '}<span className="tk-a">src</span>=<span className="tk-s">"https://analizi.carvalhopaula1990.workers.dev/izi.js"</span>{'\n  '}<span className="tk-a">data-site</span>=<span className="tk-s">"{siteId}"</span><span className="tk-t">&gt;&lt;/script&gt;</span></code></div>
+              ) : <div className="z-ed-code"><code>Carregando o código do seu site…</code></div>}
             </div>
-          ))}
+          </div>
+
+          <div className="z-card">
+            <div className="z-sh"><span className="z-n">2</span><div><h3>Cole no seu site</h3><p className="z-sub">Onde o seu site foi feito? Mostramos o caminho exato.</p></div></div>
+            <div className="z-plats" role="tablist" aria-label="Plataforma do site">
+              {(Object.keys(guides) as Array<keyof typeof guides>).map((key) => (
+                <button key={key} type="button" role="tab" aria-selected={platform === key} className={`z-plat ${platform === key ? 'on' : ''}`} onClick={() => setPlatform(key)}><span className="z-mono">{guides[key][1]}</span>{guides[key][0]}</button>
+              ))}
+            </div>
+            <ol className="z-olist">{guides[platform][2].map((step) => <li key={step}>{step}</li>)}</ol>
+            <div className="z-note pink" style={{ marginTop: 14 }}><Users size={16} /><span>Outra pessoa cuida do seu site? <button type="button" className="z-lnk inline" onClick={copyInstructions} disabled={!snippet}>Copiar instruções para enviar a ela</button></span></div>
+          </div>
+
+          <div className="z-card">
+            <div className="z-sh"><span className={`z-n ${isOk ? 'ok' : ''}`}>3</span><div><h3>Confirme a instalação</h3><p className="z-sub">Depois de publicar o código, abra o seu site em outra aba e clique em verificar.</p></div></div>
+            <button type="button" className="z-btn pri" onClick={() => void testInstallation()} disabled={!siteId || verify === 'wait'}>{verify === 'wait' ? 'Verificando…' : verify === 'fail' || verify === 'error' ? 'Verificar de novo' : 'Verificar instalação'}</button>
+            {verify === 'wait' && <div className="z-res wait" role="status"><span className="z-pulse pink" />Procurando dados de {domain || 'seu site'}…</div>}
+            {verify === 'ok' && (
+              <div className="z-res ok" role="status"><CircleCheck size={20} /><div><b>Pronto, recebemos dados do seu site.</b><div className="z-res-sub">Os relatórios começam a aparecer nos próximos minutos.</div><div style={{ marginTop: 10 }} className="z-row-8"><button type="button" className="z-btn sec sm" onClick={() => setPage('dashboard')}>Ir para o Início</button><button type="button" className="z-btn ghost sm" onClick={() => setPage('heatmap')}>Ver heatmap e rolagem</button></div></div></div>
+            )}
+            {verify === 'fail' && (
+              <div className="z-res fail" role="status"><AlertTriangle size={20} /><div><b>Ainda não recebemos dados de {domain || 'seu site'}.</b> Confira:<ul><li>se o código foi salvo e o site publicado;</li><li>se você abriu o site depois de publicar;</li><li>se algum bloqueador de anúncios está ligado no seu navegador.</li></ul></div></div>
+            )}
+            {verify === 'error' && <div className="z-res fail" role="status"><AlertTriangle size={20} /><div><b>Não foi possível verificar agora.</b> Tente de novo em alguns instantes.</div></div>}
+          </div>
         </div>
-        <Button className="full" onClick={testInstallation} disabled={!siteId || testing}>{testing ? 'Testando instalação...' : 'Testar instalação'} <ArrowRight size={17}/></Button>
-        {testResult && <p className="form-feedback">{testResult}</p>}
-        <Button variant="ghost" className="full" onClick={() => setPage('dashboard')}>Continuar e configurar depois</Button>
-        {installed && <Button variant="ghost" className="full" onClick={() => setShowInstallation(false)}>Voltar ao status do rastreador</Button>}
-        </>}
-      </article>
-      <aside className="setup-sidebar">
-        <span className="eyebrow">PRECISA DE AJUDA?</span>
-        <div className="install-help"><Globe2 size={20}/><div><b>Ficou com dúvida?</b><small>Fale com nosso suporte.</small></div></div>
-        <a className="support-link" href="mailto:suporte@analizi.com.br">suporte@analizi.com.br</a>
-        <p className="setup-help">Depois de publicar o código, abra o seu site em outra aba e clique em testar.</p>
-        <Button variant="ghost" onClick={() => setPage('settings')}>Voltar para Configurações</Button>
-      </aside>
-    </section>
-  </>;
+
+        <aside className="z-aside">
+          <div className="z-card">
+            <h3>O que o rastreador coleta</h3>
+            <ul className="z-chk">
+              <li><Check size={16} className="z-yes" />Páginas visitadas e de onde a visita veio</li>
+              <li><Check size={16} className="z-yes" />Cliques em botões, como WhatsApp</li>
+              <li><Check size={16} className="z-yes" />Até onde a pessoa rolou a página</li>
+            </ul>
+            <h3 style={{ marginTop: 18 }}>O que ele nunca coleta</h3>
+            <ul className="z-chk">
+              <li><X size={16} className="z-x" />O que é digitado em formulários</li>
+              <li><X size={16} className="z-x" />Nomes, e-mails ou senhas</li>
+            </ul>
+            <p className="z-sub" style={{ marginTop: 14 }}>Funciona de acordo com a LGPD.</p>
+          </div>
+          <div className="z-card">
+            <h3>Precisa de ajuda?</h3>
+            <p className="z-sub" style={{ marginBottom: 10 }}>Mande o endereço do seu site e a plataforma que você usa.</p>
+            <a href="mailto:suporte@analizi.com.br" className="z-strong-link">suporte@analizi.com.br</a>
+          </div>
+          <button type="button" className="z-btn ghost" onClick={() => setPage('dashboard')}>Continuar e instalar depois</button>
+        </aside>
+      </div>
+      {toast && <div className="z-toast" role="status"><CircleCheck size={16} />{toast}</div>}
+    </div>
+  );
 }
+
 
 function PageHeader({
   title,
@@ -4315,6 +4103,10 @@ function PageHeader({
 }
 
 import { Heatmap } from './components/Heatmap';
+
+// Integração GA4 temporariamente desativada (EM BREVE).
+const GA4_ENABLED = false;
+
 
 export function App() {
   const [mode, setMode] = useState<AuthPage>(() => {
@@ -4425,11 +4217,11 @@ export function App() {
     pages: <Pages/>,
     results: <Results/>,
     heatmap: <Heatmap/>,
-    insights: <Insights/>,
+    insights: <Insights setPage={setPage}/>,
     settings: <Settings setPage={setPage}/>,
     team: <TeamSettings setPage={setPage}/>,
     'data-sources': <DataSources setPage={setPage}/>,
-    'ga4-setup': <GA4Setup setPage={setPage}/>,
+    'ga4-setup': GA4_ENABLED ? <GA4Setup setPage={setPage}/> : <GA4ComingSoon setPage={setPage}/>,
     'tracker-setup': <TrackerSetup setPage={setPage}/>
   };
 
