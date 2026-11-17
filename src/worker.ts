@@ -277,7 +277,7 @@ async function collect(request: Request, env: Env) {
       const metricDate = (compactText(event.occurredAt, 40) || new Date().toISOString()).slice(0, 10)
 
       for (const bracket of brackets) {
-        if (['25%', '50%', '75%', '100%'].includes(bracket)) {
+        if (['0%', '25%', '50%', '75%', '100%'].includes(bracket)) {
           statements.push(env.ANALIZI_EVENTS.prepare(`
             insert into daily_page_scroll (tracker_site_id, metric_date, page_path, device_type, depth_bracket, visitors)
             values (?, ?, ?, ?, ?, 1)
@@ -948,12 +948,24 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
       and metric_date >= ? and metric_date <= ?
   `).bind(safeId, pagePath, startDate, endDate)
 
+  // 6. Aberturas da página no mesmo aparelho (base para dados de rolagem anteriores ao marcador "0%")
+  const pageOpensQuery = env.ANALIZI_EVENTS.prepare(`
+    select count(*) as opens
+    from events
+    where tracker_site_id = ?
+      and page_path = ?
+      and (device_type = ? or (? = 'desktop' and device_type is null))
+      and event_name = 'page_view'
+      and date(occurred_at) >= ? and date(occurred_at) <= ?
+  `).bind(safeId, pagePath, deviceType, deviceType, startDate, endDate)
+
   const results = await env.ANALIZI_EVENTS.batch([
     layoutQuery,
     pagesListQuery,
     clicksQuery,
     scrollQuery,
-    visitorsQuery
+    visitorsQuery,
+    pageOpensQuery
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
   const layoutRow = activeVersion || results[0]?.results?.[0]
@@ -969,20 +981,27 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
     } catch {}
   }
 
+  // Retenção de rolagem: % de quem abriu a página (no mesmo aparelho) e chegou a cada profundidade.
+  // Base, em ordem de preferência:
+  //   1. marcador "0%" enviado pelo rastreador a cada abertura de página (mesma origem do numerador);
+  //   2. page_views do mesmo aparelho e página (eventos brutos ficam 30 dias);
+  //   3. usuários da página (todos os aparelhos) — só como último recurso.
+  const bracketVisitors: Record<string, number> = {}
+  for (const s of scrollRows) bracketVisitors[String(s.depth_bracket)] = Number(s.visitors || 0)
+  const pageOpens = Number(results[5]?.results?.[0]?.opens || 0)
+  const deepest = Math.max(0, ...['25%', '50%', '75%', '100%'].map(k => bracketVisitors[k] || 0))
+  const scrollBase = Math.max(bracketVisitors['0%'] || pageOpens || totalVisitors, deepest)
+
   const scrollRetention: Record<string, { visitors: number; percentage: number }> = {
+    '0%': { visitors: scrollBase, percentage: scrollBase > 0 ? 100 : 0 },
     '25%': { visitors: 0, percentage: 0 },
     '50%': { visitors: 0, percentage: 0 },
     '75%': { visitors: 0, percentage: 0 },
     '100%': { visitors: 0, percentage: 0 },
   }
-
-  for (const s of scrollRows) {
-    const bracket = String(s.depth_bracket)
-    const v = Number(s.visitors || 0)
-    if (scrollRetention[bracket]) {
-      scrollRetention[bracket].visitors = v
-      scrollRetention[bracket].percentage = totalVisitors > 0 ? Math.min(100, Math.round((v / totalVisitors) * 100)) : 100
-    }
+  for (const bracket of ['25%', '50%', '75%', '100%']) {
+    const v = bracketVisitors[bracket] || 0
+    scrollRetention[bracket] = { visitors: v, percentage: scrollBase > 0 ? Math.min(100, Math.round((v / scrollBase) * 100)) : 0 }
   }
 
   return json({
