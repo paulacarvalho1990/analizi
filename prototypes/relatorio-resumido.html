@@ -125,6 +125,17 @@ button{font:inherit}
 .tip .do{margin-top:8px;font-size:13.5px}
 .tip .do b{color:var(--primary)}
 
+/* fatos */
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+.fact{margin:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px 20px 20px;display:flex;flex-direction:column;gap:14px}
+.fact svg{width:120px;height:64px}
+.fact figcaption{font-size:15px;line-height:1.45;color:var(--muted)}
+.fact figcaption b{color:var(--foreground)}
+.next{margin-top:28px;border-radius:var(--radius);padding:20px 22px;background:var(--tip-bg);border:1px solid var(--tip-border)}
+.next p{margin:0;font-size:15px;max-width:64ch}
+.next .t{font-weight:700;color:var(--primary);margin-bottom:4px}
+@media (max-width:760px){.facts{grid-template-columns:1fr}.fact{flex-direction:row;align-items:center}.fact svg{flex:none;width:90px;height:48px}}
+
 /* glossário */
 details{margin-top:34px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px 20px}
 summary{cursor:pointer;font-weight:600;padding:12px 0}
@@ -201,78 +212,77 @@ dd{margin:0;color:var(--muted)}
     </div>
   </article>
 
-  <!-- fonte: daily[] (pageViews, users, contacts) da semana atual e da anterior -->
+  <!-- FATOS DA SEMANA: cada um é uma figura + uma frase. Fontes nos comentários. -->
   <section class="q">
-    <h2>Em quais dias o site foi mais visitado?</h2>
-    <p class="answer"><b>Quinta-feira</b> foi o dia mais forte, com 612 visitas e 21 contatos.</p>
-    <div class="card">
-      <div class="days" id="days"></div>
-      <div class="legend"><span><i style="background:var(--blue)"></i>Visitas nesta semana</span><span><i style="background:var(--track)"></i>Semana passada</span><span><i style="background:var(--pink)"></i>Melhor dia</span></div>
+    <h2>Os destaques da semana</h2>
+    <div class="facts">
+
+      <!-- fonte: sources[] -->
+      <figure class="fact">
+        <svg viewBox="0 0 120 64" aria-hidden="true" class="people">
+          <g id="ppl"></g>
+        </svg>
+        <figcaption><b>1 em cada 3 visitas</b> veio do <b>Instagram</b>, o lugar que mais trouxe gente.</figcaption>
+      </figure>
+
+      <!-- fonte: locations[] -->
+      <figure class="fact">
+        <svg viewBox="0 0 120 64" aria-hidden="true">
+          <ellipse cx="60" cy="56" rx="26" ry="5" fill="var(--track)"/>
+          <path d="M60 8c-11 0-19 8-19 18 0 13 19 30 19 30s19-17 19-30c0-10-8-18-19-18z" fill="var(--orange)"/>
+          <circle cx="60" cy="26" r="7" fill="var(--surface)"/>
+        </svg>
+        <figcaption>A cidade que mais visitou foi <b>São Paulo</b>, com 2 em cada 3 pessoas.</figcaption>
+      </figure>
+
+      <!-- fonte: peakHours[] (contacts) -->
+      <figure class="fact">
+        <svg viewBox="0 0 120 64" aria-hidden="true">
+          <circle cx="60" cy="32" r="26" fill="var(--tip-bg)" stroke="var(--tip-border)" stroke-width="2"/>
+          <path d="M60 32 L60 6 A26 26 0 0 0 37.5 19 Z" fill="var(--pink)" opacity=".35"/>
+          <line x1="60" y1="32" x2="45" y2="23" stroke="var(--primary)" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="60" y1="32" x2="60" y2="12" stroke="var(--foreground)" stroke-width="2.5" stroke-linecap="round"/>
+          <circle cx="60" cy="32" r="3" fill="var(--foreground)"/>
+        </svg>
+        <figcaption>O melhor horário foi <b>quinta, das 19h às 21h</b>: foi quando mais gente chamou você.</figcaption>
+      </figure>
+
+      <!-- fonte: devices[] -->
+      <figure class="fact">
+        <svg viewBox="0 0 120 64" aria-hidden="true">
+          <rect x="46" y="4" width="28" height="56" rx="6" fill="none" stroke="var(--blue)" stroke-width="3"/>
+          <rect x="51" y="11" width="18" height="38" rx="2" fill="var(--blue)" opacity=".18"/>
+          <circle cx="60" cy="54" r="2" fill="var(--blue)"/>
+        </svg>
+        <figcaption><b>8 em cada 10 pessoas</b> usaram o celular. Vale sempre conferir o site no celular.</figcaption>
+      </figure>
+
+      <!-- fonte: pageConversionResults[] -->
+      <figure class="fact">
+        <svg viewBox="0 0 120 64" aria-hidden="true">
+          <rect x="40" y="4" width="40" height="54" rx="5" fill="var(--surface)" stroke="var(--border)" stroke-width="2"/>
+          <rect x="47" y="13" width="26" height="4" rx="2" fill="var(--faint)"/>
+          <rect x="47" y="22" width="20" height="4" rx="2" fill="var(--track)"/>
+          <rect x="47" y="30" width="23" height="4" rx="2" fill="var(--track)"/>
+          <rect x="47" y="42" width="26" height="9" rx="4.5" fill="var(--primary)"/>
+          <circle cx="82" cy="10" r="9" fill="var(--good)"/><path d="M78 10l3 3 5-6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <figcaption>A página que mais trouxe contatos foi <b>Clareamento</b>: 31 dos 87.</figcaption>
+      </figure>
+
+      <!-- fonte: daily[] -->
+      <figure class="fact">
+        <svg viewBox="0 0 120 64" aria-hidden="true" id="week"></svg>
+        <figcaption>O dia mais movimentado foi <b>quinta-feira</b>, com 21 contatos.</figcaption>
+      </figure>
+
     </div>
   </section>
 
-  <!-- fonte: sources[] + sourceMediumResults[] (contatos por canal) -->
-  <section class="q">
-    <h2>Como as pessoas chegaram até você?</h2>
-    <p class="answer">A maioria veio do <b>Instagram</b>. Quem veio do <b>Google</b> foi quem mais pediu contato.</p>
-    <div class="grid2">
-      <div class="card"><h3>Visitas por origem</h3><ul class="rank" id="sources"></ul></div>
-      <div class="card"><h3>Contatos por origem</h3><ul class="rank" id="sourceContacts"></ul></div>
-    </div>
-  </section>
-
-  <!-- fonte: pages[] (views, title) + pageConversionResults[] (whatsappClicks, contactSessions) -->
-  <section class="q">
-    <h2>Quais páginas mais chamaram atenção?</h2>
-    <p class="answer">A <b>Página inicial</b> é a mais vista, mas é a página de <b>Clareamento</b> que mais gera contato.</p>
-    <div class="grid2">
-      <div class="card"><h3>Mais vistas</h3><ul class="rank" id="pagesViews"></ul></div>
-      <div class="card"><h3>Onde as pessoas mais pediram contato</h3><ul class="rank" id="pagesContacts"></ul></div>
-    </div>
-  </section>
-
-  <!-- fonte: devices[] (device, users), totals.newUsers vs totals.users, locations[] (city, users), peakHours[] -->
-  <section class="q">
-    <h2>Quem são essas pessoas?</h2>
-    <p class="answer">Quase todas acessam pelo <b>celular</b>, a maioria é de <b>São Paulo</b> e é a primeira vez que visitam o site.</p>
-    <div class="grid2">
-      <div class="card">
-        <h3>Celular ou computador</h3>
-        <div class="split" aria-hidden="true"><i style="width:81%;background:var(--blue)"></i><i style="width:17%;background:var(--orange)"></i><i style="width:2%;background:var(--faint)"></i></div>
-        <div class="split-legend"><div><b class="num">81%</b><span>Celular</span></div><div><b class="num">17%</b><span>Computador</span></div><div><b class="num">2%</b><span>Tablet</span></div></div>
-      </div>
-      <div class="card">
-        <h3>Primeira visita ou já conheciam</h3>
-        <div class="split" aria-hidden="true"><i style="width:72%;background:var(--pink)"></i><i style="width:28%;background:var(--navy)"></i></div>
-        <div class="split-legend"><div><b class="num">72%</b><span>Primeira vez</span></div><div style="text-align:right"><b class="num">28%</b><span>Já tinham visitado</span></div></div>
-      </div>
-      <div class="card"><h3>Cidades que mais visitaram</h3><ul class="rank" id="cities"></ul></div>
-      <div class="card">
-        <h3>Melhor horário</h3>
-        <div class="peak">
-          <div class="clock num">19h</div>
-          <div><p>Quinta, entre <b>19h e 21h</b>, foi quando mais gente pediu contato.</p><p>É um bom horário para publicar e responder rápido.</p></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- fonte: buildCandidates() em src/insights/engine.ts (página que converte acima da média, página que perde visitas) -->
-  <section class="q">
-    <h2>O que fazer na próxima semana</h2>
-    <p class="answer">Duas sugestões tiradas dos números acima.</p>
-    <div class="tips">
-      <div class="tip good"><span class="ico" aria-hidden="true">✓</span><div>
-        <p class="t">A página de Clareamento converte 3 vezes mais que a média do site.</p>
-        <p class="why">Ela recebe só 9% das visitas, mas gera 36% dos contatos.</p>
-        <p class="do"><b>Sugestão:</b> coloque o link dessa página no próximo post do Instagram.</p>
-      </div></div>
-      <div class="tip warn"><span class="ico" aria-hidden="true">!</span><div>
-        <p class="t">6 em cada 10 pessoas saem da página Agendar consulta sem fazer nada.</p>
-        <p class="why">Elas ficam em média 12 segundos e vão embora.</p>
-        <p class="do"><b>Sugestão:</b> deixe o botão do WhatsApp no topo dessa página.</p>
-      </div></div>
-    </div>
+  <!-- fonte: buildCandidates() em src/insights/engine.ts — só a sugestão de maior impacto -->
+  <section class="next">
+    <p class="t">Para a próxima semana</p>
+    <p>Coloque o link da página de <b>Clareamento</b> no próximo post do Instagram. Ela é a que mais transforma visitas em contatos.</p>
   </section>
 
   <details>
@@ -291,15 +301,10 @@ dd{margin:0;color:var(--muted)}
 
 <script>
 const fmt=n=>n.toLocaleString('pt-BR');
-const days=[['Seg',412,380],['Ter',455,401],['Qua',438,420],['Qui',612,470],['Sex',540,488],['Sáb',497,410],['Dom',458,402]];
-const max=Math.max(...days.flatMap(d=>[d[1],d[2]])),best=Math.max(...days.map(d=>d[1]));
-document.getElementById('days').innerHTML=days.map(([d,n,p],i)=>`<div class="day${n===best?' best':''}" title="${d}: ${fmt(n)} visitas (semana passada: ${fmt(p)})"><div class="bars"><i class="bar prev" style="height:${p/max*100}%"></i><i class="bar now" style="height:${n/max*100}%;animation-delay:${i*60}ms"></i></div><span>${d}</span></div>`).join('');
-function rank(id,rows,color,unit=''){const m=Math.max(...rows.map(r=>r[1]));document.getElementById(id).innerHTML=rows.map(([n,v,sub])=>`<li><span class="name">${n}${sub?`<small>${sub}</small>`:''}</span><span class="val num">${fmt(v)}${unit}</span><span class="track"><i style="width:${v/m*100}%;background:${color}"></i></span></li>`).join('')}
-rank('sources',[['Instagram',1204,'Posts, stories e link da bio'],['Google',1088,'Pessoas que pesquisaram e acharam o site'],['Direto',671,'Digitaram o endereço ou salvaram o link'],['Facebook',302]],'var(--blue)');
-rank('sourceContacts',[['Google',38],['Instagram',29],['Direto',14],['Facebook',6]],'var(--pink)');
-rank('pagesViews',[['Página inicial',1380],['Clareamento',312],['Agendar consulta',298],['Aparelho invisível',241]],'var(--blue)',' visitas');
-rank('pagesContacts',[['Clareamento',31],['Página inicial',24],['Agendar consulta',19],['Aparelho invisível',13]],'var(--pink)',' contatos');
-rank('cities',[['São Paulo',1422],['Guarulhos',198],['Osasco',121],['Santo André',87]],'var(--orange)',' pessoas');
+const ppl=document.getElementById('ppl');
+for(let i=0;i<9;i++){const x=8+(i%9)*13,c=i<3?'var(--pink)':'var(--track)';ppl.innerHTML+=`<circle cx="${x+4}" cy="22" r="5" fill="${c}"/><path d="M${x-2} 44c0-7 3-12 6-12s6 5 6 12z" fill="${c}"/>`}
+const wk=[412,455,438,612,540,497,458],wm=Math.max(...wk),w=document.getElementById('week');
+w.innerHTML=wk.map((v,i)=>`<rect x="${8+i*15}" y="${56-v/wm*44}" width="10" height="${v/wm*44}" rx="3" fill="${v===wm?'var(--pink)':'var(--track)'}"/>`).join('')+'<line x1="4" y1="57" x2="116" y2="57" stroke="var(--border)"/>';
 document.getElementById('theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'};
 </script>
 </body>
