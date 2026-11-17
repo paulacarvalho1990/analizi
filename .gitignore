@@ -12,3 +12,6 @@ yarn-debug.log*
 yarn-error.log*
 
 .cf-token
+.cf-token
+.env.staging
+Claude outputs/

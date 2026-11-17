@@ -1,15 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  CheckCircle2,
-  ShieldCheck,
-  Sparkles,
-  MessageCircle,
-  BarChart3,
-} from 'lucide-react'
+import { ArrowRight, Check } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
+import { LoginScreen } from './LoginScreen'
+import { APP_VERSION } from '../lib/version'
 import { Button } from './ui/Button'
 import { supabase } from '../lib/supabase'
 import './AuthFlow.css'
@@ -34,17 +27,6 @@ const normalizeSite = (value: string) => {
   const url = new URL(/^https?:\/\//.test(value.trim()) ? value.trim() : `https://${value.trim()}`)
   const domain = url.hostname.replace(/^www\./, '').toLowerCase()
   return { domain, url: `https://${domain}` }
-}
-
-function GoogleMark() {
-  return (
-    <svg aria-hidden="true" className="google-mark" viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M21.805 10.023h-9.18v3.804h5.281c-.228 1.225-.914 2.264-1.944 2.962v2.494h3.145c1.841-1.695 2.903-4.188 2.903-7.153 0-.666-.06-1.307-.17-1.93z" />
-      <path fill="#34A853" d="M12.625 21.5c2.625 0 4.825-.87 6.433-2.217l-3.145-2.494c-.87.584-1.985.93-3.288.93-2.532 0-4.678-1.71-5.446-4.01H3.93v2.575C5.53 19.45 8.81 21.5 12.625 21.5z" />
-      <path fill="#FBBC05" d="M7.179 13.709a5.35 5.35 0 0 1 0-3.418V7.716H3.93a9.125 9.125 0 0 0 0 8.568l3.249-2.575z" />
-      <path fill="#EA4335" d="M12.625 6.281c1.428 0 2.711.491 3.722 1.454l2.793-2.793C17.445 3.361 15.245 2.5 12.625 2.5 8.81 2.5 5.53 4.55 3.93 7.716l3.249 2.575c.768-2.3 2.914-4.01 5.446-4.01z" />
-    </svg>
-  )
 }
 
 export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
@@ -194,134 +176,13 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
 
   if (mode === 'login') {
     return (
-      <div className="auth-layout">
-        {/* Left column: Executive Pitch */}
-        <section className="auth-pitch">
-          <div className="auth-pitch-top">
-            <button
-              type="button"
-              className="auth-pitch-logo-btn"
-              onClick={() => setMode('landing')}
-              title="Voltar para a página inicial"
-            >
-              <BrandLogo inverse />
-            </button>
-            <span className="auth-pitch-badge">Acesso Seguro</span>
-          </div>
-
-          <div className="auth-pitch-body">
-            <span className="auth-eyebrow">ANALYTICS DESCOMPLICADO</span>
-            <h1>
-              Analise seu site com clareza total.
-              <span>Mesmo sem entender nada de analytics ou tecnologia.</span>
-            </h1>
-            <p className="auth-pitch-desc">
-              Transformamos números confusos em decisões simples para o seu negócio:
-              saiba quem visita sua empresa, de onde essas pessoas vêm e quantas entram em contato com você pelo WhatsApp.
-            </p>
-
-            <div className="auth-pitch-features">
-              <div className="pitch-feature-row">
-                <div className="pitch-feature-icon blue">
-                  <BarChart3 size={18} />
-                </div>
-                <div className="pitch-feature-text">
-                  <h4>Métricas Essenciais em Português</h4>
-                  <p>Esqueça menus intermináveis e termos técnicos em inglês que ninguém entende.</p>
-                </div>
-              </div>
-
-              <div className="pitch-feature-row">
-                <div className="pitch-feature-icon pink">
-                  <MessageCircle size={18} />
-                </div>
-                <div className="pitch-feature-text">
-                  <h4>Foco em Contatos Comerciais</h4>
-                  <p>Monitore com exatidão quem clica no botão de WhatsApp, formulários e chamadas.</p>
-                </div>
-              </div>
-
-              <div className="pitch-feature-row">
-                <div className="pitch-feature-icon orange">
-                  <Sparkles size={18} />
-                </div>
-                <div className="pitch-feature-text">
-                  <h4>Diagnósticos Prontos (Izi Insights)</h4>
-                  <p>Análises automáticas com inteligência artificial que explicam o que está acontecendo.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="auth-pitch-quote">
-              “Finalmente consigo acompanhar os resultados do meu site e saber exatamente de onde vieram os contatos, sem precisar de agência nem suporte técnico.”
-              <span>— Dra. Marina Siqueira, Clínica Horizonte</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Right column: Auth Form */}
-        <section className="auth-form-side">
-          <div className="auth-form-top-nav">
-            <button
-              type="button"
-              className="auth-return-btn"
-              onClick={() => setMode('landing')}
-            >
-              <ArrowLeft size={16} />
-              <span>Voltar para o início</span>
-            </button>
-          </div>
-
-          <div className="auth-form-container">
-            <div className="auth-card-shield">
-              <ShieldCheck size={14} />
-              <span>Acesso Corporativo Seguro</span>
-            </div>
-
-            <h2>Acesse sua conta</h2>
-            <p className="auth-lead-p">
-              Entre no seu painel ou inicie seu período de teste de 7 dias grátis.
-            </p>
-
-            {error && <div className="auth-error-alert">{error}</div>}
-
-            <button
-              type="button"
-              className="google-auth-button"
-              disabled={loading}
-              onClick={loginWithGoogle}
-            >
-              <GoogleMark />
-              <span>{loading ? 'Redirecionando ao Google...' : 'Continuar com o Google'}</span>
-            </button>
-
-            <div className="auth-notice-box">
-              <p>
-                Autenticação oficial e direta com o Google. Se este for o seu primeiro acesso, seu espaço será preparado automaticamente.
-              </p>
-            </div>
-
-            <div className="auth-security-pills">
-              <div className="security-pill-item">
-                <CheckCircle2 size={16} className="security-check-icon" />
-                <span>Conexão criptografada de ponta a ponta</span>
-              </div>
-              <div className="security-pill-item">
-                <CheckCircle2 size={16} className="security-check-icon" />
-                <span>Totalmente adequado à legislação LGPD</span>
-              </div>
-              <div className="security-pill-item">
-                <CheckCircle2 size={16} className="security-check-icon" />
-                <span>Sem necessidade de cartão de crédito para testar</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="auth-form-bottom-footer">
-            <span>© 2026 Analizi Tecnologia • Feito para negócios reais</span>
-          </div>
-        </section>
-      </div>
+      <LoginScreen
+        loading={loading}
+        error={error || undefined}
+        onGoogle={loginWithGoogle}
+        onBack={() => setMode('landing')}
+        version={APP_VERSION}
+      />
     )
   }
 

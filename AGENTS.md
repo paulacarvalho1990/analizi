@@ -113,3 +113,27 @@ Antes de realizar merge na `develop` ou enviar commits para o repositório remot
 1. `git status` — Confirme que não há arquivos pendentes ou esquecidos.
 2. `npm run build` ou `npm run check` — Garanta que a aplicação compila sem erros de TypeScript ou bundle.
 3. `git fetch origin` — Certifique-se de que a sua branch base está alinhada com o remoto antes de mesclar.
+
+---
+
+## 6. Versão do Front e Deploy (evitar versões dessincronizadas)
+
+> [!CAUTION]
+> **Causa histórica do problema:** várias sessões criavam branches a partir de uma `develop` desatualizada, cada uma subia a versão por conta própria (ex.: duas `v0.0.34` diferentes) e fazia deploy de staging **a partir da feature branch**. O staging ficava com o front da última branch que deployou, sem o trabalho das outras.
+
+1. **Deploy de staging só a partir da `develop` atualizada.** Nunca rode `npm run deploy:staging` estando numa `feature/*` ou `fix/*`. Sequência obrigatória:
+   ```bash
+   git checkout develop
+   git pull --ff-only origin develop
+   git merge --no-ff feature/x -m "merge: feature/x into develop (vX.Y.Z)"
+   npm run build
+   git push origin develop
+   npm run deploy:staging
+   ```
+2. **Atualize a base antes de começar e antes de mergear:** `git fetch origin` + `git merge origin/develop` na sua branch. Nunca crie branch a partir de `develop` local sem `git pull --ff-only` antes.
+3. **Versão (`src/lib/version.ts`) só é incrementada no momento do merge na `develop`**, nunca no meio da feature. Antes de escolher o número, leia a versão atual de `origin/develop` (`git show origin/develop:src/lib/version.ts`) e use a próxima. Um número de versão nunca é reutilizado.
+4. **Conflito em `version.ts`:** resolva sempre com a próxima versão acima das duas em conflito.
+5. **Push logo após cada merge na `develop`.** `develop` local nunca deve ficar à frente ou atrás de `origin/develop` por mais que alguns minutos (`git status -sb` deve mostrar sem `ahead`/`behind`).
+6. **Branches curtas:** mergeou na `develop`, apague a branch local e remota (`git branch -d x && git push origin --delete x`).
+7. **`main` = produção.** Atualize-a só por merge de `develop` (`git checkout main && git merge --ff-only develop`), quando a versão for validada em staging.
+8. **Nunca versione segredos:** `.cf-token`, `.env.staging` e similares ficam no `.gitignore`.
