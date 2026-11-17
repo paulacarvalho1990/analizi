@@ -2008,11 +2008,11 @@ function Insights({ setPage }: { setPage: (page: Page) => void }) {
                           )}
                           <div className="z-todo">
                             <span className="z-todo-ic"><Check size={15} /></span>
-                            <div><h4>O que fazer</h4><p>{formatInsightText(item.action)}</p></div>
+                            <div><h4>O que fazer?</h4><p>{formatInsightText(item.action)}</p></div>
                           </div>
                         </div>
                         <div className="z-evi">
-                          <span className="z-evi-h">O que esperar</span>
+                          <span className="z-evi-h">O que esperar?</span>
                           <p>{formatInsightText(item.projection)}</p>
                         </div>
                       </div>
@@ -2159,16 +2159,16 @@ function shiftMonths(base: string, offset: number) { const d = new Date(`${base.
 function comparison(current?: number, previous?: number) { const now = Number(current || 0); const before = Number(previous || 0); if (!before) return { variation: now ? 'novo no período' : 'sem dados', good: true }; const percent = Math.round(Math.abs(((now - before) / before) * 100)); return { variation: `${percent}%`, good: now >= before } }
 function readAnalyticsFilter(): AnalyticsFilter {
   const params = new URLSearchParams(window.location.search);
-  const yesterday = shiftDays(dateString(new Date()), -1);
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   const valid = (value: string | null) => Boolean(value && value.length === 10 && value[4] === '-' && value[7] === '-' && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)));
-  let end = valid(params.get('end')) ? params.get('end')! : yesterday;
-  if (end > yesterday) end = yesterday;
+  let end = valid(params.get('end')) ? params.get('end')! : today;
+  if (end > today) end = today;
   let start = valid(params.get('start')) ? params.get('start')! : shiftDays(end, -6);
   if (start > end) start = end;
   if (start < shiftDays(end, -729)) start = shiftDays(end, -729);
   const requestedGroup = params.get('group');
   const group = requestedGroup === 'week' || requestedGroup === 'month' || requestedGroup === 'quarter' || requestedGroup === 'semester' || requestedGroup === 'year' ? requestedGroup : 'day';
-  const effectiveGroup = start < shiftMonths(yesterday, -5) && (group === 'day' || group === 'week') ? 'month' : group;
+  const effectiveGroup = start < shiftMonths(today, -5) && (group === 'day' || group === 'week') ? 'month' : group;
   return {
     start,
     end,
@@ -2700,7 +2700,7 @@ function ConnectionStatus() {
 
   return (
     <article className="connection-status success">
-      <b>{(GA4_ENABLED && currentSite?.analytics_source === 'ga4') ? `DADOS DO GA4 CAPTURADOS ATÉ ${yesterdayFormatted}.` : `DADOS COLETADOS ATÉ ${yesterdayFormatted}.`}</b>
+      <b>{(GA4_ENABLED && currentSite?.analytics_source === 'ga4') ? `DADOS DO GA4 CAPTURADOS ATÉ ${yesterdayFormatted}.` : 'DADOS DE HOJE ATUALIZADOS A CADA 30 MINUTOS.'}</b>
       <p>{updatedAt ? `Última sincronização: ${updatedAt}.` : 'A próxima atualização será exibida aqui.'}</p>
     </article>
   );

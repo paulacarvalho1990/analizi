@@ -1,3 +1,4 @@
+import { buildWeeklyInsights, lastClosedWeek, type AIInsight, type BusinessContext } from './insights/engine'
 interface D1Statement {
   bind(...values: unknown[]): D1Statement
 }
@@ -462,10 +463,9 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
   const requestedDays = Math.min(730, Math.max(1, Math.floor(Number(query.get('days') || 7))))
   const requestedEnd = query.get('end')
   const requestedStart = query.get('start')
-  const today = isoDate(new Date())
-  const yesterday = shiftDate(today, -1)
-  // Na Abordagem A (100% consolidado), a data limite é sempre D-1 (ontem)
-  const end = validDate(requestedEnd) && requestedEnd! < today ? requestedEnd! : yesterday
+  const today = isoDateInTimeZone(new Date(), ANALYTICS_TIMEZONE)
+  // Consolidado inclui o dia atual (parcial, atualizado pelo cron intradiário)
+  const end = validDate(requestedEnd) && requestedEnd! <= today ? requestedEnd! : today
   let start = validDate(requestedStart) ? requestedStart! : shiftDate(end, -requestedDays + 1)
   if (start > end) start = end
   const rawDays = Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1
@@ -1014,16 +1014,7 @@ async function heatmapData(siteId: string, env: Env, searchParams: URLSearchPara
   }, 200)
 }
 
-export interface AIInsight {
-  key: string
-  type: 'traffic_growth' | 'traffic_drop' | 'lead_conversion' | 'top_channel' | 'page_engagement' | 'opportunity'
-  title: string
-  status: 'positive' | 'warning' | 'neutral'
-  badge: string
-  finding: string
-  action: string
-  projection: string
-}
+export type { AIInsight }
 
 function getWeekCycle(d = new Date()): string {
   const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
@@ -1327,6 +1318,28 @@ Responda ESTRITAMENTE um objeto JSON no formato:
   }
 }
 
+// Busca nome e segmento do negócio no Supabase (via business_id salvo no D1).
+async function fetchBusinessContext(env: Env, siteId: string): Promise<BusinessContext | null> {
+  const key = env.SUPABASE_SERVICE_ROLE_KEY
+  if (!env.SUPABASE_URL || !key) return null
+  try {
+    const rows = (await env.ANALIZI_EVENTS.batch([
+      env.ANALIZI_EVENTS.prepare('select business_id from tracker_sites where tracker_site_id = ? limit 1').bind(siteId)
+    ])) as Array<{ results?: Array<{ business_id?: string }> }>
+    const businessId = rows[0]?.results?.[0]?.business_id
+    if (!businessId) return null
+    const res = await fetch(`${env.SUPABASE_URL}/rest/v1/businesses?id=eq.${encodeURIComponent(businessId)}&select=name,segment,subsegment,segment_detail&limit=1`, {
+      headers: { apikey: key, authorization: `Bearer ${key}` }
+    })
+    if (!res.ok) return null
+    const b = ((await res.json()) as Array<{ name?: string; segment?: string; subsegment?: string; segment_detail?: string }>)[0]
+    return b ? { name: b.name || undefined, segment: b.segment || undefined, subsegment: b.subsegment || undefined, segmentDetail: b.segment_detail || undefined } : null
+  } catch (err) {
+    console.error('Falha ao buscar segmento do negócio:', err)
+    return null
+  }
+}
+
 async function generateAIInsights(request: Request, env: Env): Promise<Response> {
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -1412,11 +1425,19 @@ async function generateAIInsights(request: Request, env: Env): Promise<Response>
     metrics?.totals || {},
     metrics?.previousTotals || {}
   )
-  let generated: AIInsight[] | null = null
-  if (env.DEEPINFRA_API_KEY) {
-    generated = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, business || {}, metrics || {}, scope)
+  let finalInsights: AIInsight[]
+  if (safeSiteId) {
+    // Insights comparativos calculados no servidor a partir do D1 (última semana fechada).
+    const window = lastClosedWeek(isoDate(new Date()), shiftDate)
+    const savedBusiness = await fetchBusinessContext(env, safeSiteId)
+    finalInsights = (await buildWeeklyInsights(env.ANALIZI_EVENTS, safeSiteId, window, savedBusiness || business || {}, env.DEEPINFRA_API_KEY)).insights
+  } else {
+    let generated: AIInsight[] | null = null
+    if (env.DEEPINFRA_API_KEY) {
+      generated = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, business || {}, metrics || {}, scope)
+    }
+    finalInsights = generated || buildRuleBasedFallback(business || {}, metrics || {}, scope)
   }
-  const finalInsights = generated || buildRuleBasedFallback(business || {}, metrics || {}, scope)
   const nowIso = new Date().toISOString()
 
   if (safeSiteId && finalInsights.length) {
@@ -1477,42 +1498,15 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
 
       if (check[0]?.results?.length) continue
 
-      const stats = (await env.ANALIZI_EVENTS.batch([
-        env.ANALIZI_EVENTS.prepare(
-          `select coalesce(sum(users), 0) users, coalesce(sum(page_views), 0) pageViews, coalesce(sum(whatsapp_contacts + sign_ups + form_submits), 0) contacts, coalesce(sum(whatsapp_contacts), 0) whatsappContacts, coalesce(round(sum(average_engagement_seconds * coalesce(nullif(users, 0), sessions)) / nullif(sum(coalesce(nullif(users, 0), sessions)), 0)), 0) attentionSeconds from daily_metrics where tracker_site_id=? and metric_date >= ? and metric_date <= ?`
-        ).bind(sId, start7, end7),
-        env.ANALIZI_EVENTS.prepare(
-          `select coalesce(sum(users), 0) users, coalesce(sum(page_views), 0) pageViews, coalesce(sum(whatsapp_contacts + sign_ups + form_submits), 0) contacts from daily_metrics where tracker_site_id=? and metric_date >= ? and metric_date < ?`
-        ).bind(sId, prevStart7, start7),
-        env.ANALIZI_EVENTS.prepare(
-          `select coalesce(nullif(source, ''), 'direto') name, sum(page_views) value from daily_sources where tracker_site_id=? and metric_date >= ? and metric_date <= ? group by coalesce(nullif(source, ''), 'direto') order by value desc limit 1`
-        ).bind(sId, start7, end7),
-        env.ANALIZI_EVENTS.prepare(
-          `select coalesce(page_path,'/') path, sum(page_views) views, round(sum(average_engagement_seconds * coalesce(nullif(users, 0), page_views)) / nullif(sum(coalesce(nullif(users, 0), page_views)), 0)) attentionSeconds, round(sum(exit_rate * page_views) / nullif(sum(page_views), 0), 1) exitRate from daily_pages where tracker_site_id=? and metric_date >= ? and metric_date <= ? group by coalesce(page_path,'/') order by views desc limit 10`
-        ).bind(sId, start7, end7)
-      ])) as Array<{ results?: Array<Record<string, unknown>> }>
-
-      const totals = stats[0]?.results?.[0] || {}
-      const previousTotals = stats[1]?.results?.[0] || {}
-      const sources = stats[2]?.results || []
-      const pages = stats[3]?.results || []
-
-      const metrics = {
-        periodDays: 7,
-        totals,
-        previousTotals,
-        sources: sources as Array<{ name: string; value: number | string }>,
-        pages: pages as Array<{ path: string; views: number | string; attentionSeconds?: number; exitRate?: number }>
-      }
-
-      // O produto entrega um único fechamento por semana: não promovemos o
-      // escopo para mensal/anual por causa de uma oscilação pontual.
+      // Mesma lógica do endpoint: comparações calculadas no D1, IA só reescreve.
       const scope: 'semanal' = 'semanal'
-      let insights: AIInsight[] | null = null
-      if (env.DEEPINFRA_API_KEY) {
-        insights = await runDeepInfraAnalysis(env.DEEPINFRA_API_KEY, {}, metrics, scope)
-      }
-      const finalInsights = insights || buildRuleBasedFallback({}, metrics, scope)
+      const { insights: finalInsights } = await buildWeeklyInsights(
+        env.ANALIZI_EVENTS,
+        sId,
+        { start: start7, end: end7, prevStart: prevStart7, prevEnd: shiftDate(start7, -1) },
+        (await fetchBusinessContext(env, sId)) || {},
+        env.DEEPINFRA_API_KEY
+      )
       const nowIso = new Date().toISOString()
       const insightId = `ins_${sId}_${currentWeek}`
 
@@ -1533,8 +1527,11 @@ async function runScheduledWeeklyInsights(env: Env): Promise<void> {
   }
 }
 
-async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
-  console.log('Iniciando consolidação diária dos dados de D-1...')
+async function runDailyConsolidationAndCleanup(env: Env, intraday = false): Promise<void> {
+  // intraday: reconsolida só ontem + hoje (parcial) e não executa limpeza.
+  // diário (03h UTC): reconsolida toda a janela de eventos até hoje e limpa.
+  const rangeSql = intraday ? "between date('now', '-3 hours', '-1 day') and date('now', '-3 hours')" : "<= date('now', '-3 hours')"
+  console.log(intraday ? 'Consolidação intradiária (ontem + hoje)...' : 'Iniciando consolidação diária até o dia atual...')
   try {
     // 1. Consolida métricas gerais do dia anterior (D-1) com os conceitos do GA4:
     // - average_engagement_seconds = soma(engagement_time_ms) / 1000 / usuários ativos
@@ -1544,7 +1541,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_metrics (tracker_site_id, metric_date, sessions, users, new_users, page_views, conversions, whatsapp_contacts, sign_ups, form_submits, logins, average_engagement_seconds, exit_rate)
         select
           e.tracker_site_id,
-          date(e.occurred_at) as metric_date,
+          date(e.occurred_at, '-3 hours') as metric_date,
           count(distinct e.session_id) as sessions,
           count(distinct e.visitor_id) as users,
           sum(e.event_name = 'first_visit') as new_users,
@@ -1561,7 +1558,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
                 select s.session_id
                 from events s
                 where s.tracker_site_id = e.tracker_site_id
-                  and date(s.occurred_at) = date(e.occurred_at)
+                  and date(s.occurred_at, '-3 hours') = date(e.occurred_at, '-3 hours')
                 group by s.session_id
                 having sum(coalesce(s.engagement_time_ms, 0)) >= 10000
                     or sum(s.event_name = 'page_view') >= 2
@@ -1570,8 +1567,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
             )
           ) / nullif(count(distinct e.session_id), 0), 1) as exit_rate
         from events e
-        where date(e.occurred_at) <= date('now', '-1 day')
-        group by e.tracker_site_id, date(e.occurred_at)
+        where date(e.occurred_at, '-3 hours') ${rangeSql}
+        group by e.tracker_site_id, date(e.occurred_at, '-3 hours')
         on conflict(tracker_site_id, metric_date) do update set
           sessions = excluded.sessions,
           users = excluded.users,
@@ -1590,7 +1587,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_sources (tracker_site_id, metric_date, source, medium, campaign, users, new_users, sessions, page_views, conversions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           ${SQL_NORMALIZED_SOURCE} as source,
           coalesce(medium, '') as medium,
           coalesce(campaign, '') as campaign,
@@ -1600,8 +1597,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           sum(event_name = 'page_view') as page_views,
           count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, coalesce(medium, ''), coalesce(campaign, '')
+        where date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_SOURCE}, coalesce(medium, ''), coalesce(campaign, '')
         on conflict(tracker_site_id, metric_date, source, medium, campaign) do update set
           users = excluded.users,
           new_users = excluded.new_users,
@@ -1617,7 +1614,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_pages (tracker_site_id, metric_date, page_path, page_title, page_views, users, entrances, exits, exit_rate, average_engagement_seconds, average_load_time_ms, conversions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           coalesce(page_path, '/') as page_path,
           max(page_title) as page_title,
           sum(event_name = 'page_view') as page_views,
@@ -1629,11 +1626,11 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
                 select s.session_id
                 from events s
                 where s.tracker_site_id = events.tracker_site_id
-                  and date(s.occurred_at) = date(events.occurred_at)
+                  and date(s.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
                   and s.session_id in (
                     select p2.session_id from events p2
                     where p2.tracker_site_id = events.tracker_site_id
-                      and date(p2.occurred_at) = date(events.occurred_at)
+                      and date(p2.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
                       and coalesce(p2.page_path, '/') = coalesce(events.page_path, '/')
                   )
                 group by s.session_id
@@ -1649,11 +1646,11 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
                 select s.session_id
                 from events s
                 where s.tracker_site_id = events.tracker_site_id
-                  and date(s.occurred_at) = date(events.occurred_at)
+                  and date(s.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
                   and s.session_id in (
                     select p2.session_id from events p2
                     where p2.tracker_site_id = events.tracker_site_id
-                      and date(p2.occurred_at) = date(events.occurred_at)
+                      and date(p2.occurred_at, '-3 hours') = date(events.occurred_at, '-3 hours')
                       and coalesce(p2.page_path, '/') = coalesce(events.page_path, '/')
                   )
                 group by s.session_id
@@ -1667,8 +1664,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           coalesce(round(sum(coalesce(load_time_ms, 0)) / nullif(sum(case when load_time_ms > 0 then 1 else 0 end), 0)), 0) as average_load_time_ms,
           count(distinct case when event_name in ('whatsapp_contact','sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), coalesce(page_path, '/')
+        where date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), coalesce(page_path, '/')
         on conflict(tracker_site_id, metric_date, page_path) do update set
           page_title = excluded.page_title,
           page_views = excluded.page_views,
@@ -1685,14 +1682,14 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_source_pages (tracker_site_id, metric_date, source, page_path, page_views, users)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           ${SQL_NORMALIZED_SOURCE} as source,
           coalesce(page_path, '/') as page_path,
           sum(event_name = 'page_view') as page_views,
           count(distinct visitor_id) as users
         from events
-        where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, coalesce(page_path, '/')
+        where date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_SOURCE}, coalesce(page_path, '/')
         on conflict(tracker_site_id, metric_date, source, page_path) do update set
           page_views = excluded.page_views,
           users = excluded.users;
@@ -1702,7 +1699,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_button_clicks (tracker_site_id, metric_date, page_path, button_label, button_id, destination, contact_intent, is_contact_lead, clicks, sessions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           coalesce(page_path, '/') as page_path,
           coalesce(json_extract(metadata_json, '$.button_label'), 'Botão sem texto') as button_label,
           coalesce(json_extract(metadata_json, '$.button_id'), '') as button_id,
@@ -1714,8 +1711,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         from events
         where event_name in ('button_click', 'whatsapp_contact', 'sign_up', 'login', 'outbound_click', 'file_download')
           and json_extract(metadata_json, '$.button_label') is not null
-          and date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), coalesce(page_path, '/'), coalesce(json_extract(metadata_json, '$.button_label'), 'Botão sem texto'), coalesce(json_extract(metadata_json, '$.button_id'), ''), coalesce(json_extract(metadata_json, '$.destination'), ''), coalesce(json_extract(metadata_json, '$.contact_intent'), 'geral'), coalesce(json_extract(metadata_json, '$.is_contact_lead'), 0)
+          and date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), coalesce(page_path, '/'), coalesce(json_extract(metadata_json, '$.button_label'), 'Botão sem texto'), coalesce(json_extract(metadata_json, '$.button_id'), ''), coalesce(json_extract(metadata_json, '$.destination'), ''), coalesce(json_extract(metadata_json, '$.contact_intent'), 'geral'), coalesce(json_extract(metadata_json, '$.is_contact_lead'), 0)
         on conflict(tracker_site_id, metric_date, page_path, button_label, button_id, destination, contact_intent, is_contact_lead) do update set
           clicks = excluded.clicks,
           sessions = excluded.sessions;
@@ -1725,13 +1722,13 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_contacts (tracker_site_id, metric_date, contact_type, page_path, contacts)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           event_name as contact_type,
           coalesce(page_path, '/') as page_path,
           count(*) as contacts
         from events
-        where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'login', 'form_start', 'form_abandon') and date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), event_name, coalesce(page_path, '/')
+        where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'login', 'form_start', 'form_abandon') and date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), event_name, coalesce(page_path, '/')
         on conflict (tracker_site_id, metric_date, contact_type, page_path) do update set
           contacts = excluded.contacts;
       `),
@@ -1740,7 +1737,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_locations (tracker_site_id, metric_date, country, region, city, page_views, users, sessions, conversions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           coalesce(nullif(country, ''), 'BR') as country,
           coalesce(nullif(region, ''), 'Não identificado') as region,
           coalesce(nullif(city, ''), 'Não identificada') as city,
@@ -1749,8 +1746,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           count(distinct session_id) as sessions,
           count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where country is not null and country != '' and date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), coalesce(nullif(country, ''), 'BR'), coalesce(nullif(region, ''), 'Não identificado'), coalesce(nullif(city, ''), 'Não identificada')
+        where country is not null and country != '' and date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), coalesce(nullif(country, ''), 'BR'), coalesce(nullif(region, ''), 'Não identificado'), coalesce(nullif(city, ''), 'Não identificada')
         on conflict (tracker_site_id, metric_date, country, region, city) do update set
           page_views = excluded.page_views,
           users = excluded.users,
@@ -1762,7 +1759,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         insert into daily_devices (tracker_site_id, metric_date, device_type, browser, sessions, users, new_users, page_views, conversions)
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           ${SQL_NORMALIZED_DEVICE} as device_type,
           ${SQL_NORMALIZED_BROWSER} as browser,
           count(distinct session_id) as sessions,
@@ -1771,8 +1768,8 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           sum(event_name = 'page_view') as page_views,
           count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where date(occurred_at) <= date('now', '-1 day')
-        group by tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}
+        where date(occurred_at, '-3 hours') ${rangeSql}
+        group by tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}
         on conflict (tracker_site_id, metric_date, device_type, browser) do update set
           sessions = excluded.sessions,
           users = excluded.users,
@@ -1788,7 +1785,7 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
         )
         select
           tracker_site_id,
-          date(occurred_at) as metric_date,
+          date(occurred_at, '-3 hours') as metric_date,
           ${SQL_NORMALIZED_SOURCE} as source,
           ${SQL_NORMALIZED_MEDIUM} as medium,
           ${SQL_NORMALIZED_CAMPAIGN} as campaign,
@@ -1823,10 +1820,10 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
           sum(event_name = 'login') as logins,
           count(distinct case when event_name in ('whatsapp_contact', 'sign_up') or is_conversion = 1 then session_id end) as conversions
         from events
-        where date(occurred_at) <= date('now', '-1 day')
+        where date(occurred_at, '-3 hours') ${rangeSql}
         group by
           tracker_site_id,
-          date(occurred_at),
+          date(occurred_at, '-3 hours'),
           ${SQL_NORMALIZED_SOURCE},
           ${SQL_NORMALIZED_MEDIUM},
           ${SQL_NORMALIZED_CAMPAIGN},
@@ -1849,22 +1846,23 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
       // 10. Consolida conversões confirmadas e intenções comerciais por tipo.
       env.ANALIZI_EVENTS.prepare(`
         insert into daily_conversion_events (tracker_site_id, metric_date, source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage, conversions, sessions)
-        select tracker_site_id, date(occurred_at), ${SQL_NORMALIZED_SOURCE}, ${SQL_NORMALIZED_MEDIUM}, ${SQL_NORMALIZED_CAMPAIGN}, ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}, coalesce(page_path, '/'),
+        select tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_SOURCE}, ${SQL_NORMALIZED_MEDIUM}, ${SQL_NORMALIZED_CAMPAIGN}, ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}, coalesce(page_path, '/'),
           case when event_name = 'whatsapp_contact' then 'whatsapp' when event_name = 'sign_up' then 'cadastro' when event_name = 'form_submit' then coalesce(nullif(json_extract(metadata_json, '$.conversion_type'), ''), 'contato') when event_name = 'file_download' then 'download' when event_name = 'checkout_start' then 'checkout' when event_name = 'payment_start' then 'pagamento' when event_name in ('subscription_start', 'subscription') then 'assinatura' when event_name = 'purchase' then 'compra' else 'outro' end,
           coalesce(nullif(json_extract(metadata_json, '$.form_name'), ''), nullif(json_extract(metadata_json, '$.button_label'), ''), nullif(json_extract(metadata_json, '$.form_id'), ''), ''),
           case when event_name in ('checkout_start', 'payment_start', 'subscription_start', 'file_download') then 'intencao' else 'confirmada' end, count(*), count(distinct session_id)
-        from events where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'file_download', 'checkout_start', 'payment_start', 'subscription_start', 'purchase', 'subscription') and date(occurred_at) <= date('now', '-1 day')
+        from events where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'file_download', 'checkout_start', 'payment_start', 'subscription_start', 'purchase', 'subscription') and date(occurred_at, '-3 hours') ${rangeSql}
         group by 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
         on conflict do update set conversions = excluded.conversions, sessions = excluded.sessions;
       `)
     ])
 
     console.log('Consolidação concluída com sucesso.')
+    if (intraday) return
 
     // 7. VALIDAÇÃO DE SEGURANÇA: Somente executa a limpeza se a consolidação realmente gravou registros
     const check = await env.ANALIZI_EVENTS.batch([
       env.ANALIZI_EVENTS.prepare(`
-        select count(*) as c from daily_metrics where metric_date = date('now', '-1 day')
+        select count(*) as c from daily_metrics where metric_date = date('now', '-3 hours', '-1 day')
       `)
     ]) as Array<{ results?: Array<{ c: number }> }>
 
@@ -1874,11 +1872,11 @@ async function runDailyConsolidationAndCleanup(env: Env): Promise<void> {
       await env.ANALIZI_EVENTS.batch([
         env.ANALIZI_EVENTS.prepare(`
           delete from events
-          where date(occurred_at) <= date('now', '-30 days')
+          where date(occurred_at, '-3 hours') <= date('now', '-3 hours', '-30 days')
             and exists (
               select 1 from daily_metrics dm
               where dm.tracker_site_id = events.tracker_site_id
-                and dm.metric_date = date(events.occurred_at)
+                and dm.metric_date = date(events.occurred_at, '-3 hours')
             );
         `)
       ])
@@ -2867,6 +2865,9 @@ export default {
     const jobs: Promise<void>[] = []
     const isDaily = event.cron === '0 3 * * *'
     const isWeekly = event.cron === '15 3 * * 1'
+    if (event.cron === '*/30 * * * *') {
+      jobs.push(runDailyConsolidationAndCleanup(env, true))
+    }
     if (isDaily) {
       jobs.push(runDailyConsolidationAndCleanup(env), runScheduledGa4Sync(env))
     }
