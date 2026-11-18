@@ -63,24 +63,16 @@ const fact = {
   leak: (x: Derived): Fact | null => x.leak ? { tone: 'bad', figure: <Exit />, text: <><b>{inTen(exitPct(x.leak.exitRate), 100)} pessoas</b> saem da página <b>{x.pageTitle(x.leak.path)}</b> sem fazer mais nada.</> } : null,
 }
 
-const plural = (k: number, one: string, many: string) => `${fmt(k)} ${k === 1 ? one : many}`
-
-/** Título do relatório geral: descreve exatamente o que os números mostram, com os números. */
+/** Título do relatório geral: curto, sem números (eles já aparecem logo abaixo), sempre fiel à direção dos dados. */
 function generalHeadline(x: Derived) {
   const pu = x.prevUsers, pc = x.prevContacts
-  if (!x.users) return 'O site ainda não recebeu visitas nesta semana.'
-  const visitas = plural(x.users, 'pessoa visitou', 'pessoas visitaram')
-  const contatos = x.contacts ? plural(x.contacts, 'pediu', 'pediram') + ' contato' : 'ninguém pediu contato'
-  if (pu === null || pc === null) return `${visitas.charAt(0).toUpperCase() + visitas.slice(1)} o site e ${contatos}.`
-  const vTxt = x.users > pu ? `Mais gente visitou o site (${fmt(x.users)}, contra ${fmt(pu)})`
-    : x.users < pu ? `Menos gente visitou o site (${fmt(x.users)}, contra ${fmt(pu)})`
-    : `As visitas ficaram iguais (${fmt(x.users)})`
-  const cTxt = x.contacts === pc ? (x.contacts ? `os pedidos de contato ficaram iguais: ${fmt(x.contacts)}` : 'ninguém pediu contato, como na semana anterior')
-    : !x.contacts ? `ninguém pediu contato (na semana anterior, ${fmt(pc)})`
-    : x.contacts > pc ? `os pedidos de contato subiram de ${fmt(pc)} para ${fmt(x.contacts)}`
-    : `os pedidos de contato caíram de ${fmt(pc)} para ${fmt(x.contacts)}`
-  const joiner = (x.users > pu && x.contacts < pc) || (x.users < pu && x.contacts > pc) || (x.users > pu && x.contacts === pc) ? ', mas ' : ' e '
-  return `${vTxt}${joiner}${cTxt}.`
+  if (!x.users) return 'O site não recebeu visitas nesta semana.'
+  if (pu === null || pc === null) return x.contacts ? 'Seu site recebeu visitas e pedidos de contato.' : 'Seu site recebeu visitas, mas ainda sem pedidos de contato.'
+  const v = Math.sign(x.users - pu), c = Math.sign(x.contacts - pc)
+  if (!x.contacts) return pc ? 'Nenhum pedido de contato nesta semana.' : 'Ainda sem pedidos de contato.'
+  if (c > 0) return v < 0 ? 'Menos visitas, mas mais pedidos de contato.' : 'Os pedidos de contato aumentaram.'
+  if (c < 0) return v > 0 ? 'Mais visitas, mas menos pedidos de contato.' : 'Os pedidos de contato diminuíram.'
+  return v > 0 ? 'Mais visitas, com os mesmos pedidos de contato.' : v < 0 ? 'Menos visitas, com os mesmos pedidos de contato.' : 'Uma semana parecida com a anterior.'
 }
 
 /* ---------- os 4 relatórios ---------- */
@@ -97,11 +89,11 @@ function build(kind: ReportKind, x: Derived): Model {
     const diff = x.prevContacts !== null ? x.contacts - x.prevContacts : 0
     return {
       title: 'Relatório de contatos', subtitle: 'Quantas pessoas pediram contato pelo site, e como.',
-      headline: x.contacts === 0 ? (x.prevContacts ? `Ninguém pediu contato pelo site nesta semana (na anterior, ${fmt(x.prevContacts)}).` : 'Ninguém pediu contato pelo site nesta semana.')
-        : x.prevContacts !== null && diff > 0 ? `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato, ${fmt(diff)} a mais que na semana anterior.`
-        : x.prevContacts !== null && diff < 0 ? `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato, ${fmt(-diff)} a menos que na semana anterior.`
-        : x.prevContacts !== null ? `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato, o mesmo número da semana anterior.`
-        : `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato.`,
+      headline: x.contacts === 0 ? (x.prevContacts ? 'Nenhum pedido de contato nesta semana.' : 'Ainda sem pedidos de contato pelo site.')
+        : x.prevContacts === null ? 'Seu site recebeu pedidos de contato nesta semana.'
+        : diff > 0 ? 'Os pedidos de contato aumentaram.'
+        : diff < 0 ? 'Os pedidos de contato diminuíram.'
+        : 'Os pedidos de contato se mantiveram.',
       steps: types.length ? types.map(([k, v], i) => ({ value: fmt(v), what: CONTACT_LABEL[k]?.[0] ?? k.replace(/_/g, ' '), explain: CONTACT_LABEL[k]?.[1] ?? 'Outro tipo de contato.', hero: i === 0 }))
         : [{ value: fmt(x.contacts), what: 'pediram contato', explain: 'Clicaram em WhatsApp, telefone ou e-mail.', delta: <Delta now={x.contacts} before={x.prevContacts ?? undefined} />, hero: true }],
       plain: per100,
