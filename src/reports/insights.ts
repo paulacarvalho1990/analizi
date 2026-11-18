@@ -26,7 +26,7 @@ export type ReportInsight = {
   /** Formato antigo (relatórios já salvos). */
   forecast?: string
   /** Métrica principal do card (para o selo visual). */
-  metric?: { label: string, current: number, previous: number | null, trend: Trend, change: number | null }
+  metric?: { label: string, current: number, previous: number | null, trend: Trend, change: number | null, lowerIsBetter?: boolean }
   /** Formato antigo (relatórios já salvos). */
   finding?: string
   action?: string
@@ -363,11 +363,11 @@ function valid(r: AIOut, allowed: Set<string>) {
 /** Gera 3 insights (panorama + 2 ângulos). `px` é a semana anterior derivada (quando disponível). */
 export async function buildReportInsights(kind: ReportKind, x: Derived, business: BusinessInfo, llm: LLMEnv = {}, px: Derived | null = null): Promise<{ insights: ReportInsight[], model: string }> {
   const picked = BLUEPRINTS[kind].angles.map(a => ({ a, r: a.build(x, px) })).filter((v): v is { a: Angle, r: Built } => !!v.r).slice(0, 3)
-  const metricOf = (m: Metric) => ({ label: m.label, current: m.cur, previous: m.prev, trend: trendOf(m.cur, m.prev), change: m.prev ? pct(m.cur, m.prev) : null })
+  const metricOf = (m: Metric, key: string) => ({ label: m.label, current: m.cur, previous: m.prev, trend: trendOf(m.cur, m.prev), change: m.prev ? pct(m.cur, m.prev) : null, ...(key === 'pagina_que_perde_gente' ? { lowerIsBetter: true } : {}) })
   const prof = businessProfile(business)
   const fallback: ReportInsight[] = picked.map(({ a, r }, i) => ({
     key: a.key, title: personalize(r.fallback.title, prof), comparison: compareText(r.metric), descriptive: personalize(r.fallback.descriptive, prof),
-    metric: metricOf(r.metric),
+    metric: metricOf(r.metric, a.key),
     // O primeiro card (panorama) ganha a ação típica do setor.
     actions: (i === 0 ? [{ step: prof.tip, helps: prof.tipHelps }, ...r.fallback.actions].slice(0, 3) : r.fallback.actions).map(a => ({ step: personalize(a.step, prof), helps: personalize(a.helps, prof) })),
   }))
