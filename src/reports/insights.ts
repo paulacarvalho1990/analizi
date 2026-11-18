@@ -8,6 +8,7 @@
 import { chatJSON, hasLLM, type LLMEnv } from '../insights/llm'
 import { CONTACT_LABEL, WEEKDAYS, exitPct, fmt, inTen, n, type Derived, type ReportKind } from './derive'
 import { totalContacts } from './derive'
+import { businessProfile, personalize } from './business-profile'
 
 export type Trend = 'up' | 'down' | 'flat' | 'new'
 
@@ -372,13 +373,16 @@ function valid(r: AIOut, allowed: Set<string>) {
     && Array.isArray(r.actions) && r.actions.length >= 2 && r.actions.length <= 3 && r.actions.every(a => okText(a, LIMITS.action, allowed))
 }
 
-/** Gera até 4 insights (panorama + 3 ângulos). `px` é a semana anterior derivada (quando disponível). */
+/** Gera 3 insights (panorama + 2 ângulos). `px` é a semana anterior derivada (quando disponível). */
 export async function buildReportInsights(kind: ReportKind, x: Derived, business: BusinessInfo, llm: LLMEnv = {}, px: Derived | null = null): Promise<{ insights: ReportInsight[], model: string }> {
-  const picked = BLUEPRINTS[kind].angles.map(a => ({ a, r: a.build(x, px) })).filter((v): v is { a: Angle, r: Built } => !!v.r).slice(0, 4)
+  const picked = BLUEPRINTS[kind].angles.map(a => ({ a, r: a.build(x, px) })).filter((v): v is { a: Angle, r: Built } => !!v.r).slice(0, 3)
   const metricOf = (m: Metric) => ({ label: m.label, current: m.cur, previous: m.prev, trend: trendOf(m.cur, m.prev), ...forecastRange(m.cur, m.prev) })
-  const fallback: ReportInsight[] = picked.map(({ a, r }) => ({
-    key: a.key, title: r.fallback.title, comparison: compareText(r.metric), descriptive: r.fallback.descriptive,
-    forecast: forecastText(r.metric), actions: r.fallback.actions, metric: metricOf(r.metric),
+  const prof = businessProfile(business)
+  const fallback: ReportInsight[] = picked.map(({ a, r }, i) => ({
+    key: a.key, title: personalize(r.fallback.title, prof), comparison: compareText(r.metric), descriptive: personalize(r.fallback.descriptive, prof),
+    forecast: forecastText(r.metric), metric: metricOf(r.metric),
+    // O primeiro card (panorama) ganha a ação típica do setor.
+    actions: (i === 0 ? [prof.tip, ...r.fallback.actions].slice(0, 3) : r.fallback.actions).map(t => personalize(t, prof)),
   }))
   if (!hasLLM(llm) || picked.length === 0) return { insights: fallback, model: 'IZI INTELLIGENCE (regras)' }
 
@@ -392,6 +396,7 @@ export async function buildReportInsights(kind: ReportKind, x: Derived, business
   const prompt = `Você é analista e escreve a seção de análise de um relatório semanal para o dono de um ${negocio}, que não entende de marketing.
 Objetivo do relatório: ${BLUEPRINTS[kind].goal}
 Contexto da semana: ${JSON.stringify(contexto)}
+Perfil do negócio: chame quem compra de "${prof.person[1]}"; o contato costuma virar ${prof.request}; conteúdos que funcionam no setor: ${prof.content.join('; ')}.${prof.care ? `\nCuidado: ${prof.care}` : ''}
 Para cada card, responda à "intencao" usando os "fatos". O "exemplo" mostra o tom e o tamanho: melhore-o, tornando-o específico para esse tipo de negócio (cite situações, serviços ou clientes típicos dele).
 
 FORMATO (por card):
@@ -399,7 +404,7 @@ FORMATO (por card):
 - comparison: até ${LIMITS.comparison} palavras. Compare valor_semana com valor_semana_anterior (use variacao_pct se existir) e diga se é bom ou ruim. Se não houver semana anterior, diga isso.
 - descriptive: até ${LIMITS.descriptive} palavras, 2 frases: o que os fatos mostram e o provável motivo/por que importa para o negócio. Não invente causas sem base.
 - forecast: até ${LIMITS.forecast} palavras. Diga que, se nada mudar, a próxima semana deve ficar entre previsao_min e previsao_max e qual o risco ou oportunidade.
-- actions: lista de 2 ou 3 ações concretas para esta semana (até ${LIMITS.action} palavras cada), dizendo o quê, onde e como, com exemplos do tipo de negócio. A primeira é a mais importante.
+- actions: lista de 2 ou 3 ações concretas para esta semana (até ${LIMITS.action} palavras cada), dizendo o quê, onde e como, com exemplos reais desse tipo de negócio (serviços, situações e ${prof.person[1]} típicos). A primeira é a mais importante. Nada de ação genérica que serviria para qualquer negócio.
 
 REGRAS:
 - Use só números presentes em "fatos" ou no contexto. Não calcule nem invente números.
