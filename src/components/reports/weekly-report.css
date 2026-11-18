@@ -1,21 +1,18 @@
 /* Relatórios semanais one-page — paleta de src/brand-tokens.css */
 .wr {
-  --wr-blue: #3B82F6; --wr-orange: #FF8A3D; --wr-pink: #FF3CAC;
-  --wr-surface: var(--surface, #fff); --wr-fg: var(--foreground, #111827); --wr-muted: var(--muted-foreground, #6B7280);
-  --wr-faint: #9CA3AF; --wr-border: var(--border, #E5E7EB); --wr-track: #F1F3F7; --wr-soft: #F7F8FA;
-  --wr-primary: var(--primary, #D61F83);
-  --wr-good: #15803D; --wr-good-bg: #E8F6EE; --wr-bad: #B4235E; --wr-bad-bg: #FDEAF3;
-  --wr-tip-bg: #FFF7FB; --wr-tip-border: #FAD3E7;
+  --wr-blue: var(--analizi-blue); --wr-orange: var(--analizi-orange); --wr-pink: var(--analizi-pink);
+  --wr-surface: var(--surface); --wr-fg: var(--foreground); --wr-muted: var(--muted-foreground);
+  --wr-faint: var(--faint); --wr-border: var(--border); --wr-track: var(--track); --wr-soft: var(--surface-subtle);
+  --wr-primary: var(--primary);
+  --wr-good: var(--success); --wr-good-bg: var(--success-bg); --wr-bad: var(--danger); --wr-bad-bg: var(--danger-bg);
+  --wr-tip-bg: var(--tip-bg); --wr-tip-border: var(--tip-border);
   --wr-tint-blue: #EEF4FF; --wr-tint-orange: #FFF4EC;
-  --wr-shadow: 0 1px 2px #1118270a, 0 8px 24px -16px #11182726;
+  --wr-shadow: var(--shadow-card);
   /* Mesma largura das outras páginas: ocupa o container do app (.main-content). */
   width: 100%; color: var(--wr-fg); font-variant-numeric: tabular-nums;
 }
 [data-theme="dark"] .wr {
-  --wr-faint: #7D8798; --wr-track: #33363e; --wr-soft: #24272d;
-  --wr-good: #4ADE80; --wr-good-bg: #1f3b2b; --wr-bad: #FF8CC6; --wr-bad-bg: #45213a;
-  --wr-tip-bg: #33202c; --wr-tip-border: #5a2b46; --wr-tint-blue: #1f2a40; --wr-tint-orange: #3a2a1f; --wr-shadow: none;
-}
+  --wr-tint-blue: #1f2a40; --wr-tint-orange: #3a2a1f; }
 .wr-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
 .wr-top h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -.04em; }
 .wr-top p { margin: 2px 0 0; color: var(--wr-muted); font-size: 14px; }

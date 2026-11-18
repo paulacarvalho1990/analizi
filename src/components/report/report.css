@@ -1,43 +1,30 @@
 /* Analizi — kit visual das telas de relatório (renovação UX/UI)
    Usa a paleta de src/brand-tokens.css; cores próprias só para dados. */
 .rp {
-  --rp-blue: #3B82F6;
+  --rp-blue: var(--analizi-blue);
   --rp-violet: #7C5CF0;
-  --rp-pink: #FF3CAC;
-  --rp-orange: #FF8A3D;
-  --rp-surface: var(--surface, #fff);
-  --rp-fg: var(--foreground, #111827);
-  --rp-muted: var(--muted-foreground, #6B7280);
-  --rp-faint: #9CA3AF;
-  --rp-border: var(--border, #E5E7EB);
-  --rp-track: #F1F3F7;
-  --rp-bg-soft: #F7F8FA;
-  --rp-primary: var(--primary, #D61F83);
-  --rp-good: #15803D;
-  --rp-good-bg: #E8F6EE;
-  --rp-warn: #B45309;
-  --rp-warn-bg: #FFF3E6;
-  --rp-bad: #B4235E;
-  --rp-bad-bg: #FDEAF3;
-  --rp-tip-bg: #FFF7FB;
-  --rp-tip-border: #FAD3E7;
-  --rp-shadow: 0 1px 2px #1118270a, 0 8px 24px -16px #11182726;
+  --rp-pink: var(--analizi-pink);
+  --rp-orange: var(--analizi-orange);
+  --rp-surface: var(--surface);
+  --rp-fg: var(--foreground);
+  --rp-muted: var(--muted-foreground);
+  --rp-faint: var(--faint);
+  --rp-border: var(--border);
+  --rp-track: var(--track);
+  --rp-bg-soft: var(--surface-subtle);
+  --rp-primary: var(--primary);
+  --rp-good: var(--success);
+  --rp-good-bg: var(--success-bg);
+  --rp-warn: var(--warning);
+  --rp-warn-bg: var(--warning-bg);
+  --rp-bad: var(--danger);
+  --rp-bad-bg: var(--danger-bg);
+  --rp-tip-bg: var(--tip-bg);
+  --rp-tip-border: var(--tip-border);
+  --rp-shadow: var(--shadow-card);
   color: var(--rp-fg);
 }
-[data-theme="dark"] .rp {
-  --rp-faint: #7D8798;
-  --rp-track: #33363e;
-  --rp-bg-soft: #24272d;
-  --rp-good: #4ADE80;
-  --rp-good-bg: #1f3b2b;
-  --rp-warn: #FDBA74;
-  --rp-warn-bg: #3d2a20;
-  --rp-bad: #FF8CC6;
-  --rp-bad-bg: #45213a;
-  --rp-tip-bg: #33202c;
-  --rp-tip-border: #5a2b46;
-  --rp-shadow: none;
-}
+
 .rp .num, .rp-num { font-variant-numeric: tabular-nums; }
 
 /* ---------- cabeçalho ---------- */
