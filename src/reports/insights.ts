@@ -356,7 +356,7 @@ const okText = (v: unknown, max: number, allowed: Set<string>) => typeof v === '
 
 type AIOut = { id?: string, title?: string, comparison?: string, descriptive?: string, actions?: unknown }
 function valid(r: AIOut, allowed: Set<string>) {
-  return okText(r.title, LIMITS.title, allowed) && okText(r.comparison, LIMITS.comparison, allowed)
+  return okText(r.title, LIMITS.title, allowed)
     && okText(r.descriptive, LIMITS.descriptive, allowed)
     && Array.isArray(r.actions) && r.actions.length >= 2 && r.actions.length <= 3 && r.actions.every(a => !!a && typeof a === 'object' && okText((a as Step).step, LIMITS.action, allowed) && okText((a as Step).helps, LIMITS.helps, allowed))
 }
@@ -380,7 +380,7 @@ export async function buildReportInsights(kind: ReportKind, x: Derived, business
     visitantes_semana_anterior: px ? px.users : x.p ? n(x.p.users) : 'sem dados',
     contatos_semana_anterior: px ? px.contacts : x.p ? totalContacts(x.p) : 'sem dados',
   }
-  const cards = picked.map(({ a, r }, i) => ({ id: a.key, intencao: a.intent, fatos: r.facts, exemplo: { title: fallback[i].title, comparison: fallback[i].comparison, descriptive: fallback[i].descriptive, actions: fallback[i].actions } }))
+  const cards = picked.map(({ a, r }, i) => ({ id: a.key, intencao: a.intent, fatos: r.facts, exemplo: { title: fallback[i].title, descriptive: fallback[i].descriptive, actions: fallback[i].actions } }))
   const prompt = `Você é analista e escreve a seção de análise de um relatório semanal para o dono de um ${negocio}, que não entende de marketing.
 Objetivo do relatório: ${BLUEPRINTS[kind].goal}
 Contexto da semana: ${JSON.stringify(contexto)}
@@ -389,8 +389,7 @@ Para cada card, responda à "intencao" usando os "fatos". O "exemplo" mostra o t
 
 FORMATO (por card):
 - title: até ${LIMITS.title} palavras, o achado principal.
-- comparison: até ${LIMITS.comparison} palavras. Compare valor_semana com valor_semana_anterior (use variacao_pct se existir) e diga se é bom ou ruim. Se não houver semana anterior, diga isso.
-- descriptive: até ${LIMITS.descriptive} palavras, 2 frases: o que os fatos mostram e o provável motivo/por que importa para o negócio. Não invente causas sem base.
+- descriptive: até ${LIMITS.descriptive} palavras, 2 frases: o que os fatos mostram (pode citar a mudança em relação à semana anterior) e o provável motivo/por que importa para o negócio. Não invente causas sem base.
 - actions: lista de 2 ou 3 ações concretas para esta semana. Cada ação é {"step","helps"}: step (até ${LIMITS.action} palavras) diz o quê, onde e como, com exemplos reais desse tipo de negócio (serviços, situações e ${prof.person[1]} típicos); helps (até ${LIMITS.helps} palavras) começa com "Ajuda a" e diz no que essa ação ajuda o negócio. A primeira é a mais importante. Nada de ação genérica que serviria para qualquer negócio.
 
 REGRAS:
@@ -402,7 +401,7 @@ REGRAS:
 CARDS:
 ${JSON.stringify(cards)}
 
-Responda só JSON: {"insights":[{"id":"","title":"","comparison":"","descriptive":"","actions":[{"step":"","helps":""}]}]}`
+Responda só JSON: {"insights":[{"id":"","title":"","descriptive":"","actions":[{"step":"","helps":""}]}]}`
 
   try {
     const raw = await chatJSON(llm, [{ role: 'system', content: 'Responda APENAS JSON válido.' }, { role: 'user', content: prompt }])
@@ -413,7 +412,7 @@ Responda só JSON: {"insights":[{"id":"","title":"","comparison":"","descriptive
       const allowed = new Set([...Object.values(r.facts), ...Object.values(contexto)].flatMap(v => numbersIn(String(v))))
       const ai = byId.get(a.key)
       if (!ai || !valid(ai, allowed)) return fallback[i]
-      return { ...fallback[i], title: ai.title!.trim(), comparison: ai.comparison!.trim(), descriptive: ai.descriptive!.trim(), actions: (ai.actions as Step[]).map(a => ({ step: a.step.trim(), helps: a.helps.trim() })) }
+      return { ...fallback[i], title: ai.title!.trim(), descriptive: ai.descriptive!.trim(), actions: (ai.actions as Step[]).map(a => ({ step: a.step.trim(), helps: a.helps.trim() })) }
     })
     return { insights, model: 'IZI INTELLIGENCE' }
   } catch (err) {
