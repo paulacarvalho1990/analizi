@@ -15,9 +15,14 @@ import { supabase } from './lib/supabase'
 import { BusinessProvider, useBusiness, PLAN_DEFINITIONS, type BusinessItem, type SiteItem, type PlanMetadata } from './lib/business-context'
 import { BrazilGeoMap } from './components/BrazilMap'
 import * as R from './components/report/kit'
+import { ResultsByType } from './components/report/ResultsByType'
+import { sampleAnalytics } from './components/report/resultsSample'
 import { Help } from './components/report/kit'
 
 const ITEMS_PER_PAGE = 25
+
+// Protótipo da página Resultados por tipo de site: só em desenvolvimento, com ?prototipo=<tipo>.
+const PROTOTYPE_TYPE: SiteType | null = (() => { if (!import.meta.env.DEV) return null; const v = new URLSearchParams(window.location.search).get('prototipo'); return isSiteType(v) ? v : null })()
 function TablePagination({ page, total, setPage }: { page: number, total: number, setPage: (page: number) => void }) { const pages = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)); if (total <= ITEMS_PER_PAGE) return null; return <div className="table-pagination"><span>Mostrando {page * ITEMS_PER_PAGE + 1}–{Math.min((page + 1) * ITEMS_PER_PAGE, total)} de {total}</span><div><button disabled={page === 0} onClick={() => setPage(page - 1)}>Anterior</button><b>{page + 1} de {pages}</b><button disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Próxima</button></div></div> }
 function PageChart({ pages }: { pages: AnalyticsData['pages'] }) {
   const rows = pages.slice(0, 8).map(item => ({
@@ -1227,12 +1232,26 @@ function conversionTypeLabel(type: string): string {
     pagamento: 'Pagamento',
     assinatura: 'Assinatura',
     compra: 'Compra',
+    telefone: 'Ligação',
+    carrinho: 'Adição ao carrinho',
+    carrinho_visita: 'Visita ao carrinho',
+    reserva: 'Reserva',
   };
   return labels[type] || 'Outro contato ou intenção';
 }
 
 function Results() {
-  const analytics = useAnalytics();
+  const { currentSite } = useBusiness();
+  const [prototypeType, setPrototypeType] = useState<SiteType | null>(PROTOTYPE_TYPE);
+  const siteType: SiteType = prototypeType ?? (isSiteType(currentSite?.site_type) ? currentSite.site_type : 'servicos');
+  const liveAnalytics = useAnalytics();
+  const analytics = useMemo(() => (prototypeType ? sampleAnalytics(prototypeType) as unknown as AnalyticsData : liveAnalytics), [prototypeType, liveAnalytics]);
+  const prototypeBar = prototypeType ? (
+    <nav className="rp-proto" aria-label="Protótipo: tipo de site">
+      <span>Protótipo</span>
+      {SITE_TYPE_OPTIONS.map(([type, info]) => <button key={type} type="button" className={type === prototypeType ? 'on' : ''} onClick={() => { setPrototypeType(type); window.history.replaceState(null, '', `?prototipo=${type}`) }}>{info.label}</button>)}
+    </nav>
+  ) : null;
   const [conversionTab, setConversionTab] = useState<'pages' | 'channels'>('pages');
   const [conversionPage, setConversionPage] = useState(0);
   const [conversionEventPage, setConversionEventPage] = useState(0);
@@ -1257,7 +1276,8 @@ function Results() {
   const formSubmits = analytics?.sourceKind === 'ga4'
     ? contactDetails.filter(item => item.type === 'form_submit').reduce((sum, item) => sum + Number(item.contacts || 0), 0)
     : conversionEvents.filter(item => ['contato', 'agendamento', 'orcamento', 'newsletter'].includes(item.type) && item.stage === 'confirmada').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
-  const purchaseIntents = conversionEvents.filter(item => ['checkout', 'pagamento', 'assinatura'].includes(item.type) && item.stage === 'intencao').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
+  const phoneClicks = conversionEvents.filter(item => item.type === 'telefone').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
+  const quoteRequests = conversionEvents.filter(item => item.type === 'orcamento' && item.stage === 'confirmada').reduce((sum, item) => sum + Number(item.conversions || 0), 0);
   const visibleConversionEvents = conversionEvents.slice(conversionEventPage * ITEMS_PER_PAGE, (conversionEventPage + 1) * ITEMS_PER_PAGE);
 
   const totalDownloads = allClicks.filter(item => isDownloadClick(item)).reduce((sum, item) => sum + Number(item.clicks || 0), 0);
@@ -1389,13 +1409,20 @@ function Results() {
   const pageTitle = (path: string) => analytics?.pages?.find(pg => pg.path === path)?.title || (path === '/' ? 'Página inicial' : path);
   const shortDest = (d?: string) => (d ? d.replace(/^https?:\/\//, '').replace(/^www\./, '').slice(0, 32) : '—');
 
+  if (siteType !== 'servicos') {
+    return <>{prototypeBar}<ResultsByType siteType={siteType} data={analytics}
+      header={(title, subtitle, guide) => <PageHeader report title={title} subtitle={subtitle} guide={guide} />}
+      filters={<AnalyticsFilters analytics={analytics} />} /></>;
+  }
+
   return (
     <>
+      {prototypeBar}
       <PageHeader report title="Resultados" subtitle="Os contatos e oportunidades que o seu site gerou."
         guide={<><b>Como ler esta tela:</b> <b>contato iniciado</b> é quando alguém clica para falar com você (WhatsApp, telefone) ou envia um cadastro. Não quer dizer que virou venda, mas é o melhor sinal de interesse. Use as tabelas para descobrir <b>quais páginas, botões e canais</b> trazem esses contatos.</>} />
       <AnalyticsFilters analytics={analytics} />
       <div className="rp">
-        <div className="rp-grid" style={{ gridTemplateColumns: 'minmax(0,1.25fr) minmax(0,1fr)' }}>
+        <div className="rp-grid rp-g-main">
           <R.Card title="Contatos iniciados" subtitle="Todas as formas de contato somadas" actions={<R.Delta value={R.change(t?.contacts, p?.contacts)} emptyLabel="sem comparação" />}
             help={{ what: 'Soma dos cliques em WhatsApp e telefone e dos cadastros enviados pelo site.', why: 'É o principal resultado do seu site: pessoas que levantaram a mão.' }}
             read={contacts ? <>De cada 100 visitas, <b>{R.fmtDec(contactRateNum)}</b> terminaram em contato. {whatsapp ? <>O WhatsApp responde por <b>{Math.round(R.share(whatsapp, contacts))}%</b> deles.</> : null}</> : undefined}
@@ -1410,16 +1437,16 @@ function Results() {
           </R.Card>
           <R.Card title="Outras ações no site" subtitle="Sinais de interesse que ainda não são contato">
             <div className="rp-grid rp-g2e" style={{ marginTop: 0, gap: 10 }}>
-              <div className="rp-mini"><span className="t">Intenções de compra<Help title="Intenções de compra" what="Pessoas que começaram um checkout, pagamento ou assinatura." /></span><b className={purchaseIntents ? '' : 'empty'}>{purchaseIntents ? R.fmt(purchaseIntents) : '—'}</b><small>checkout, pagamento ou assinatura</small></div>
+              <div className="rp-mini"><span className="t">Cliques para ligar<Help title="Cliques para ligar" what="Cliques em números de telefone do site." /></span><b className={phoneClicks ? '' : 'empty'}>{phoneClicks ? R.fmt(phoneClicks) : '—'}</b><small>ligações iniciadas</small></div>
               <div className="rp-mini"><span className="t">Downloads<Help title="Downloads" what="Arquivos baixados no site, como PDFs, cardápios e catálogos." /></span><b className={totalDownloads ? '' : 'empty'}>{totalDownloads ? R.fmt(totalDownloads) : '—'}</b><small>arquivos baixados</small></div>
               <div className="rp-mini"><span className="t">Cliques de saída<Help title="Cliques de saída" what="Cliques em links que levam para outros sites (Google Maps, redes sociais…)." /></span><b className={totalOutbound ? '' : 'empty'}>{totalOutbound ? R.fmt(totalOutbound) : '—'}</b><small>links para outros sites</small></div>
               {formStarts > 0 ? (
                 <div className="rp-mini"><span className="t">Abandono de formulário<Help title="Abandono de formulário" what="Pessoas que começaram a preencher um formulário e desistiram." tip="Formulários longos espantam. Peça só o essencial." /></span><b>{formAbandonRate}%</b><small>{formAbandons} desistiram de {formStarts} iniciados</small></div>
               ) : (
-                <div className="rp-mini"><span className="t">Logins<Help title="Logins" what="Acessos à área restrita do seu site, se houver." /></span><b className={Number(t?.logins || 0) ? '' : 'empty'}>{R.fmt(t?.logins)}</b><small>acessos à área restrita</small></div>
+                <div className="rp-mini"><span className="t">Pedidos de orçamento<Help title="Pedidos de orçamento" what="Formulários de orçamento, proposta ou cotação enviados." /></span><b className={quoteRequests ? '' : 'empty'}>{quoteRequests ? R.fmt(quoteRequests) : '—'}</b><small>formulários de orçamento</small></div>
               )}
             </div>
-            <div style={{ marginTop: 'auto', paddingTop: 12 }}><R.Tip>Se o seu site não tem loja, downloads ou área restrita, é normal estes números ficarem zerados.</R.Tip></div>
+            <div style={{ marginTop: 'auto', paddingTop: 12 }}><R.Tip>Se o seu site não tem telefone, downloads ou formulário de orçamento, é normal estes números ficarem zerados.</R.Tip></div>
           </R.Card>
         </div>
 
@@ -3951,11 +3978,12 @@ const GA4_ENABLED = false;
 
 export function App() {
   const [mode, setMode] = useState<AuthPage>(() => {
+    if (PROTOTYPE_TYPE) return 'app';
     if (window.location.pathname === '/entrar') return 'login';
     // Se há cliente supabase configurado, inicia em 'loading' para verificar a sessão salva sem piscar a Landing
     return supabase ? 'loading' : 'landing';
   });
-  const [page, setPage] = useState<Page>(() => pageFromPath());
+  const [page, setPage] = useState<Page>(() => (PROTOTYPE_TYPE ? 'results' : pageFromPath()));
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
@@ -3972,6 +4000,7 @@ export function App() {
   useEffect(() => {
     const client = supabase;
     const targetPublicPage: AuthPage = window.location.pathname === '/entrar' ? 'login' : 'landing';
+    if (PROTOTYPE_TYPE) return;
     if (!client) {
       setMode(targetPublicPage);
       return;
