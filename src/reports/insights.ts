@@ -7,6 +7,7 @@
 
 import { chatJSON, hasLLM, type LLMEnv } from '../insights/llm'
 import { CONTACT_LABEL, WEEKDAYS, exitPct, fmt, inTen, n, type Derived, type ReportKind } from './derive'
+import { totalContacts } from './derive'
 
 export type Trend = 'up' | 'down' | 'flat' | 'new'
 
@@ -90,7 +91,7 @@ const A = {
       if (!x.contacts && !x.users) return null
       const rate = x.users ? Math.round((x.contacts / x.users) * 1000) / 10 : 0
       const prate = px?.users ? Math.round((px.contacts / px.users) * 1000) / 10 : null
-      const m = { label: 'contatos', cur: x.contacts, prev: px ? px.contacts : (x.p ? n(x.p.contactClicks) : null) }
+      const m = { label: 'contatos', cur: x.contacts, prev: px ? px.contacts : (x.p ? totalContacts(x.p) : null) }
       const best = x.bestContacts && n(x.bestContacts.contacts) ? x.bestContacts : null
       return {
         metric: m,
@@ -385,7 +386,7 @@ export async function buildReportInsights(kind: ReportKind, x: Derived, business
   const contexto = {
     visitantes_semana: x.users, contatos_semana: x.contacts,
     visitantes_semana_anterior: px ? px.users : x.p ? n(x.p.users) : 'sem dados',
-    contatos_semana_anterior: px ? px.contacts : x.p ? n(x.p.contactClicks) : 'sem dados',
+    contatos_semana_anterior: px ? px.contacts : x.p ? totalContacts(x.p) : 'sem dados',
   }
   const cards = picked.map(({ a, r }, i) => ({ id: a.key, intencao: a.intent, fatos: r.facts, exemplo: { title: fallback[i].title, comparison: fallback[i].comparison, descriptive: fallback[i].descriptive, forecast: fallback[i].forecast, actions: fallback[i].actions } }))
   const prompt = `Você é analista e escreve a seção de análise de um relatório semanal para o dono de um ${negocio}, que não entende de marketing.

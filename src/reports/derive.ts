@@ -44,10 +44,23 @@ export const CONTACT_LABEL: Record<string, [string, string]> = {
   email_click: ['por e-mail', 'Clicaram no endereço de e-mail.'],
 }
 
+/** Contatos dos totais da semana anterior (que só trazem os totais). */
+export const totalContacts = (t?: ReportTotals) => Math.max(n(t?.contactClicks), n(t?.whatsappClicks))
+
+/** Normaliza o tipo de contato vindo do GA4/tracker (ex.: whatsapp_contact → whatsapp). */
+export function contactKey(type?: string) {
+  const k = (type || 'outro').toLowerCase().trim()
+  if (k.includes('whatsapp')) return 'whatsapp'
+  if (k.includes('form')) return 'form_submit'
+  if (k.includes('phone') || k.includes('tel') || k.includes('call')) return 'phone'
+  if (k.includes('mail')) return 'email'
+  return k
+}
+
 export function derive(d: ReportData, normalizeSource: (s: string) => string) {
   const pageTitle = (path: string) => d.pages.find(pg => pg.path === path)?.title || (path === '/' ? 'Página inicial' : path)
   const t = d.totals, p = d.previousTotals
-  const contacts = n(t.contactClicks), users = n(t.users), pv = views(t)
+  const users = n(t.users), pv = views(t)
   const sources = new Map<string, number>()
   d.sources.forEach(s => { const k = normalizeSource(s.name); sources.set(k, (sources.get(k) || 0) + n(s.value)) })
   const sourceList = [...sources.entries()].sort((a, b) => b[1] - a[1])
@@ -75,7 +88,9 @@ export function derive(d: ReportData, normalizeSource: (s: string) => string) {
   const regionList = [...regions.entries()].sort((a, b) => b[1] - a[1])
   const locTotal = regionList.reduce((a, r) => a + r[1], 0)
   const contactTypes = new Map<string, number>()
-  ;(d.contactDetails ?? []).forEach(c => { const k = c.type || 'outro'; contactTypes.set(k, (contactTypes.get(k) || 0) + n(c.contacts)) })
+  ;(d.contactDetails ?? []).forEach(c => { const k = contactKey(c.type); contactTypes.set(k, (contactTypes.get(k) || 0) + n(c.contacts)) })
+  // O total do GA4 (contact_clicks) às vezes não inclui eventos como whatsapp_contact; usa o maior valor disponível.
+  const contacts = Math.max(n(t.contactClicks), n(t.whatsappClicks), [...contactTypes.values()].reduce((a, b) => a + b, 0))
   const bestConvCity = cityList.filter(([, c]) => c.users >= 10).sort((a, b) => b[1].conv / b[1].users - a[1].conv / a[1].users)[0]
   return { t, p, contacts, users, pv, sourceList, sourceTotal, contactSourceList, topContactSource, pageContacts, topPages, leak, devTotal, mobile, peak, daily, bestViews, bestContacts, cityList, regionList, locTotal, contactTypes, bestConvCity, pageTitle, peakHours: d.peakHours ?? [] }
 }
