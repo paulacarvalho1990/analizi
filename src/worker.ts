@@ -1518,6 +1518,7 @@ async function generateWeeklyReport(env: Env, siteId: string, kind: ReportKind, 
   } catch (err) {
     console.error('Falha ao ler a semana anterior do relatório:', err)
   }
+  if (prev) data.previousWeek = { users: prev.users, contacts: prev.contacts }
   const { insights, model } = await buildReportInsights(kind, derive(data, normalizeOriginName), business || {}, env, prev)
   const stmt = env.ANALIZI_EVENTS.prepare(`
     insert into weekly_site_reports (tracker_site_id, week_start, week_end, report_kind, data_json, insights_json, model, created_at)

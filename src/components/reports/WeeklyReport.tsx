@@ -6,7 +6,6 @@ import './weekly-report.css'
 
 import type { ReportInsight } from '../../reports/insights'
 import { CONTACT_LABEL, WEEKDAYS, derive, exitPct, fmt, inTen, n, views, weekdayOf, type Derived, type ReportData, type ReportKind } from '../../reports/derive'
-import { totalContacts } from '../../reports/derive'
 export type { ReportData, ReportKind }
 
 const dateBR = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('.', '')
@@ -63,42 +62,47 @@ const fact = {
   leak: (x: Derived): Fact | null => x.leak ? { tone: 'bad', figure: <Exit />, text: <><b>{inTen(exitPct(x.leak.exitRate), 100)} pessoas</b> saem da página <b>{x.pageTitle(x.leak.path)}</b> sem fazer mais nada.</> } : null,
 }
 
-/** Título do relatório geral: compara visitas e contatos sem afirmar o que não aconteceu. */
+const plural = (k: number, one: string, many: string) => `${fmt(k)} ${k === 1 ? one : many}`
+
+/** Título do relatório geral: descreve exatamente o que os números mostram, com os números. */
 function generalHeadline(x: Derived) {
-  const p = x.p
+  const pu = x.prevUsers, pc = x.prevContacts
   if (!x.users) return 'O site ainda não recebeu visitas nesta semana.'
-  if (!p) return x.contacts ? `${fmt(x.users)} pessoas visitaram o site e ${fmt(x.contacts)} pediram contato.` : `${fmt(x.users)} pessoas visitaram o site, mas ninguém pediu contato ainda.`
-  const v = Math.sign(x.users - n(p.users)), c = Math.sign(x.contacts - totalContacts(p))
-  if (x.contacts === 0) return v > 0 ? 'Mais gente visitou o site, mas ninguém pediu contato.' : 'Semana mais calma: ninguém pediu contato pelo site.'
-  if (v > 0 && c > 0) return 'Mais gente visitou o site e mais gente chamou você.'
-  if (v > 0 && c < 0) return 'Mais gente visitou o site, mas menos gente chamou você.'
-  if (v < 0 && c > 0) return 'Menos visitas, mas mais gente chamou você.'
-  if (v < 0 && c < 0) return 'Foi uma semana mais calma no site.'
-  if (c > 0) return 'Mais gente chamou você nesta semana.'
-  if (c < 0) return 'Menos gente chamou você nesta semana.'
-  return v > 0 ? 'Mais gente visitou o site nesta semana.' : v < 0 ? 'O site teve menos visitas nesta semana.' : 'Uma semana parecida com a anterior.'
+  const visitas = plural(x.users, 'pessoa visitou', 'pessoas visitaram')
+  const contatos = x.contacts ? plural(x.contacts, 'pediu', 'pediram') + ' contato' : 'ninguém pediu contato'
+  if (pu === null || pc === null) return `${visitas.charAt(0).toUpperCase() + visitas.slice(1)} o site e ${contatos}.`
+  const vTxt = x.users > pu ? `Mais gente visitou o site (${fmt(x.users)}, contra ${fmt(pu)})`
+    : x.users < pu ? `Menos gente visitou o site (${fmt(x.users)}, contra ${fmt(pu)})`
+    : `As visitas ficaram iguais (${fmt(x.users)})`
+  const cTxt = x.contacts === pc ? (x.contacts ? `os pedidos de contato ficaram iguais: ${fmt(x.contacts)}` : 'ninguém pediu contato, como na semana anterior')
+    : !x.contacts ? `ninguém pediu contato (na semana anterior, ${fmt(pc)})`
+    : x.contacts > pc ? `os pedidos de contato subiram de ${fmt(pc)} para ${fmt(x.contacts)}`
+    : `os pedidos de contato caíram de ${fmt(pc)} para ${fmt(x.contacts)}`
+  const joiner = (x.users > pu && x.contacts < pc) || (x.users < pu && x.contacts > pc) || (x.users > pu && x.contacts === pc) ? ', mas ' : ' e '
+  return `${vTxt}${joiner}${cTxt}.`
 }
 
 /* ---------- os 4 relatórios ---------- */
 function build(kind: ReportKind, x: Derived): Model {
   const { t, p } = x
   const rate = x.users ? (x.contacts / x.users) * 100 : 0
-  const prevRate = p && n(p.users) ? (totalContacts(p) / n(p.users)) * 100 : undefined
+  const prevRate = x.prevUsers && x.prevContacts !== null ? (x.prevContacts / x.prevUsers) * 100 : undefined
   const per100 = <>De cada <b>100 pessoas</b> que entraram no site, <b>{x.contacts && Math.round(rate) === 0 ? 'menos de 1' : Math.round(rate)} {Math.round(rate) === 1 ? 'pediu' : 'pediram'} contato</b>{prevRate !== undefined ? <>. Na semana anterior eram {Math.round(prevRate)}</> : null}.</>
   const topContactPage = x.pageContacts[0]
 
   if (kind === 'contatos') {
     const types = [...x.contactTypes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
     const wa = x.contactTypes.get('whatsapp') || n(t.whatsappClicks)
-    const diff = p ? x.contacts - totalContacts(p) : 0
+    const diff = x.prevContacts !== null ? x.contacts - x.prevContacts : 0
     return {
       title: 'Relatório de contatos', subtitle: 'Quantas pessoas pediram contato pelo site, e como.',
-      headline: x.contacts === 0 ? 'Ninguém pediu contato pelo site nesta semana.'
-        : p && diff > 0 ? `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato, ${fmt(diff)} a mais que na semana anterior.`
-        : p && diff < 0 ? `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato, ${fmt(-diff)} a menos que na semana anterior.`
+      headline: x.contacts === 0 ? (x.prevContacts ? `Ninguém pediu contato pelo site nesta semana (na anterior, ${fmt(x.prevContacts)}).` : 'Ninguém pediu contato pelo site nesta semana.')
+        : x.prevContacts !== null && diff > 0 ? `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato, ${fmt(diff)} a mais que na semana anterior.`
+        : x.prevContacts !== null && diff < 0 ? `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato, ${fmt(-diff)} a menos que na semana anterior.`
+        : x.prevContacts !== null ? `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato, o mesmo número da semana anterior.`
         : `Seu site trouxe ${fmt(x.contacts)} ${x.contacts === 1 ? 'pedido' : 'pedidos'} de contato.`,
       steps: types.length ? types.map(([k, v], i) => ({ value: fmt(v), what: CONTACT_LABEL[k]?.[0] ?? k.replace(/_/g, ' '), explain: CONTACT_LABEL[k]?.[1] ?? 'Outro tipo de contato.', hero: i === 0 }))
-        : [{ value: fmt(x.contacts), what: 'pediram contato', explain: 'Clicaram em WhatsApp, telefone ou e-mail.', delta: <Delta now={x.contacts} before={p ? totalContacts(p) : undefined} />, hero: true }],
+        : [{ value: fmt(x.contacts), what: 'pediram contato', explain: 'Clicaram em WhatsApp, telefone ou e-mail.', delta: <Delta now={x.contacts} before={x.prevContacts ?? undefined} />, hero: true }],
       plain: per100,
       facts: [
         wa && x.contacts ? { tone: 'good', figure: <Bubble />, text: <><b>{inTen(wa, x.contacts)} contatos</b> chegaram pelo WhatsApp.</> } as Fact : null,
@@ -116,7 +120,7 @@ function build(kind: ReportKind, x: Derived): Model {
       title: 'Relatório de visitas', subtitle: 'Quantas pessoas visitaram o site e por onde elas chegaram.',
       headline: x.users === 0 ? 'O site ainda não recebeu visitas nesta semana.' : newU > back ? `O site recebeu ${fmt(x.users)} pessoas, e a maioria nunca tinha visitado antes.` : `O site recebeu ${fmt(x.users)} pessoas, e a maioria já conhecia você.`,
       steps: [
-        { value: fmt(x.users), what: 'pessoas visitaram', explain: 'Cada pessoa conta uma vez, mesmo se voltou.', delta: <Delta now={x.users} before={p ? n(p.users) : undefined} />, hero: true },
+        { value: fmt(x.users), what: 'pessoas visitaram', explain: 'Cada pessoa conta uma vez, mesmo se voltou.', delta: <Delta now={x.users} before={x.prevUsers ?? undefined} />, hero: true },
         { value: fmt(newU), what: 'vieram pela primeira vez', explain: 'Nunca tinham entrado no site.', delta: <Delta now={newU} before={p?.newUsers !== undefined ? n(p.newUsers) : undefined} /> },
         { value: fmt(back), what: 'voltaram', explain: 'Já conheciam o site.' },
       ],
@@ -163,9 +167,9 @@ function build(kind: ReportKind, x: Derived): Model {
     title: 'Relatório da semana', subtitle: 'Como foi a semana do seu site, explicado sem termos técnicos.',
     headline: generalHeadline(x),
     steps: [
-      { value: fmt(x.users), what: 'pessoas visitaram', explain: 'Cada pessoa conta uma vez, mesmo se voltou.', delta: <Delta now={x.users} before={p ? n(p.users) : undefined} /> },
+      { value: fmt(x.users), what: 'pessoas visitaram', explain: 'Cada pessoa conta uma vez, mesmo se voltou.', delta: <Delta now={x.users} before={x.prevUsers ?? undefined} /> },
       { value: fmt(x.pv), what: 'páginas vistas', explain: x.users ? `Em média, cada pessoa olhou ${(x.pv / x.users).toFixed(1).replace('.', ',')} páginas.` : 'Vezes que alguma página foi aberta.', delta: <Delta now={x.pv} before={p ? views(p) : undefined} /> },
-      { value: fmt(x.contacts), what: 'pediram contato', explain: 'Clicaram em WhatsApp, telefone ou e-mail.', delta: <Delta now={x.contacts} before={p ? totalContacts(p) : undefined} />, hero: true },
+      { value: fmt(x.contacts), what: 'pediram contato', explain: 'Clicaram em WhatsApp, telefone ou e-mail.', delta: <Delta now={x.contacts} before={x.prevContacts ?? undefined} />, hero: true },
     ],
     plain: per100,
     facts: [fact.topSource(x), fact.topCity(x), fact.peak(x), fact.mobile(x), fact.topContactPage(x), fact.bestContactsDay(x) ?? fact.bestViewsDay(x, 'var(--wr-pink)')].filter(Boolean) as Fact[],

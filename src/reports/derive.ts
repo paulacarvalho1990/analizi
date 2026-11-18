@@ -17,6 +17,8 @@ export type ReportData = {
   pageConversionResults?: Array<{ path: string, sessions: number, whatsappClicks: number, contactSessions: number }>,
   contactDetails?: Array<{ type: string, contacts: number }>,
   peakHours?: Array<{ dayOfWeek: number, hourOfDay: number, views: number, contacts: number }>,
+  /** Semana anterior calculada com a mesma regra desta semana (gravado na geração do relatório). */
+  previousWeek?: { users: number, contacts: number },
 }
 
 export const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
@@ -92,6 +94,9 @@ export function derive(d: ReportData, normalizeSource: (s: string) => string) {
   // O total do GA4 (contact_clicks) às vezes não inclui eventos como whatsapp_contact; usa o maior valor disponível.
   const contacts = Math.max(n(t.contactClicks), n(t.whatsappClicks), [...contactTypes.values()].reduce((a, b) => a + b, 0))
   const bestConvCity = cityList.filter(([, c]) => c.users >= 10).sort((a, b) => b[1].conv / b[1].users - a[1].conv / a[1].users)[0]
-  return { t, p, contacts, users, pv, sourceList, sourceTotal, contactSourceList, topContactSource, pageContacts, topPages, leak, devTotal, mobile, peak, daily, bestViews, bestContacts, cityList, regionList, locTotal, contactTypes, bestConvCity, pageTitle, peakHours: d.peakHours ?? [] }
+  // Semana anterior: usa o valor gravado com a mesma regra; relatórios antigos caem nos totais.
+  const prevUsers = d.previousWeek ? n(d.previousWeek.users) : p ? n(p.users) : null
+  const prevContacts = d.previousWeek ? n(d.previousWeek.contacts) : p ? totalContacts(p) : null
+  return { t, p, prevUsers, prevContacts, contacts, users, pv, sourceList, sourceTotal, contactSourceList, topContactSource, pageContacts, topPages, leak, devTotal, mobile, peak, daily, bestViews, bestContacts, cityList, regionList, locTotal, contactTypes, bestConvCity, pageTitle, peakHours: d.peakHours ?? [] }
 }
 export type Derived = ReturnType<typeof derive>

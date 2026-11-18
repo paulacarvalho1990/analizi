@@ -7,7 +7,6 @@
 
 import { chatJSON, hasLLM, type LLMEnv } from '../insights/llm'
 import { CONTACT_LABEL, WEEKDAYS, exitPct, fmt, inTen, n, type Derived, type ReportKind } from './derive'
-import { totalContacts } from './derive'
 import { businessProfile, personalize } from './business-profile'
 
 export type Trend = 'up' | 'down' | 'flat' | 'new'
@@ -80,7 +79,7 @@ const A = {
       if (!x.contacts && !x.users) return null
       const rate = x.users ? Math.round((x.contacts / x.users) * 1000) / 10 : 0
       const prate = px?.users ? Math.round((px.contacts / px.users) * 1000) / 10 : null
-      const m = { label: 'contatos', cur: x.contacts, prev: px ? px.contacts : (x.p ? totalContacts(x.p) : null) }
+      const m = { label: 'contatos', cur: x.contacts, prev: px ? px.contacts : x.prevContacts }
       const best = x.bestContacts && n(x.bestContacts.contacts) ? x.bestContacts : null
       return {
         metric: m,
@@ -99,7 +98,7 @@ const A = {
     build: (x, px) => {
       if (!x.users) return null
       const nu = n(x.t.newUsers)
-      const m = { label: 'visitantes', cur: x.users, prev: px ? px.users : (x.p ? n(x.p.users) : null) }
+      const m = { label: 'visitantes', cur: x.users, prev: px ? px.users : x.prevUsers }
       return {
         metric: m,
         facts: { ...metricFacts(m), visualizacoes: x.pv, novos: nu, ...(px ? { novos_semana_anterior: n(px.t.newUsers) } : {}) },
@@ -377,8 +376,8 @@ export async function buildReportInsights(kind: ReportKind, x: Derived, business
   const negocio = [business.name, business.segment, business.subsegment, business.segmentDetail].filter(Boolean).join(' · ') || 'pequeno negócio'
   const contexto = {
     visitantes_semana: x.users, contatos_semana: x.contacts,
-    visitantes_semana_anterior: px ? px.users : x.p ? n(x.p.users) : 'sem dados',
-    contatos_semana_anterior: px ? px.contacts : x.p ? totalContacts(x.p) : 'sem dados',
+    visitantes_semana_anterior: px ? px.users : x.prevUsers ?? 'sem dados',
+    contatos_semana_anterior: px ? px.contacts : x.prevContacts ?? 'sem dados',
   }
   const cards = picked.map(({ a, r }, i) => ({ id: a.key, intencao: a.intent, fatos: r.facts, exemplo: { title: fallback[i].title, descriptive: fallback[i].descriptive, actions: fallback[i].actions } }))
   const prompt = `Você é analista e escreve a seção de análise de um relatório semanal para o dono de um ${negocio}, que não entende de marketing.
