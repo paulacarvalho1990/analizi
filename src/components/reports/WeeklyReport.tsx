@@ -209,12 +209,21 @@ export function WeeklyReport({ kind, data, start, end, normalizeSource, insights
             <h2 id="wr-ai-title">O que fazer na próxima semana</h2>
             <span className="wr-izi">IZI INTELLIGENCE</span>
           </div>
-          <p className="wr-ai-note">Criado com IA a partir dos números deste relatório.</p>
+          <p className="wr-ai-note">Criado com IA a partir dos números deste relatório e da semana anterior.</p>
           <ol className="wr-ai-list">
             {insights.map(i => <li key={i.key}>
               <p className="wr-ai-title">{i.title}</p>
-              <p className="wr-ai-finding">{i.finding}</p>
-              <p className="wr-ai-action"><b>Sugestão:</b> {i.action}</p>
+              {i.metric && <div className={`wr-ai-metric t-${i.metric.trend}`}>
+                <span><b>{fmt(i.metric.current)}</b> {i.metric.label}</span>
+                {i.metric.previous !== null && <span className="wr-ai-was">{i.metric.trend === 'up' ? '▲' : i.metric.trend === 'down' ? '▼' : i.metric.trend === 'new' ? '★' : '='} antes: {fmt(i.metric.previous)}</span>}
+                <span className="wr-ai-next">próxima: {fmt(i.metric.low)}–{fmt(i.metric.high)}</span>
+              </div>}
+              {i.comparison && <p className="wr-ai-sec"><span>Comparação</span>{i.comparison}</p>}
+              {(i.descriptive ?? i.finding) && <p className="wr-ai-sec"><span>O que aconteceu</span>{i.descriptive ?? i.finding}</p>}
+              {i.forecast && <p className="wr-ai-sec"><span>Previsão</span>{i.forecast}</p>}
+              <div className="wr-ai-action"><b>O que fazer</b>
+                <ul>{(i.actions ?? (i.action ? [i.action] : [])).map((a, k) => <li key={k}>{a}</li>)}</ul>
+              </div>
             </li>)}
           </ol>
         </section>}

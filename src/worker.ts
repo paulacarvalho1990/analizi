@@ -1509,7 +1509,16 @@ async function generateWeeklyReport(env: Env, siteId: string, kind: ReportKind, 
   const res = await analytics(siteId, env, new URLSearchParams({ start: week.start, end: week.end, group: 'day' }))
   if (!res.ok) throw new Error(`analytics ${res.status}`)
   const data = await res.json() as ReportData
-  const { insights, model } = await buildReportInsights(kind, derive(data, normalizeOriginName), business || {}, env)
+  // Semana anterior completa, para comparar página, origem, cidade etc. (não só os totais).
+  const shift = (d: string) => new Date(Date.parse(`${d}T12:00:00Z`) - 7 * 86400000).toISOString().slice(0, 10)
+  let prev: ReturnType<typeof derive> | null = null
+  try {
+    const pr = await analytics(siteId, env, new URLSearchParams({ start: shift(week.start), end: shift(week.end), group: 'day' }))
+    if (pr.ok) prev = derive(await pr.json() as ReportData, normalizeOriginName)
+  } catch (err) {
+    console.error('Falha ao ler a semana anterior do relatório:', err)
+  }
+  const { insights, model } = await buildReportInsights(kind, derive(data, normalizeOriginName), business || {}, env, prev)
   const stmt = env.ANALIZI_EVENTS.prepare(`
     insert into weekly_site_reports (tracker_site_id, week_start, week_end, report_kind, data_json, insights_json, model, created_at)
     values (?, ?, ?, ?, ?, ?, ?, ?)
