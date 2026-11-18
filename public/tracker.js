@@ -281,6 +281,7 @@
       ...parseUserAgent(), ...attribution(),
     }
   }
+  const CONVERSION_EVENTS = new Set(['sign_up', 'whatsapp_contact', 'form_submit', 'purchase', 'subscription', 'booking'])
   const send = (eventName, metadata = {}, options = {}) => {
     const consumeTime = options.consumeTime !== false
     const elapsed = consumeTime ? consumeEngagementMs() : 0
@@ -292,13 +293,41 @@
         eventName,
         engagementTimeMs: elapsed,
         loadTimeMs: loadTime,
-        isConversion: eventName === 'sign_up' || eventName === 'whatsapp_contact' || eventName === 'form_submit' || eventName === 'purchase' || eventName === 'subscription',
+        isConversion: CONVERSION_EVENTS.has(eventName),
         metadata,
         ...context(options.pagePath, options.pageTitle),
       }]
     })
     if (navigator.sendBeacon) navigator.sendBeacon(endpoint, new Blob([payload], { type: 'text/plain' }))
     else fetch(endpoint, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: payload, keepalive: true }).catch(() => {})
+  }
+
+
+  // --- Resultados detectados pela URL: carrinho, checkout, compra, assinatura, reserva e agendamento ---
+  // Cada resultado conta 1x por sessão e caminho (recarregar a página de "obrigado" não duplica).
+  const PAGE_RESULT_RULES = [
+    ['purchase', 'compra', /(?:\/(?:pedido-(?:confirmado|recebido|realizado|finalizado)|compra-(?:confirmada|realizada|finalizada|aprovada)|order-(?:received|confirmed|confirmation|complete)|checkout\/(?:success|sucesso|thank[_-]?you|order-received|confirmacao|obrigado))(?:\/|$)|\/orders?\/[^/]+\/(?:thank[_-]?you|confirmation)|\/order-received\/)/i],
+    ['subscription', 'assinatura', /\/(?:assinatura-(?:confirmada|realizada|ativa|ativada)|subscription[-_/](?:success|confirmed|active)|upgrade[-_/](?:success|sucesso)|billing[-_/](?:success|sucesso)|obrigad[oa]-assinatura|plano-(?:ativado|confirmado))(?:\/|$)/i],
+    ['booking', 'reserva', /\/(?:reserva-(?:confirmada|realizada)|booking[-_/](?:confirmed|confirmation|success)|reservation[-_/](?:confirmed|confirmation|success))(?:\/|$)/i],
+    ['booking', 'agendamento', /\/(?:agendamento-(?:confirmado|realizado)|consulta-(?:agendada|confirmada)|appointment[-_/](?:confirmed|confirmation|success))(?:\/|$)/i],
+    ['checkout_start', 'checkout', /\/(?:checkout|finalizar-compra|finalizar-pedido)(?:\/|$)/i],
+    ['cart_view', 'carrinho', /\/(?:cart|carrinho|sacola|basket)(?:\/|$)/i],
+  ]
+  // "/obrigado" genérico só é compra se a sessão passou por carrinho/checkout;
+  // senão costuma ser o agradecimento de um formulário (já contado como form_submit).
+  const GENERIC_THANKS = /\/(?:obrigad[oa]|thank-?you|thanks)(?:\/|$)/i
+  const shopKey = `analizi:${siteId}:shop:${sessionId}`
+  const resultsKey = `analizi:${siteId}:results:${sessionId}`
+  const trackPageResult = (path) => {
+    let rule = PAGE_RESULT_RULES.find(([, , pattern]) => pattern.test(path))
+    if (!rule && GENERIC_THANKS.test(path) && get(session, shopKey)) rule = ['purchase', 'compra']
+    if (!rule) return
+    const [eventName, conversionType] = rule
+    if (eventName === 'cart_view' || eventName === 'checkout_start') set(session, shopKey, '1')
+    const key = `${eventName}:${path}`
+    if (get(session, resultsKey).split('|').includes(key)) return
+    set(session, resultsKey, `${get(session, resultsKey)}|${key}`.slice(-4000))
+    send(eventName, { detected_by: 'url', conversion_type: conversionType, conversion_stage: eventName === 'cart_view' || eventName === 'checkout_start' ? 'intencao' : 'confirmada' }, { consumeTime: false })
   }
 
   if (isNewSession) send('session_start')
@@ -308,6 +337,7 @@
     if (initialPageViewSent) return
     initialPageViewSent = true
     send('page_view', {}, { loadTime: getPageLoadTimeMs() })
+    trackPageResult(location.pathname)
   }
   if (document.readyState === 'complete') {
     sendInitialPageView()
@@ -664,6 +694,7 @@
       engagedCarryMs = 0
       lastEventAt = now()
       send('page_view')
+      trackPageResult(newPath)
       updateScrollDepth()
       schedulePageLayoutCapture()
     }
@@ -718,7 +749,10 @@
     const isPayment = /\b(pagar|pagamento|pague\s*agora|gerar\s*(pix|boleto)|ir\s*para\s*pagamento)\b/i.test(label)
     const isSubscription = /\b(assinar|assine|iniciar\s*assinatura|ativar\s*(o\s*)?plano|escolher\s*(o\s*)?plano|fazer\s*upgrade)\b/i.test(label)
     const hasLeadIntent = /\b(fale\s*(com|conosco)|entre\s*em\s*contato|contato|whats(?:app)?|agend[ea]|marc[ae]\s*(uma\s*)?(consulta|reuni[aã]o)|solicite|pedir|pe[cç]a\s*(um\s*)?or[cç]amento|or[cç]amento|quero\s*(saber|agendar|falar|receber)|ligue|telefone|enviar\s*(mensagem|formul[aá]rio)|tirar\s*d[uú]vidas|falar\s*com\s*(um\s*)?(especialista|consultor)|come[cç]ar\s*agora|teste\s*(gr[aá]tis)?|cadastre-se|inscreva-se)\b/i.test(label)
-    const isContactLead = isWhatsapp || isPhone || isEmail || hasLeadIntent
+    const isSchedule = /(?:calendly\.com|cal\.com|tidycal\.com|youcanbook\.me|acuityscheduling\.com|simplybook\.me|setmore\.com|zcal\.co|doctoralia\.com|agendasimples|calendar\.app\.google|calendar\.google\.com\/calendar\/appointments|outlook\.office365?\.com\/(?:owa\/calendar|book))/i.test(href)
+    const isBooking = /(?:booking\.com|airbnb\.|expedia\.|hoteis\.com|hotels\.com|decolar\.com|omnibees|letsbook|hbook|thefork\.|opentable\.|sympla\.com\.br|eventbrite\.)/i.test(href)
+    const isAddToCart = !isWhatsapp && (target.matches('[name="add-to-cart"], .add_to_cart_button, .single_add_to_cart_button, [data-action="add-to-cart"], form[action*="/cart/add"] [type="submit"]') || /\b(adicionar\s*(ao|à)\s*(carrinho|sacola)|add\s*to\s*(cart|bag|basket))\b/i.test(label))
+    const isContactLead = isWhatsapp || isPhone || isEmail || isSchedule || isBooking || hasLeadIntent
     const isMedia = target.tagName === 'IMG' || target.tagName === 'VIDEO'
 
     // GA4 Enhanced: Detecção de Download de Arquivo e Clique de Saída
@@ -736,8 +770,9 @@
       } catch {}
     }
 
-    const eventName = isWhatsapp ? 'whatsapp_contact' : isCheckout ? 'checkout_start' : isPayment ? 'payment_start' : isSubscription ? 'subscription_start' : isSignup ? 'sign_up' : isLogin ? 'login' : isFileDownload ? 'file_download' : isOutbound ? 'outbound_click' : isMedia ? 'media_click' : 'button_click'
-    const intent = isWhatsapp ? 'whatsapp' : isPhone ? 'telefone' : isEmail ? 'email' : isCheckout ? 'checkout' : isPayment ? 'pagamento' : isSubscription ? 'assinatura' : isSignup ? 'cadastro' : isLogin ? 'login' : isFileDownload ? 'download' : isOutbound ? 'link_externo' : hasLeadIntent ? 'contato' : 'geral'
+    if (isAddToCart) set(session, shopKey, '1')
+    const eventName = isWhatsapp ? 'whatsapp_contact' : isSchedule ? 'schedule_click' : isBooking ? 'booking_click' : isAddToCart ? 'add_to_cart' : isCheckout ? 'checkout_start' : isPayment ? 'payment_start' : isSubscription ? 'subscription_start' : isSignup ? 'sign_up' : isLogin ? 'login' : isFileDownload ? 'file_download' : isOutbound ? 'outbound_click' : isMedia ? 'media_click' : 'button_click'
+    const intent = isWhatsapp ? 'whatsapp' : isSchedule ? 'agendamento' : isBooking ? 'reserva' : isAddToCart ? 'geral' : isPhone ? 'telefone' : isEmail ? 'email' : isCheckout ? 'checkout' : isPayment ? 'pagamento' : isSubscription ? 'assinatura' : isSignup ? 'cadastro' : isLogin ? 'login' : isFileDownload ? 'download' : isOutbound ? 'link_externo' : hasLeadIntent ? 'contato' : 'geral'
 
     // Coordenadas para o Heatmap
     const clickX = event.clientX
@@ -754,8 +789,8 @@
       destination: cleanUrl(href),
       contact_intent: intent,
       is_contact_lead: isContactLead ? 1 : 0,
-      conversion_type: isCheckout ? 'checkout' : isPayment ? 'pagamento' : isSubscription ? 'assinatura' : isFileDownload ? 'download' : '',
-      conversion_stage: isCheckout || isPayment || isSubscription || isFileDownload ? 'intencao' : '',
+      conversion_type: isSchedule ? 'agendamento' : isBooking ? 'reserva' : isAddToCart ? 'carrinho' : isCheckout ? 'checkout' : isPayment ? 'pagamento' : isSubscription ? 'assinatura' : isFileDownload ? 'download' : '',
+      conversion_stage: isSchedule || isBooking || isAddToCart || isCheckout || isPayment || isSubscription || isFileDownload ? 'intencao' : '',
       click_x_pct: clickXPct,
       click_y_px: Math.round(clickY),
       target_tag: targetTag,

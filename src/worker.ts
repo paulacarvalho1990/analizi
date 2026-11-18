@@ -43,6 +43,11 @@ const ALLOWED_EVENTS = new Set([
   'subscription_start',
   'purchase',
   'subscription',
+  'cart_view',
+  'add_to_cart',
+  'schedule_click',
+  'booking_click',
+  'booking',
   'login',
   'whatsapp_contact',
   'outbound_click',
@@ -1833,7 +1838,7 @@ async function runDailyConsolidationAndCleanup(env: Env, intraday = false): Prom
           count(*) as clicks,
           count(distinct session_id) as sessions
         from events
-        where event_name in ('button_click', 'whatsapp_contact', 'sign_up', 'login', 'outbound_click', 'file_download')
+        where event_name in ('button_click', 'whatsapp_contact', 'sign_up', 'login', 'outbound_click', 'file_download', 'add_to_cart', 'schedule_click', 'booking_click')
           and json_extract(metadata_json, '$.button_label') is not null
           and date(occurred_at, '-3 hours') ${rangeSql}
         group by tracker_site_id, date(occurred_at, '-3 hours'), coalesce(page_path, '/'), coalesce(json_extract(metadata_json, '$.button_label'), 'Botão sem texto'), coalesce(json_extract(metadata_json, '$.button_id'), ''), coalesce(json_extract(metadata_json, '$.destination'), ''), coalesce(json_extract(metadata_json, '$.contact_intent'), 'geral'), coalesce(json_extract(metadata_json, '$.is_contact_lead'), 0)
@@ -1971,10 +1976,10 @@ async function runDailyConsolidationAndCleanup(env: Env, intraday = false): Prom
       env.ANALIZI_EVENTS.prepare(`
         insert into daily_conversion_events (tracker_site_id, metric_date, source, medium, campaign, device_type, browser, page_path, conversion_type, conversion_name, conversion_stage, conversions, sessions)
         select tracker_site_id, date(occurred_at, '-3 hours'), ${SQL_NORMALIZED_SOURCE}, ${SQL_NORMALIZED_MEDIUM}, ${SQL_NORMALIZED_CAMPAIGN}, ${SQL_NORMALIZED_DEVICE}, ${SQL_NORMALIZED_BROWSER}, coalesce(page_path, '/'),
-          case when event_name = 'whatsapp_contact' then 'whatsapp' when event_name = 'sign_up' then 'cadastro' when event_name = 'form_submit' then coalesce(nullif(json_extract(metadata_json, '$.conversion_type'), ''), 'contato') when event_name = 'file_download' then 'download' when event_name = 'checkout_start' then 'checkout' when event_name = 'payment_start' then 'pagamento' when event_name in ('subscription_start', 'subscription') then 'assinatura' when event_name = 'purchase' then 'compra' else 'outro' end,
+          case when event_name = 'cart_view' then 'carrinho_visita' when event_name = 'whatsapp_contact' then 'whatsapp' when event_name = 'sign_up' then 'cadastro' when event_name = 'form_submit' then coalesce(nullif(json_extract(metadata_json, '$.conversion_type'), ''), 'contato') when event_name = 'file_download' then 'download' when event_name = 'checkout_start' then 'checkout' when event_name = 'payment_start' then 'pagamento' when event_name in ('subscription_start', 'subscription') then 'assinatura' when event_name = 'purchase' then 'compra' when event_name in ('add_to_cart', 'cart_view') then 'carrinho' when event_name = 'schedule_click' then 'agendamento' when event_name = 'booking_click' then 'reserva' when event_name = 'booking' then coalesce(nullif(json_extract(metadata_json, '$.conversion_type'), ''), 'reserva') when event_name = 'button_click' and json_extract(metadata_json, '$.contact_intent') = 'telefone' then 'telefone' else 'outro' end,
           coalesce(nullif(json_extract(metadata_json, '$.form_name'), ''), nullif(json_extract(metadata_json, '$.button_label'), ''), nullif(json_extract(metadata_json, '$.form_id'), ''), ''),
-          case when event_name in ('checkout_start', 'payment_start', 'subscription_start', 'file_download') then 'intencao' else 'confirmada' end, count(*), count(distinct session_id)
-        from events where event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'file_download', 'checkout_start', 'payment_start', 'subscription_start', 'purchase', 'subscription') and date(occurred_at, '-3 hours') ${rangeSql}
+          case when event_name in ('checkout_start', 'payment_start', 'subscription_start', 'file_download', 'add_to_cart', 'cart_view', 'schedule_click', 'booking_click') then 'intencao' else 'confirmada' end, count(*), count(distinct session_id)
+        from events where (event_name in ('whatsapp_contact', 'sign_up', 'form_submit', 'file_download', 'checkout_start', 'payment_start', 'subscription_start', 'purchase', 'subscription', 'add_to_cart', 'cart_view', 'schedule_click', 'booking_click', 'booking') or (event_name = 'button_click' and json_extract(metadata_json, '$.contact_intent') = 'telefone')) and date(occurred_at, '-3 hours') ${rangeSql}
         group by 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
         on conflict do update set conversions = excluded.conversions, sessions = excluded.sessions;
       `)
