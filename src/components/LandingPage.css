@@ -3,22 +3,22 @@
    ──────────────────────────────────────────────────────────────────────── */
 
 .lp {
-  --lp-blue: var(--analizi-blue, #3B82F6);
-  --lp-pink: var(--analizi-pink, #FF3CAC);
-  --lp-orange: var(--analizi-orange, #FF8A3D);
-  --lp-navy: var(--analizi-navy, #0B1F4B);
-  --lp-primary: #D61F83;
-  --lp-primary-hover: #BE1A74;
-  --lp-bg: #F9FAFB;
-  --lp-surface: #FFFFFF;
-  --lp-fg: #111827;
-  --lp-muted: #6B7280;
-  --lp-border: #E5E7EB;
-  --lp-success: #15803D;
-  --lp-radius: 0.875rem;
-  --lp-grad: linear-gradient(115deg, #3B82F6 0%, #FF3CAC 55%, #FF8A3D 100%);
-  --lp-shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.05), 0 1px 3px rgba(17, 24, 39, 0.06);
-  --lp-shadow-lg: 0 30px 60px -20px rgba(11, 31, 75, 0.28), 0 12px 24px -12px rgba(11, 31, 75, 0.18);
+  --lp-blue: var(--analizi-blue);
+  --lp-pink: var(--analizi-pink);
+  --lp-orange: var(--analizi-orange);
+  --lp-navy: var(--analizi-navy);
+  --lp-primary: var(--primary);
+  --lp-primary-hover: var(--primary-hover);
+  --lp-bg: var(--background);
+  --lp-surface: var(--surface);
+  --lp-fg: var(--foreground);
+  --lp-muted: var(--muted-foreground);
+  --lp-border: var(--border);
+  --lp-success: var(--success);
+  --lp-radius: var(--radius);
+  --lp-grad: var(--brand-gradient);
+  --lp-shadow-sm: var(--shadow-sm);
+  --lp-shadow-lg: var(--shadow-lg);
 
   background: var(--lp-bg);
   color: var(--lp-fg);

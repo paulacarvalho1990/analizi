@@ -21,6 +21,27 @@
   --warning: #9A3412;
   --error: #B91C1C;
   --radius: 0.875rem;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+
+  /* Tokens compartilhados por landing, login, app e relatórios. */
+  --brand-gradient: linear-gradient(115deg, #3B82F6 0%, #FF3CAC 55%, #FF8A3D 100%);
+  --primary-hover: #BE1A74;
+  --foreground-2: #374151;
+  --foreground-3: #4B5563;
+  --faint: #9CA3AF;
+  --surface-subtle: #F3F4F6;
+  --track: #F1F3F7;
+  --success-bg: #E8F6EE;
+  --warning-bg: #FFF3E6;
+  --danger: #B4235E;
+  --danger-bg: #FDEAF3;
+  --tip-bg: #FFF7FB;
+  --tip-border: #FAD3E7;
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, .05), 0 1px 3px rgba(17, 24, 39, .06);
+  --shadow-card: 0 1px 2px #1118270a, 0 8px 24px -16px #11182726;
+  --shadow-lg: 0 30px 60px -20px rgba(11, 31, 75, .28), 0 12px 24px -12px rgba(11, 31, 75, .18);
 }
 
 [data-theme="dark"] {
@@ -38,11 +59,26 @@
   --success: #4ADE80;
   --warning: #FDBA74;
   --error: #FCA5A5;
+  --primary-hover: #FF67BD;
+  --foreground-2: #E4E7EC;
+  --foreground-3: #C9CED8;
+  --faint: #7D8798;
+  --surface-subtle: #23252B;
+  --track: #33363E;
+  --success-bg: #1F3B2B;
+  --warning-bg: #3D2A20;
+  --danger: #FF8CC6;
+  --danger-bg: #45213A;
+  --tip-bg: #33202C;
+  --tip-border: #5A2B46;
+  --shadow-sm: none;
+  --shadow-card: none;
+  --shadow-lg: none;
 }
 
 /* Identidade visual: aplicar como decoração e destaque, nunca texto corrido. */
 .analizi-brand-gradient {
-  background: linear-gradient(115deg, #3B82F6 0%, #FF3CAC 55%, #FF8A3D 100%);
+  background: var(--brand-gradient);
 }
 
 /* Aplicação sem exigir dependências adicionais. */

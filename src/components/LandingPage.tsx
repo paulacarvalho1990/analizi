@@ -162,7 +162,7 @@ export function LandingPage({ onStartTrial, onLogin }: LandingPageProps) {
   const data = MOCK[period]
 
   return (
-    <div className="lp">
+    <div className="lp" data-theme="light">
       {/* ─── Navbar ───────────────────────────────────────── */}
       <header className={`lp-nav ${scrolled ? 'is-scrolled' : ''}`}>
         <div className="lp-wrap lp-nav-inner">
