@@ -119,6 +119,7 @@ export function WeeklyReportPage() {
           end={report?.weekEnd ?? ''}
           insights={report?.insights}
           normalizeSource={normalizeOriginName}
+          loading={!report}
           actions={<button type="button" className="wr-btn ghost" onClick={() => { setNotice(''); setEditing(true) }}>Configurar</button>}
         />
       )}

@@ -22,6 +22,12 @@
 .wr-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .wr-period { font-weight: 600; font-size: 13px; padding: 7px 12px; border: 1px solid var(--wr-border); border-radius: 10px; background: var(--wr-surface); }
 .wr-btn { border: 1px solid var(--wr-primary); background: var(--wr-primary); color: #fff; border-radius: 10px; padding: 8px 13px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.wr-loading { padding: 48px 24px; text-align: center; border: 1px solid var(--wr-tip-border); background: var(--wr-tip-bg); border-radius: 16px; }
+.wr-loading p { margin: 6px auto 0; max-width: 46ch; color: var(--wr-muted); font-size: 14px; line-height: 1.5; }
+.wr-loading p b { color: var(--wr-fg); font-size: 17px; }
+.wr-loading-star { color: var(--wr-primary); animation: wr-star 1.6s ease-in-out infinite; }
+@keyframes wr-star { 50% { transform: scale(1.18) rotate(12deg); opacity: .6; } }
+@media (prefers-reduced-motion: reduce) { .wr-loading-star { animation: none; } }
 .wr-empty { padding: 48px 24px; text-align: center; color: var(--wr-muted); border: 1px dashed var(--wr-border); border-radius: 16px; }
 
 .wr-letter { background: var(--wr-surface); border: 1px solid var(--wr-border); border-radius: 20px; overflow: hidden; box-shadow: var(--wr-shadow); padding: 0 34px 30px; }
