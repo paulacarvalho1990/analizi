@@ -87,6 +87,11 @@
 .wr-goal:focus-visible, .wr-btn:focus-visible { outline: 2px solid var(--wr-primary); outline-offset: 2px; }
 .wr-setup-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 
+.wr-admin { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wr-admin-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--wr-surface); border: 1px solid var(--wr-border); border-radius: 12px; padding: 4px; }
+.wr-admin-tabs button { border: 0; background: none; color: var(--wr-muted); font: inherit; font-weight: 600; font-size: 13px; padding: 7px 12px; border-radius: 8px; cursor: pointer; }
+.wr-admin-tabs button.on { background: var(--wr-fg); color: var(--wr-surface); }
+
 @media (max-width: 760px) {
   .wr-goals { grid-template-columns: 1fr; }
   .wr-setup { padding: 22px 18px; }

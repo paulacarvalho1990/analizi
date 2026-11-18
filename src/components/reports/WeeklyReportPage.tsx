@@ -125,3 +125,46 @@ export function WeeklyReportPage() {
     </div>
   )
 }
+
+/** Só para admin: mostra os 4 relatórios gerados para o site atual, para testar. */
+export function WeeklyReportsAdmin() {
+  const { currentSite, userProfile } = useBusiness()
+  const [kind, setKind] = useState<ReportKind>('geral')
+  const [report, setReport] = useState<Generated | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [tick, setTick] = useState(0)
+  const [refresh, setRefresh] = useState(false)
+
+  useEffect(() => {
+    if (!currentSite || !supabase || userProfile?.plan !== 'admin') return
+    let alive = true
+    setReport(null); setError(''); setLoading(true)
+    void (async () => {
+      const { data: { session } } = await supabase!.auth.getSession()
+      const q = new URLSearchParams({ siteId: currentSite.id, trackerSiteId: currentSite.tracker_site_id || '', kind })
+      if (refresh) q.set('refresh', '1')
+      const res = await fetch(`${API}/v1/weekly-report?${q}`, { headers: session?.access_token ? { authorization: `Bearer ${session.access_token}` } : undefined })
+      if (!alive) return
+      setLoading(false); setRefresh(false)
+      if (res.ok) setReport(await res.json() as Generated)
+      else setError(`Não foi possível carregar (${res.status}).`)
+    })()
+    return () => { alive = false }
+  }, [kind, tick, currentSite?.id, userProfile?.plan])
+
+  if (userProfile?.plan !== 'admin') return <div className="wr"><div className="wr-empty">Página disponível só para administradores.</div></div>
+  return (
+    <div className="wr-page">
+      <div className="wr wr-admin">
+        <div className="wr-admin-tabs" role="tablist" aria-label="Tipo de relatório">
+          {REPORT_GOALS.map(g => <button key={g.kind} role="tab" aria-selected={kind === g.kind} className={kind === g.kind ? 'on' : ''} onClick={() => setKind(g.kind)}>{g.title}</button>)}
+        </div>
+        <button type="button" className="wr-btn ghost" disabled={loading} onClick={() => { setRefresh(true); setTick(t => t + 1) }}>{loading ? 'Gerando…' : 'Gerar de novo'}</button>
+      </div>
+      {error ? <div className="wr"><div className="wr-empty">{error}</div></div> : (
+        <WeeklyReport kind={kind} data={report?.data ?? null} start={report?.weekStart ?? ''} end={report?.weekEnd ?? ''} insights={report?.insights} normalizeSource={normalizeOriginName} />
+      )}
+    </div>
+  )
+}
