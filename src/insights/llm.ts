@@ -33,7 +33,7 @@ async function runWorkersAI(env: LLMEnv, messages: ChatMessage[], temperature: n
     const options = env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : undefined
     const out = (await env.AI.run(
       WORKERS_AI_MODEL,
-      { messages, temperature, max_tokens: 1500, response_format: { type: 'json_object' } },
+      { messages, temperature, max_tokens: 2000, response_format: { type: 'json_object' } },
       options
     )) as { response?: unknown }
     return asText(out?.response)
@@ -49,7 +49,7 @@ async function runDeepInfra(env: LLMEnv, messages: ChatMessage[], temperature: n
     const res = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${env.DEEPINFRA_API_KEY}` },
-      body: JSON.stringify({ model: DEEPINFRA_MODEL, messages, temperature, response_format: { type: 'json_object' } })
+      body: JSON.stringify({ model: DEEPINFRA_MODEL, messages, temperature, max_tokens: 2000, response_format: { type: 'json_object' } })
     })
     if (!res.ok) {
       console.error('DeepInfra error status:', res.status)
