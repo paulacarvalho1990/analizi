@@ -21,6 +21,18 @@
       "migrations_dir": "cloudflare/d1/migrations"
     }
   ],
+  "previews": {
+    "vars": { "AI_GATEWAY_ID": "analizi" },
+    "ai": { "binding": "AI" },
+    "d1_databases": [
+      {
+        "binding": "ANALIZI_EVENTS",
+        "database_name": "analizi-events-preview",
+        "database_id": "6f9be0e3-7908-4c1c-9399-d4a9d8b6a741",
+        "migrations_dir": "cloudflare/d1/migrations"
+      }
+    ]
+  },
   "env": {
     "staging": {
       "name": "analizi",
