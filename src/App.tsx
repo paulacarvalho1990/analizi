@@ -1,3 +1,4 @@
+import { SITE_TYPE_OPTIONS, isSiteType, type SiteType } from './lib/siteTypes'
 import { useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowLeft, BookOpen, SlidersHorizontal, Eye, ArrowRight, BarChart3, Calendar, Check, ChevronDown, CircleCheck, AlertTriangle, Clock, Compass, Crown, FileText, Flame, Layers, Lightbulb, LogIn, MessageCircle, Copy, ExternalLink, Globe, Globe2, Info, Link2, MapPin, Monitor, MoreHorizontal, MousePointerClick, Plus, RefreshCw, Settings as SettingsIcon, ShieldCheck, Smartphone, Sparkles, Tablet, Target, Trash2, UserPlus, Users, Activity, CreditCard, Mail, Search, Minus, UserMinus, TrendingDown, X } from 'lucide-react'
@@ -2941,7 +2942,8 @@ function SiteTab({ onToast }: { onToast: (t: string) => void }) {
     domain: currentSite?.domain || currentBusiness?.website_url || '',
     segment: normalizeSegment(currentBusiness?.segment),
     subsegment: currentBusiness?.subsegment || '',
-    detail: currentBusiness?.segment_detail || ''
+    detail: currentBusiness?.segment_detail || '',
+    siteType: (isSiteType(currentSite?.site_type) ? currentSite.site_type : 'servicos') as SiteType
   })
   const [form, setForm] = useState(initial)
   const [saving, setSaving] = useState(false)
@@ -2963,12 +2965,13 @@ function SiteTab({ onToast }: { onToast: (t: string) => void }) {
       if (supabase) {
         const [{ error: businessError }, { error: siteError }] = await Promise.all([
           supabase.from('businesses').update({ name: form.name.trim(), website_url: domain, segment: form.segment, subsegment: form.subsegment, segment_detail: form.detail.trim() || null }).eq('id', currentBusiness.id),
-          supabase.from('sites').update({ name: form.name.trim(), domain }).eq('id', currentSite.id)
+          supabase.from('sites').update({ name: form.name.trim(), domain, site_type: form.siteType }).eq('id', currentSite.id)
         ])
         if (businessError || siteError) throw new Error(businessError?.message || siteError?.message)
       }
       currentSite.name = form.name.trim()
       currentSite.domain = domain
+      currentSite.site_type = form.siteType
       currentBusiness.name = form.name.trim()
       currentBusiness.website_url = domain
       currentBusiness.segment = form.segment
@@ -2978,7 +2981,7 @@ function SiteTab({ onToast }: { onToast: (t: string) => void }) {
         const prevB = JSON.parse(localStorage.getItem('analizi-custom-businesses') || '[]') as BusinessItem[]
         localStorage.setItem('analizi-custom-businesses', JSON.stringify(prevB.map((b) => b.id === currentBusiness.id ? { ...b, name: form.name.trim(), website_url: domain, segment: form.segment, subsegment: form.subsegment, segment_detail: form.detail.trim() || null } : b)))
         const prevS = JSON.parse(localStorage.getItem('analizi-custom-sites') || '[]') as SiteItem[]
-        localStorage.setItem('analizi-custom-sites', JSON.stringify(prevS.map((s) => s.id === currentSite.id ? { ...s, name: form.name.trim(), domain } : s)))
+        localStorage.setItem('analizi-custom-sites', JSON.stringify(prevS.map((s) => s.id === currentSite.id ? { ...s, name: form.name.trim(), domain, site_type: form.siteType } : s)))
       } catch { /* armazenamento indisponível */ }
       await refreshBusinesses()
       setForm({ ...form, domain })
@@ -3030,6 +3033,16 @@ function SiteTab({ onToast }: { onToast: (t: string) => void }) {
               </div>
               <div className="z-fld"><span className="z-lbl">Fuso horário</span><div className="z-readonly">Horário de Brasília (São Paulo)</div></div>
               <div className="z-fld full"><label htmlFor="z-f-desc">Descreva seu negócio em uma frase <span className="z-opt-t">{form.subsegment === 'Outros' ? '(obrigatório)' : '(opcional)'}</span></label><textarea id="z-f-desc" value={form.detail} onChange={(e) => update({ detail: e.target.value })} placeholder="Ex.: Clínica odontológica especializada em implantes" /><span className="z-hint">Quanto mais específico, melhores as recomendações dos insights.</span></div>
+            </div>
+          </div>
+          <div className="z-card">
+            <div className="z-card-h"><div><h3>O que o seu site gera</h3><p className="z-sub">Define quais resultados aparecem na página Resultados. Todos os dados continuam sendo coletados, então você pode mudar quando quiser.</p></div></div>
+            <div className="z-opts narrow" role="radiogroup" aria-label="O que o seu site gera">
+              {SITE_TYPE_OPTIONS.map(([id, info]) => (
+                <button key={id} type="button" role="radio" aria-checked={form.siteType === id} className={`z-opt ${form.siteType === id ? 'on' : ''}`} onClick={() => update({ siteType: id })}>
+                  <span><b>{info.label}</b><small>{info.hint}</small></span><span className="z-radio" />
+                </button>
+              ))}
             </div>
           </div>
         </div>

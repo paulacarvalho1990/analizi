@@ -1,3 +1,4 @@
+import { SITE_TYPE_OPTIONS, suggestSiteType, type SiteType } from '../lib/siteTypes'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ArrowRight, Check } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
@@ -37,6 +38,7 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
   const [creatorRole, setCreatorRole] = useState('owner_partner')
   const [segment, setSegment] = useState<Segment>('services')
   const [subsegment, setSubsegment] = useState('')
+  const [siteType, setSiteType] = useState<SiteType | ''>('')
   const [otherSubsegment, setOtherSubsegment] = useState('')
   const [source, setSource] = useState<'ga4' | 'tracker'>('tracker')
   const [serviceTermsAccepted, setServiceTermsAccepted] = useState(false)
@@ -104,7 +106,7 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
       if (businessError) throw new Error(businessError.message)
       const { error: memberError } = await supabase!.from('business_members').update({ creator_role: creatorRole }).eq('business_id', businessId).eq('user_id', user.id)
       if (memberError) throw new Error(memberError.message)
-      const { error: siteError } = await supabase!.from('sites').insert({ id: createdSiteId, business_id: businessId, name: businessName.trim(), domain: normalized.domain })
+      const { error: siteError } = await supabase!.from('sites').insert({ id: createdSiteId, business_id: businessId, name: businessName.trim(), domain: normalized.domain, site_type: siteType || suggestSiteType(segment, subsegment) })
       if (siteError) throw new Error(siteError.message)
       setSiteId(createdSiteId)
       setMode('onboarding-source')
@@ -302,6 +304,12 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
               <input required value={otherSubsegment} onChange={(event) => setOtherSubsegment(event.target.value)} placeholder="Ex.: Equipamentos para agricultura" />
             </label>
           )}
+          <label>O que o seu site gera
+            <select required value={siteType || suggestSiteType(segment, subsegment)} onChange={(event) => setSiteType(event.target.value as SiteType)}>
+              {SITE_TYPE_OPTIONS.map(([value, info]) => <option key={value} value={value}>{info.label} ({info.hint.toLowerCase()})</option>)}
+            </select>
+            <small className="field-hint">Define os resultados do seu relatório. Você pode mudar depois.</small>
+          </label>
           {error && <p className="form-feedback error">{error}</p>}
           <div className="onboarding-actions">
             <span />
