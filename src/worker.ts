@@ -1520,6 +1520,13 @@ async function generateWeeklyReport(env: Env, siteId: string, kind: ReportKind, 
   await env.ANALIZI_EVENTS.batch([stmt])
 }
 
+async function isAdminUser(userId: string, env: Env): Promise<boolean> {
+  const key = env.SUPABASE_SERVICE_ROLE_KEY
+  if (!env.SUPABASE_URL || !key) return false
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=plan&limit=1`, { headers: { apikey: key, authorization: `Bearer ${key}` } })
+  return res.ok && ((await res.json()) as Array<{ plan?: string }>)[0]?.plan === 'admin'
+}
+
 /** GET /v1/weekly-report?siteId=&kind=&week= — relatório gerado (dados + insights).
  *  Sem relatório da última semana fechada (ex.: primeira vez), gera na hora. */
 async function weeklyReport(request: Request, env: Env, query: URLSearchParams): Promise<Response> {
@@ -1538,7 +1545,9 @@ async function weeklyReport(request: Request, env: Env, query: URLSearchParams):
     env.ANALIZI_EVENTS.prepare('select week_start, week_end from weekly_site_reports where tracker_site_id = ? and report_kind = ? order by week_start desc limit 12').bind(sId, kind)
   ])) as [{ results?: Row[] }, { results?: Array<{ week_start: string, week_end: string }> }])
   let [current, weeks] = await read()
-  if (!current.results?.[0] && requested === week.start) {
+  // Admin pode forçar a regeração (para testar ajustes nos insights).
+  const refresh = query.get('refresh') === '1' && requested === week.start && await isAdminUser(user.id, env)
+  if ((refresh || !current.results?.[0]) && requested === week.start) {
     try {
       await generateWeeklyReport(env, sId, kind, week, await fetchBusinessContext(env, sId))
       ;[current, weeks] = await read()
