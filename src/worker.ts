@@ -1557,7 +1557,17 @@ async function weeklyReport(request: Request, env: Env, query: URLSearchParams):
   let [current, weeks] = await read()
   // Admin pode forçar a regeração (para testar ajustes nos insights).
   const refresh = query.get('refresh') === '1' && requested === week.start && await isAdminUser(user.id, env)
-  if ((refresh || !current.results?.[0]) && requested === week.start) {
+  // Relatório da semana atual salvo num formato antigo de insights: atualiza uma vez, sozinho.
+  const outdated = (() => {
+    const r = current.results?.[0]
+    if (!r) return false
+    try {
+      const ins = JSON.parse(r.insights_json) as Array<{ metric?: unknown, actions?: unknown[] }>
+      const fresh = ins.length > 0 && ins.every(i => i.metric && Array.isArray(i.actions) && typeof i.actions[0] === 'object')
+      return !fresh || !(JSON.parse(r.data_json) as { previousWeek?: unknown }).previousWeek
+    } catch { return true }
+  })()
+  if ((refresh || outdated || !current.results?.[0]) && requested === week.start) {
     try {
       await generateWeeklyReport(env, sId, kind, week, await fetchBusinessContext(env, sId))
       ;[current, weeks] = await read()
