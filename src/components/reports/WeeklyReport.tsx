@@ -172,6 +172,22 @@ function build(kind: ReportKind, x: Derived): Model {
   }
 }
 
+function MetricBox({ m }: { m: NonNullable<ReportInsight['metric']> }) {
+  const verdict = m.previous === null ? 'Sem dados da semana anterior para comparar'
+    : m.trend === 'new' ? 'Novidade: na semana anterior não teve nenhum'
+    : m.trend === 'flat' ? 'Ficou praticamente igual'
+    : `${m.trend === 'up' ? 'Subiu' : 'Caiu'} ${m.change ?? (m.previous ? Math.round(Math.abs((m.current - m.previous) / m.previous) * 100) : 0)}% em relação à semana anterior`
+  const icon = m.trend === 'up' || m.trend === 'new' ? '▲' : m.trend === 'down' ? '▼' : '='
+  return <div className={`wr-ai-metric t-${m.previous === null ? 'flat' : m.trend}`}>
+    <p className="wr-ai-mlabel">{m.label.charAt(0).toUpperCase() + m.label.slice(1)}</p>
+    <div className="wr-ai-cols">
+      {m.previous !== null && <><div><small>Semana anterior</small><b>{fmt(m.previous)}</b></div><span aria-hidden="true">→</span></>}
+      <div className="now"><small>Esta semana</small><b>{fmt(m.current)}</b></div>
+    </div>
+    <p className="wr-ai-verdict">{m.previous !== null && <span aria-hidden="true">{icon} </span>}{verdict}</p>
+  </div>
+}
+
 export function WeeklyReport({ kind, data, start, end, normalizeSource, insights, actions }: { kind: ReportKind, data: ReportData | null, start: string, end: string, normalizeSource: (s: string) => string, insights?: ReportInsight[], actions?: ReactNode }) {
   const model = data ? build(kind, derive(data, normalizeSource)) : null
   const period = start && end ? `${dateBR(start)} a ${dateBR(end)}` : ''
@@ -207,23 +223,20 @@ export function WeeklyReport({ kind, data, start, end, normalizeSource, insights
         </section>}
         {insights && insights.length > 0 && <section className="wr-ai" aria-labelledby="wr-ai-title">
           <div className="wr-ai-head">
-            <h2 id="wr-ai-title">O que fazer na próxima semana</h2>
+            <h2 id="wr-ai-title">Próximos passos, com base em dados</h2>
             <span className="wr-izi">IZI INTELLIGENCE</span>
           </div>
           <p className="wr-ai-note">Criado com IA a partir dos números deste relatório e da semana anterior.</p>
           <ol className="wr-ai-list">
             {insights.map(i => <li key={i.key}>
               <p className="wr-ai-title">{i.title}</p>
-              {i.metric && <div className={`wr-ai-metric t-${i.metric.trend}`}>
-                <span><b>{fmt(i.metric.current)}</b> {i.metric.label}</span>
-                {i.metric.previous !== null && <span className="wr-ai-was">{i.metric.trend === 'up' ? '▲' : i.metric.trend === 'down' ? '▼' : i.metric.trend === 'new' ? '★' : '='} antes: {fmt(i.metric.previous)}</span>}
-                <span className="wr-ai-next">próxima: {fmt(i.metric.low)}–{fmt(i.metric.high)}</span>
-              </div>}
+              {i.metric && <MetricBox m={i.metric} />}
               {i.comparison && <p className="wr-ai-sec"><span>Comparação</span>{i.comparison}</p>}
               {(i.descriptive ?? i.finding) && <p className="wr-ai-sec"><span>O que aconteceu</span>{i.descriptive ?? i.finding}</p>}
-              {i.forecast && <p className="wr-ai-sec"><span>Previsão</span>{i.forecast}</p>}
               <div className="wr-ai-action"><b>O que fazer</b>
-                <ul>{(i.actions ?? (i.action ? [i.action] : [])).map((a, k) => <li key={k}>{a}</li>)}</ul>
+                <ul>{(i.actions ?? (i.action ? [i.action] : [])).map((a, k) => <li key={k}>
+                  {typeof a === 'string' ? a : <><span className="wr-ai-step">{a.step}</span><span className="wr-ai-helps">{a.helps}</span></>}
+                </li>)}</ul>
               </div>
             </li>)}
           </ol>

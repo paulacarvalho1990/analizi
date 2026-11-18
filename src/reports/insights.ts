@@ -2,7 +2,7 @@
 // Cada objetivo tem um roteiro fixo de "ângulos". Para cada ângulo o código calcula:
 //  - a métrica da semana e a da semana anterior (comparação),
 //  - os fatos que explicam o número (descritiva),
-//  - uma faixa esperada para a próxima semana (previsão),
+//  - ações com o benefício de cada uma,
 // e a IA só escreve as frases, usando apenas esses números.
 
 import { chatJSON, hasLLM, type LLMEnv } from '../insights/llm'
@@ -12,6 +12,8 @@ import { businessProfile, personalize } from './business-profile'
 
 export type Trend = 'up' | 'down' | 'flat' | 'new'
 
+export type Step = { step: string, helps: string }
+
 export type ReportInsight = {
   key: string
   /** Frase curta que resume o achado (até 10 palavras). */
@@ -20,12 +22,12 @@ export type ReportInsight = {
   comparison?: string
   /** O que aconteceu e por que importa. */
   descriptive?: string
-  /** O que esperar da próxima semana se nada mudar. */
+  /** 2–3 ações concretas, cada uma com no que ela ajuda (relatórios antigos têm string). */
+  actions?: Array<Step | string>
+  /** Formato antigo (relatórios já salvos). */
   forecast?: string
-  /** 2–3 ações concretas. */
-  actions?: string[]
   /** Métrica principal do card (para o selo visual). */
-  metric?: { label: string, current: number, previous: number | null, trend: Trend, low: number, high: number }
+  metric?: { label: string, current: number, previous: number | null, trend: Trend, change: number | null }
   /** Formato antigo (relatórios já salvos). */
   finding?: string
   action?: string
@@ -35,11 +37,11 @@ type Metric = { label: string, cur: number, prev: number | null }
 type Built = {
   metric: Metric
   facts: Record<string, string | number>
-  fallback: { title: string, descriptive: string, actions: string[] }
+  fallback: { title: string, descriptive: string, actions: Step[] }
 }
 type Angle = { key: string, intent: string, build: (x: Derived, px: Derived | null) => Built | null }
 
-const LIMITS = { title: 10, comparison: 32, descriptive: 45, forecast: 32, action: 26 }
+const LIMITS = { title: 10, comparison: 32, descriptive: 45, action: 22, helps: 16 }
 
 /* ---------- comparação e previsão (sempre no código) ---------- */
 function trendOf(cur: number, prev: number | null): Trend {
@@ -50,13 +52,6 @@ function trendOf(cur: number, prev: number | null): Trend {
 }
 const pct = (cur: number, prev: number) => Math.round(Math.abs((cur - prev) / prev) * 100)
 
-/** Faixa esperada para a próxima semana: continua metade da tendência, com margem de 15%. */
-export function forecastRange(cur: number, prev: number | null) {
-  const base = Math.max(0, prev === null ? cur : cur + (cur - prev) * 0.5)
-  const margin = Math.max(1, base * 0.15)
-  return { low: Math.max(0, Math.floor(base - margin)), high: Math.ceil(base + margin) }
-}
-
 function compareText(m: Metric) {
   const t = trendOf(m.cur, m.prev)
   if (m.prev === null) return `Sem dados da semana anterior para comparar. Nesta semana foram ${fmt(m.cur)} ${m.label}.`
@@ -64,15 +59,8 @@ function compareText(m: Metric) {
   if (t === 'flat') return `Ficou estável: ${fmt(m.cur)} ${m.label}, contra ${fmt(m.prev)} na semana anterior.`
   return `${t === 'up' ? 'Subiu' : 'Caiu'} de ${fmt(m.prev)} para ${fmt(m.cur)} ${m.label}, ${t === 'up' ? 'alta' : 'queda'} de ${pct(m.cur, m.prev)}% sobre a semana anterior.`
 }
-function forecastText(m: Metric) {
-  const { low, high } = forecastRange(m.cur, m.prev)
-  const t = trendOf(m.cur, m.prev)
-  const why = t === 'up' ? 'mantendo o ritmo de alta' : t === 'down' ? 'se a queda continuar' : 'mantendo o ritmo atual'
-  return `Se nada mudar, a próxima semana deve ficar entre ${fmt(low)} e ${fmt(high)} ${m.label}, ${why}.`
-}
 function metricFacts(m: Metric): Record<string, string | number> {
-  const { low, high } = forecastRange(m.cur, m.prev)
-  const f: Record<string, string | number> = { metrica: m.label, valor_semana: m.cur, previsao_min: low, previsao_max: high, tendencia: trendOf(m.cur, m.prev) }
+  const f: Record<string, string | number> = { metrica: m.label, valor_semana: m.cur, tendencia: trendOf(m.cur, m.prev) }
   if (m.prev !== null) { f.valor_semana_anterior = m.prev; if (m.prev) f.variacao_pct = pct(m.cur, m.prev) }
   return f
 }
@@ -100,7 +88,7 @@ const A = {
         fallback: {
           title: x.contacts ? `${fmt(x.contacts)} pedidos de contato nesta semana` : 'Nenhum pedido de contato nesta semana',
           descriptive: `De ${fmt(x.users)} visitantes, ${fmt(x.contacts)} chamaram você, cerca de ${String(rate).replace('.', ',')} a cada 100.${best ? ` O dia mais forte foi ${WEEKDAYS[new Date(`${best.date}T12:00:00Z`).getUTCDay()]}.` : ''}`,
-          actions: ['Responda todo contato no mesmo dia; quem espera muito procura outro.', 'Anote de onde veio cada cliente que fechou para saber o que funciona.'],
+          actions: [{ step: 'Responda todo contato no mesmo dia; quem espera muito procura outro.', helps: 'Ajuda a não perder quem já quis contratar você.' }, { step: 'Anote de onde veio cada cliente que fechou para saber o que funciona.', helps: 'Ajuda a saber onde vale a pena investir seu tempo.' }],
         },
       }
     },
@@ -118,7 +106,7 @@ const A = {
         fallback: {
           title: `${fmt(x.users)} pessoas visitaram o site`,
           descriptive: `Foram ${fmt(x.pv)} páginas vistas e ${fmt(nu)} visitantes novos. Mais gente nova significa mais chance de novos clientes.`,
-          actions: ['Publique pelo menos dois conteúdos com o link do site nesta semana.', 'Peça a clientes satisfeitos que indiquem o site para conhecidos.'],
+          actions: [{ step: 'Publique pelo menos dois conteúdos com o link do site nesta semana.', helps: 'Ajuda a trazer mais gente para o site.' }, { step: 'Peça a clientes satisfeitos que indiquem o site para conhecidos.', helps: 'Ajuda a atrair gente que já chega confiando em você.' }],
         },
       }
     },
@@ -137,7 +125,7 @@ const A = {
         fallback: {
           title: `${page} é a página que mais chama`,
           descriptive: `Ela gerou ${pg.c} dos ${x.contacts} contatos da semana. Quem chega nela já está perto de decidir, então cada visita a mais vale muito.`,
-          actions: [`Coloque o link de ${page} nos próximos posts e na bio do ${x.sourceList[0]?.[0] ?? 'seu canal principal'}.`, `Repita em outras páginas o que ${page} tem de diferente: fotos, preços ou depoimentos.`],
+          actions: [{ step: `Coloque o link de ${page} nos próximos posts e na bio do ${x.sourceList[0]?.[0] ?? 'seu canal principal'}.`, helps: 'Ajuda a levar mais gente direto para a página que mais gera contato.' }, { step: `Repita em outras páginas o que ${page} tem de diferente: fotos, preços ou depoimentos.`, helps: 'Ajuda as outras páginas a gerarem contato também.' }],
         },
       }
     },
@@ -156,7 +144,7 @@ const A = {
         fallback: {
           title: `Muita gente sai de ${page}`,
           descriptive: `${inTen(share, 100)} pessoas saem dessa página sem clicar em nada. Elas chegaram até você, mas não encontraram rápido o que procuravam.`,
-          actions: [`Coloque o botão de contato logo no topo de ${page}.`, 'Diga em uma frase, no início da página, o que a pessoa ganha ao chamar você.', 'Confira se a página abre rápido no celular.'],
+          actions: [{ step: `Coloque o botão de contato logo no topo de ${page}.`, helps: 'Ajuda quem chega a falar com você antes de desistir.' }, { step: 'Diga em uma frase, no início da página, o que a pessoa ganha ao chamar você.', helps: 'Ajuda a pessoa a entender rápido por que chamar você.' }, { step: 'Confira se a página abre rápido no celular.', helps: 'Ajuda a não perder quem desiste de esperar a página carregar.' }],
         },
       }
     },
@@ -178,7 +166,7 @@ const A = {
         fallback: {
           title: `Seu melhor horário é ${WEEKDAYS[pk.dayOfWeek]} ${pk.hourOfDay >= 18 ? 'à noite' : pk.hourOfDay >= 12 ? 'à tarde' : 'de manhã'}`,
           descriptive: `O pico foi ${when}. É quando seu público está com tempo e disposição para procurar você.`,
-          actions: ['Publique perto desse horário.', 'Deixe alguém pronto para responder as mensagens rápido nessa janela.'],
+          actions: [{ step: 'Publique perto desse horário.', helps: 'Ajuda seus posts a aparecerem quando o público está procurando.' }, { step: 'Deixe alguém pronto para responder as mensagens rápido nessa janela.', helps: 'Ajuda a fechar mais, porque quem é respondido rápido não procura outro.' }],
         },
       }
     },
@@ -197,7 +185,7 @@ const A = {
         fallback: {
           title: `Seus clientes preferem chamar ${label}`,
           descriptive: `${inTen(top[1], x.contacts)} contatos chegaram ${label}. É o caminho em que seus clientes se sentem mais à vontade.`,
-          actions: [`Deixe o botão ${label} visível em todas as páginas, inclusive no celular.`, 'Prepare respostas prontas para as perguntas mais comuns e responda rápido.'],
+          actions: [{ step: `Deixe o botão ${label} visível em todas as páginas, inclusive no celular.`, helps: 'Ajuda a pessoa a chamar pelo caminho que ela já prefere.' }, { step: 'Prepare respostas prontas para as perguntas mais comuns e responda rápido.', helps: 'Ajuda a responder mais rápido e não perder interessados.' }],
         },
       }
     },
@@ -214,8 +202,8 @@ const A = {
         metric: m,
         facts: { ...metricFacts(m), origem_que_mais_chama: c[0], origem_que_mais_traz_visitas: v[0], visitas_dessa_origem: v[1] },
         fallback: same
-          ? { title: `${c[0]} traz gente e traz contatos`, descriptive: `${c[0]} trouxe ${fmt(v[1])} visitas e ${c[1]} contatos. Ele atrai gente e também traz quem quer contratar.`, actions: [`Mantenha a frequência no ${c[0]}.`, `Teste no ${c[0]} um conteúdo respondendo a uma dúvida comum dos clientes.`] }
-          : { title: `${c[0]} chama mais que ${v[0]}`, descriptive: `${v[0]} trouxe mais visitas, mas ${c[0]} trouxe ${c[1]} contatos. Quem vem de ${c[0]} chega mais decidido.`, actions: [`Dedique mais tempo ao ${c[0]} nesta semana.`, `No ${v[0]}, mande as pessoas para uma página com botão de contato.`] },
+          ? { title: `${c[0]} traz gente e traz contatos`, descriptive: `${c[0]} trouxe ${fmt(v[1])} visitas e ${c[1]} contatos. Ele atrai gente e também traz quem quer contratar.`, actions: [{ step: `Mantenha a frequência no ${c[0]}.`, helps: 'Ajuda a manter o canal que já traz contatos funcionando.' }, { step: `Teste no ${c[0]} um conteúdo respondendo a uma dúvida comum dos clientes.`, helps: 'Ajuda a atrair gente com a mesma dúvida, que está perto de contratar.' }] }
+          : { title: `${c[0]} chama mais que ${v[0]}`, descriptive: `${v[0]} trouxe mais visitas, mas ${c[0]} trouxe ${c[1]} contatos. Quem vem de ${c[0]} chega mais decidido.`, actions: [{ step: `Dedique mais tempo ao ${c[0]} nesta semana.`, helps: 'Ajuda a investir esforço onde vêm as pessoas mais decididas.' }, { step: `No ${v[0]}, mande as pessoas para uma página com botão de contato.`, helps: 'Ajuda a transformar visitas desse canal em contatos.' }] },
       }
     },
   },
@@ -233,7 +221,7 @@ const A = {
         fallback: {
           title: `${s1[0]} traz a maior parte das visitas`,
           descriptive: `${share} visitas vieram de ${s1[0]}. Depender muito de um lugar só deixa o site vulnerável se ele mudar ou cair.`,
-          actions: ['Escolha um segundo lugar para divulgar o site nesta semana, como Google Meu Negócio.', `Continue no ${s1[0]}, sempre com o link do site.`],
+          actions: [{ step: 'Escolha um segundo lugar para divulgar o site nesta semana, como Google Meu Negócio.', helps: 'Ajuda a não depender de um único lugar para receber visitas.' }, { step: `Continue no ${s1[0]}, sempre com o link do site.`, helps: 'Ajuda a manter a principal fonte de visitas.' }],
         },
       }
     },
@@ -250,8 +238,8 @@ const A = {
         metric: m,
         facts: { ...metricFacts(m), visitantes: x.users, parcela_novos: share },
         fallback: nu >= x.users / 2
-          ? { title: 'Muita gente nova conhecendo o site', descriptive: `${share} visitantes vieram pela primeira vez. Quem não conhece você precisa entender rápido o que você faz.`, actions: ['Deixe no topo da página inicial uma frase clara sobre o seu serviço.', 'Mostre depoimentos de clientes logo na primeira tela.'] }
-          : { title: 'Seu público já conhece você', descriptive: `Só ${share} visitantes eram novos. É bom ter gente fiel, mas sem gente nova o número de clientes não cresce.`, actions: ['Divulgue o site num lugar onde você ainda não aparece.', 'Ofereça um benefício para quem indicar um amigo.'] },
+          ? { title: 'Muita gente nova conhecendo o site', descriptive: `${share} visitantes vieram pela primeira vez. Quem não conhece você precisa entender rápido o que você faz.`, actions: [{ step: 'Deixe no topo da página inicial uma frase clara sobre o seu serviço.', helps: 'Ajuda quem não conhece você a entender rápido o que você faz.' }, { step: 'Mostre depoimentos de clientes logo na primeira tela.', helps: 'Ajuda a ganhar a confiança de quem chega pela primeira vez.' }] }
+          : { title: 'Seu público já conhece você', descriptive: `Só ${share} visitantes eram novos. É bom ter gente fiel, mas sem gente nova o número de clientes não cresce.`, actions: [{ step: 'Divulgue o site num lugar onde você ainda não aparece.', helps: 'Ajuda a alcançar gente nova, que pode virar cliente.' }, { step: 'Ofereça um benefício para quem indicar um amigo.', helps: 'Ajuda seus clientes atuais a trazerem gente nova.' }] },
       }
     },
   },
@@ -270,7 +258,7 @@ const A = {
         fallback: {
           title: `${page} é a mais vista`,
           descriptive: `Teve ${fmt(n(pg.views))} visitas e gerou ${c} contatos. É a vitrine do site, então qualquer melhoria nela atinge muita gente.`,
-          actions: [`Deixe o botão de contato visível em ${page} sem precisar rolar a tela.`, 'Acrescente uma frase dizendo por que escolher você.'],
+          actions: [{ step: `Deixe o botão de contato visível em ${page} sem precisar rolar a tela.`, helps: 'Ajuda a página mais vista a gerar mais contatos.' }, { step: 'Acrescente uma frase dizendo por que escolher você.', helps: 'Ajuda a pessoa a decidir por você e não pelo concorrente.' }],
         },
       }
     },
@@ -288,7 +276,7 @@ const A = {
         fallback: {
           title: 'Seu público está no celular',
           descriptive: `${share} pessoas acessaram pelo celular. Se algo não funciona bem na tela pequena, você perde essas pessoas sem perceber.`,
-          actions: ['Abra o site no seu celular como se fosse um cliente e teste o botão de contato.', 'Encurte textos longos do topo das páginas.'],
+          actions: [{ step: 'Abra o site no seu celular como se fosse um cliente e teste o botão de contato.', helps: 'Ajuda a achar problemas que fazem você perder contatos sem saber.' }, { step: 'Encurte textos longos do topo das páginas.', helps: 'Ajuda a pessoa a achar o que procura sem cansar na tela pequena.' }],
         },
       }
     },
@@ -306,7 +294,7 @@ const A = {
         fallback: {
           title: `${c[0]} concentra seu público`,
           descriptive: `${inTen(c[1].users, x.users)} visitantes são de ${c[0]}. Falar diretamente com quem é de lá aumenta a confiança.`,
-          actions: [`Cite ${c[0]} nos textos do site e nos posts.`, 'Mostre se você atende na região ou em domicílio.'],
+          actions: [{ step: `Cite ${c[0]} nos textos do site e nos posts.`, helps: 'Ajuda quem é de lá a se identificar e confiar em você.' }, { step: 'Mostre se você atende na região ou em domicílio.', helps: 'Ajuda a evitar que a pessoa desista por achar que você não atende onde ela está.' }],
         },
       }
     },
@@ -324,7 +312,7 @@ const A = {
         fallback: {
           title: `${b[0]} é a cidade que mais chama`,
           descriptive: `${b[1].conv} contatos vieram de ${fmt(b[1].users)} visitantes de ${b[0]}. Proporcionalmente, é onde mais gente decide chamar você.`,
-          actions: [`Faça um post falando direto com quem é de ${b[0]}.`, 'Mostre clientes ou trabalhos feitos lá.'],
+          actions: [{ step: `Faça um post falando direto com quem é de ${b[0]}.`, helps: 'Ajuda a atrair mais gente da cidade que mais chama você.' }, { step: 'Mostre clientes ou trabalhos feitos lá.', helps: 'Ajuda a passar confiança para quem é da mesma cidade.' }],
         },
       }
     },
@@ -345,7 +333,7 @@ const A = {
         fallback: {
           title: 'Tem gente de fora procurando você',
           descriptive: `${fmt(out)} pessoas vieram de fora de ${r[0]}. Elas podem virar clientes se souberem que você atende longe.`,
-          actions: ['Deixe claro no site onde você atende.', 'Informe se faz atendimento online ou envio para outras cidades.'],
+          actions: [{ step: 'Deixe claro no site onde você atende.', helps: 'Ajuda a pessoa de fora a saber se pode contratar você.' }, { step: 'Informe se faz atendimento online ou envio para outras cidades.', helps: 'Ajuda a transformar visitas de fora em clientes.' }],
         },
       }
     },
@@ -366,23 +354,23 @@ const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length
 const numbersIn = (s: string) => (s.match(/\d+(?:[.,]\d+)*/g) || []).map(v => v.replace(/\./g, '').replace(',', '.'))
 const okText = (v: unknown, max: number, allowed: Set<string>) => typeof v === 'string' && !!v.trim() && words(v) <= max && numbersIn(v).every(x => allowed.has(x))
 
-type AIOut = { id?: string, title?: string, comparison?: string, descriptive?: string, forecast?: string, actions?: unknown }
+type AIOut = { id?: string, title?: string, comparison?: string, descriptive?: string, actions?: unknown }
 function valid(r: AIOut, allowed: Set<string>) {
   return okText(r.title, LIMITS.title, allowed) && okText(r.comparison, LIMITS.comparison, allowed)
-    && okText(r.descriptive, LIMITS.descriptive, allowed) && okText(r.forecast, LIMITS.forecast, allowed)
-    && Array.isArray(r.actions) && r.actions.length >= 2 && r.actions.length <= 3 && r.actions.every(a => okText(a, LIMITS.action, allowed))
+    && okText(r.descriptive, LIMITS.descriptive, allowed)
+    && Array.isArray(r.actions) && r.actions.length >= 2 && r.actions.length <= 3 && r.actions.every(a => !!a && typeof a === 'object' && okText((a as Step).step, LIMITS.action, allowed) && okText((a as Step).helps, LIMITS.helps, allowed))
 }
 
 /** Gera 3 insights (panorama + 2 ângulos). `px` é a semana anterior derivada (quando disponível). */
 export async function buildReportInsights(kind: ReportKind, x: Derived, business: BusinessInfo, llm: LLMEnv = {}, px: Derived | null = null): Promise<{ insights: ReportInsight[], model: string }> {
   const picked = BLUEPRINTS[kind].angles.map(a => ({ a, r: a.build(x, px) })).filter((v): v is { a: Angle, r: Built } => !!v.r).slice(0, 3)
-  const metricOf = (m: Metric) => ({ label: m.label, current: m.cur, previous: m.prev, trend: trendOf(m.cur, m.prev), ...forecastRange(m.cur, m.prev) })
+  const metricOf = (m: Metric) => ({ label: m.label, current: m.cur, previous: m.prev, trend: trendOf(m.cur, m.prev), change: m.prev ? pct(m.cur, m.prev) : null })
   const prof = businessProfile(business)
   const fallback: ReportInsight[] = picked.map(({ a, r }, i) => ({
     key: a.key, title: personalize(r.fallback.title, prof), comparison: compareText(r.metric), descriptive: personalize(r.fallback.descriptive, prof),
-    forecast: forecastText(r.metric), metric: metricOf(r.metric),
+    metric: metricOf(r.metric),
     // O primeiro card (panorama) ganha a ação típica do setor.
-    actions: (i === 0 ? [prof.tip, ...r.fallback.actions].slice(0, 3) : r.fallback.actions).map(t => personalize(t, prof)),
+    actions: (i === 0 ? [{ step: prof.tip, helps: prof.tipHelps }, ...r.fallback.actions].slice(0, 3) : r.fallback.actions).map(a => ({ step: personalize(a.step, prof), helps: personalize(a.helps, prof) })),
   }))
   if (!hasLLM(llm) || picked.length === 0) return { insights: fallback, model: 'IZI INTELLIGENCE (regras)' }
 
@@ -392,7 +380,7 @@ export async function buildReportInsights(kind: ReportKind, x: Derived, business
     visitantes_semana_anterior: px ? px.users : x.p ? n(x.p.users) : 'sem dados',
     contatos_semana_anterior: px ? px.contacts : x.p ? totalContacts(x.p) : 'sem dados',
   }
-  const cards = picked.map(({ a, r }, i) => ({ id: a.key, intencao: a.intent, fatos: r.facts, exemplo: { title: fallback[i].title, comparison: fallback[i].comparison, descriptive: fallback[i].descriptive, forecast: fallback[i].forecast, actions: fallback[i].actions } }))
+  const cards = picked.map(({ a, r }, i) => ({ id: a.key, intencao: a.intent, fatos: r.facts, exemplo: { title: fallback[i].title, comparison: fallback[i].comparison, descriptive: fallback[i].descriptive, actions: fallback[i].actions } }))
   const prompt = `Você é analista e escreve a seção de análise de um relatório semanal para o dono de um ${negocio}, que não entende de marketing.
 Objetivo do relatório: ${BLUEPRINTS[kind].goal}
 Contexto da semana: ${JSON.stringify(contexto)}
@@ -403,8 +391,7 @@ FORMATO (por card):
 - title: até ${LIMITS.title} palavras, o achado principal.
 - comparison: até ${LIMITS.comparison} palavras. Compare valor_semana com valor_semana_anterior (use variacao_pct se existir) e diga se é bom ou ruim. Se não houver semana anterior, diga isso.
 - descriptive: até ${LIMITS.descriptive} palavras, 2 frases: o que os fatos mostram e o provável motivo/por que importa para o negócio. Não invente causas sem base.
-- forecast: até ${LIMITS.forecast} palavras. Diga que, se nada mudar, a próxima semana deve ficar entre previsao_min e previsao_max e qual o risco ou oportunidade.
-- actions: lista de 2 ou 3 ações concretas para esta semana (até ${LIMITS.action} palavras cada), dizendo o quê, onde e como, com exemplos reais desse tipo de negócio (serviços, situações e ${prof.person[1]} típicos). A primeira é a mais importante. Nada de ação genérica que serviria para qualquer negócio.
+- actions: lista de 2 ou 3 ações concretas para esta semana. Cada ação é {"step","helps"}: step (até ${LIMITS.action} palavras) diz o quê, onde e como, com exemplos reais desse tipo de negócio (serviços, situações e ${prof.person[1]} típicos); helps (até ${LIMITS.helps} palavras) começa com "Ajuda a" e diz no que essa ação ajuda o negócio. A primeira é a mais importante. Nada de ação genérica que serviria para qualquer negócio.
 
 REGRAS:
 - Use só números presentes em "fatos" ou no contexto. Não calcule nem invente números.
@@ -415,7 +402,7 @@ REGRAS:
 CARDS:
 ${JSON.stringify(cards)}
 
-Responda só JSON: {"insights":[{"id":"","title":"","comparison":"","descriptive":"","forecast":"","actions":["",""]}]}`
+Responda só JSON: {"insights":[{"id":"","title":"","comparison":"","descriptive":"","actions":[{"step":"","helps":""}]}]}`
 
   try {
     const raw = await chatJSON(llm, [{ role: 'system', content: 'Responda APENAS JSON válido.' }, { role: 'user', content: prompt }])
@@ -426,7 +413,7 @@ Responda só JSON: {"insights":[{"id":"","title":"","comparison":"","descriptive
       const allowed = new Set([...Object.values(r.facts), ...Object.values(contexto)].flatMap(v => numbersIn(String(v))))
       const ai = byId.get(a.key)
       if (!ai || !valid(ai, allowed)) return fallback[i]
-      return { ...fallback[i], title: ai.title!.trim(), comparison: ai.comparison!.trim(), descriptive: ai.descriptive!.trim(), forecast: ai.forecast!.trim(), actions: (ai.actions as string[]).map(s => s.trim()) }
+      return { ...fallback[i], title: ai.title!.trim(), comparison: ai.comparison!.trim(), descriptive: ai.descriptive!.trim(), actions: (ai.actions as Step[]).map(a => ({ step: a.step.trim(), helps: a.helps.trim() })) }
     })
     return { insights, model: 'IZI INTELLIGENCE' }
   } catch (err) {
