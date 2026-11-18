@@ -62,7 +62,7 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <button className="brand" aria-label="Ir para a Visão Geral" onClick={() => navigate('dashboard')}>
+        <button className="brand" aria-label="Ir para o Relatório semanal" onClick={() => navigate('weekly-report')}>
           <BrandLogo inverse />
         </button>
         <WorkspaceSelector onNavigateSettings={() => navigate('data-sources')} />

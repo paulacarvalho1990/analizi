@@ -231,7 +231,6 @@ export function WeeklyReport({ kind, data, start, end, normalizeSource, insights
             {insights.map(i => <li key={i.key}>
               <p className="wr-ai-title">{i.title}</p>
               {i.metric && <MetricBox m={i.metric} />}
-              {i.comparison && <p className="wr-ai-sec"><span>Comparação</span>{i.comparison}</p>}
               {(i.descriptive ?? i.finding) && <p className="wr-ai-sec"><span>O que aconteceu</span>{i.descriptive ?? i.finding}</p>}
               <div className="wr-ai-action"><b>O que fazer</b>
                 <ul>{(i.actions ?? (i.action ? [i.action] : [])).map((a, k) => <li key={k}>
