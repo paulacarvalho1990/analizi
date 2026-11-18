@@ -7,11 +7,11 @@ import { CONTACT_LABEL, WEEKDAYS, exitPct, fmt, inTen, n, type Derived, type Rep
 
 export type ReportInsight = {
   key: string
-  /** Frase curta que resume o achado (até 8 palavras). */
+  /** Frase curta que resume o achado (até 10 palavras). */
   title: string
-  /** O que os números mostram, em linguagem simples (até 22 palavras). */
+  /** O que aconteceu e por que importa (até 32 palavras). */
   finding: string
-  /** Uma única ação concreta (até 16 palavras). */
+  /** Uma ação concreta: o quê, onde e como (até 26 palavras). */
   action: string
 }
 
@@ -23,7 +23,7 @@ type Angle = {
   build: (x: Derived) => { facts: Record<string, string | number>, fallback: Omit<ReportInsight, 'key'> } | null
 }
 
-const LIMITS = { title: 8, finding: 22, action: 16 }
+const LIMITS = { title: 10, finding: 32, action: 26 }
 
 /* ---------- ângulos reutilizáveis ---------- */
 const A = {
@@ -36,7 +36,7 @@ const A = {
       const page = x.pageTitle(pg.path)
       return {
         facts: { pagina: page, contatos_da_pagina: pg.c, contatos_total: x.contacts, origem_principal: x.sourceList[0]?.[0] ?? 'Direto' },
-        fallback: { title: `${page} é a página que mais chama`, finding: `Ela gerou ${pg.c} dos ${x.contacts} contatos da semana.`, action: `Divulgue o link de ${page} no ${x.sourceList[0]?.[0] ?? 'seu canal principal'}.` },
+        fallback: { title: `${page} é a página que mais chama`, finding: `Ela gerou ${pg.c} dos ${x.contacts} contatos da semana. Quem chega nela já está perto de decidir, então cada visita a mais vale muito.`, action: `Coloque o link de ${page} nos próximos posts e na bio do ${x.sourceList[0]?.[0] ?? 'seu canal principal'}, em vez da página inicial.` },
       }
     },
   },
@@ -48,7 +48,7 @@ const A = {
       const page = x.pageTitle(x.leak.path), share = inTen(exitPct(x.leak.exitRate), 100)
       return {
         facts: { pagina: page, saem_sem_fazer_nada: share, visitas_da_pagina: n(x.leak.views) },
-        fallback: { title: `Muita gente sai de ${page}`, finding: `${share} pessoas saem dessa página sem clicar em nada.`, action: `Coloque o botão de contato no topo de ${page}.` },
+        fallback: { title: `Muita gente sai de ${page}`, finding: `${share} pessoas saem dessa página sem clicar em nada. Elas chegaram até você, mas não encontraram rápido o que procuravam.`, action: `Coloque o botão de contato logo no topo de ${page} e deixe claro, em uma frase, o que a pessoa ganha ao chamar.` },
       }
     },
   },
@@ -61,7 +61,7 @@ const A = {
       const when = `${WEEKDAYS[pk.dayOfWeek]}, das ${pk.hourOfDay}h às ${pk.hourOfDay + 1}h`
       return {
         facts: { dia_e_hora: when, contatos_nesse_horario: n(pk.contacts), visitas_nesse_horario: n(pk.views) },
-        fallback: { title: `Seu melhor horário é ${WEEKDAYS[pk.dayOfWeek]} ${pk.hourOfDay >= 18 ? 'à noite' : pk.hourOfDay >= 12 ? 'à tarde' : 'de manhã'}`, finding: `O pico foi ${when}.`, action: 'Publique e responda mensagens perto desse horário.' },
+        fallback: { title: `Seu melhor horário é ${WEEKDAYS[pk.dayOfWeek]} ${pk.hourOfDay >= 18 ? 'à noite' : pk.hourOfDay >= 12 ? 'à tarde' : 'de manhã'}`, finding: `O pico foi ${when}. É quando seu público está com tempo e disposição para procurar você.`, action: 'Publique perto desse horário e deixe alguém pronto para responder as mensagens rápido nessa janela.' },
       }
     },
   },
@@ -74,7 +74,7 @@ const A = {
       const label = CONTACT_LABEL[top[0]]?.[0] ?? top[0]
       return {
         facts: { meio: label, contatos_por_esse_meio: top[1], contatos_total: x.contacts, parcela: inTen(top[1], x.contacts) },
-        fallback: { title: `Seus clientes preferem chamar ${label}`, finding: `${inTen(top[1], x.contacts)} contatos chegaram ${label}.`, action: `Deixe o botão ${label} visível em todas as páginas.` },
+        fallback: { title: `Seus clientes preferem chamar ${label}`, finding: `${inTen(top[1], x.contacts)} contatos chegaram ${label}. É o caminho em que seus clientes se sentem mais à vontade.`, action: `Deixe o botão ${label} visível em todas as páginas, inclusive no celular, e responda rápido por ali.` },
       }
     },
   },
@@ -88,8 +88,8 @@ const A = {
       return {
         facts: { origem_que_mais_chama: c[0], contatos_dessa_origem: c[1], origem_que_mais_traz_visitas: v[0], visitas_dessa_origem: v[1] },
         fallback: same
-          ? { title: `${c[0]} traz gente e traz contatos`, finding: `${c[0]} trouxe ${fmt(v[1])} visitas e ${c[1]} contatos.`, action: `Mantenha a frequência de publicação no ${c[0]}.` }
-          : { title: `${c[0]} chama mais que ${v[0]}`, finding: `${v[0]} trouxe mais visitas, mas ${c[0]} trouxe ${c[1]} contatos.`, action: `Invista mais tempo no ${c[0]} nesta semana.` },
+          ? { title: `${c[0]} traz gente e traz contatos`, finding: `${c[0]} trouxe ${fmt(v[1])} visitas e ${c[1]} contatos. Ele atrai gente e também traz quem quer contratar.`, action: `Mantenha a frequência no ${c[0]} e teste um conteúdo novo por lá, como uma dúvida comum dos clientes.` }
+          : { title: `${c[0]} chama mais que ${v[0]}`, finding: `${v[0]} trouxe mais visitas, mas ${c[0]} trouxe ${c[1]} contatos. Quem vem de ${c[0]} chega mais decidido.`, action: `Dedique mais tempo ao ${c[0]} nesta semana e, no ${v[0]}, mande as pessoas para uma página com botão de contato.` },
       }
     },
   },
@@ -102,7 +102,7 @@ const A = {
       const share = inTen(s1[1], x.sourceTotal)
       return {
         facts: { origem: s1[0], visitas: s1[1], parcela: share, segunda_origem: s2?.[0] ?? '', visitas_segunda: s2?.[1] ?? 0 },
-        fallback: { title: `${s1[0]} traz a maior parte das visitas`, finding: `${share} visitas vieram de ${s1[0]}.`, action: `Divulgue o site em outro lugar além de ${s1[0]}.` },
+        fallback: { title: `${s1[0]} traz a maior parte das visitas`, finding: `${share} visitas vieram de ${s1[0]}. Depender muito de um lugar só deixa o site vulnerável se ele mudar ou cair.`, action: `Escolha um segundo lugar para divulgar o site nesta semana, como Google Meu Negócio ou grupos de clientes.` },
       }
     },
   },
@@ -116,8 +116,8 @@ const A = {
       return {
         facts: { visitantes: x.users, novos: nu, parcela_novos: share },
         fallback: nu >= x.users / 2
-          ? { title: 'Muita gente nova conhecendo o site', finding: `${share} visitantes vieram pela primeira vez.`, action: 'Mostre logo no topo como falar com você.' }
-          : { title: 'Seu público já conhece você', finding: `Só ${share} visitantes eram novos.`, action: 'Divulgue o site em um lugar novo nesta semana.' },
+          ? { title: 'Muita gente nova conhecendo o site', finding: `${share} visitantes vieram pela primeira vez. Quem não conhece você precisa entender rápido o que você faz.`, action: 'Deixe no topo da página inicial uma frase clara sobre o seu serviço e o botão para falar com você.' }
+          : { title: 'Seu público já conhece você', finding: `Só ${share} visitantes eram novos. É bom ter gente fiel, mas sem gente nova o número de clientes não cresce.`, action: 'Divulgue o site num lugar onde você ainda não aparece, como um grupo do bairro ou parceiros.' },
       }
     },
   },
@@ -131,7 +131,7 @@ const A = {
       const c = x.pageContacts.find(r => r.path === pg.path)?.c ?? 0
       return {
         facts: { pagina: page, visitas: n(pg.views), contatos_da_pagina: c },
-        fallback: { title: `${page} é a mais vista`, finding: `Teve ${fmt(n(pg.views))} visitas e gerou ${c} contatos.`, action: `Deixe o botão de contato bem visível em ${page}.` },
+        fallback: { title: `${page} é a mais vista`, finding: `Teve ${fmt(n(pg.views))} visitas e gerou ${c} contatos. É a vitrine do site, então qualquer melhoria nela atinge muita gente.`, action: `Revise ${page}: botão de contato visível sem rolar a tela e uma frase dizendo por que escolher você.` },
       }
     },
   },
@@ -143,7 +143,7 @@ const A = {
       const share = inTen(x.mobile, x.devTotal)
       return {
         facts: { parcela_celular: share },
-        fallback: { title: 'Seu público está no celular', finding: `${share} pessoas acessaram pelo celular.`, action: 'Abra o site no celular e teste o botão de contato.' },
+        fallback: { title: 'Seu público está no celular', finding: `${share} pessoas acessaram pelo celular. Se algo não funciona bem na tela pequena, você perde essas pessoas sem perceber.`, action: 'Abra o site no seu celular, como se fosse um cliente, e confira se o botão de contato aparece e funciona.' },
       }
     },
   },
@@ -155,7 +155,7 @@ const A = {
       if (!c || !x.users) return null
       return {
         facts: { cidade: c[0], visitantes: c[1].users, contatos: c[1].conv, parcela: inTen(c[1].users, x.users) },
-        fallback: { title: `${c[0]} concentra seu público`, finding: `${inTen(c[1].users, x.users)} visitantes são de ${c[0]}.`, action: `Cite ${c[0]} nos textos do site e nos posts.` },
+        fallback: { title: `${c[0]} concentra seu público`, finding: `${inTen(c[1].users, x.users)} visitantes são de ${c[0]}. Falar diretamente com quem é de lá aumenta a confiança.`, action: `Cite ${c[0]} nos textos do site e nos posts, e mostre se você atende na região ou em domicílio.` },
       }
     },
   },
@@ -167,7 +167,7 @@ const A = {
       if (!b || !b[1].conv) return null
       return {
         facts: { cidade: b[0], visitantes: b[1].users, contatos: b[1].conv, parcela: inTen(b[1].conv, b[1].users) },
-        fallback: { title: `${b[0]} é a cidade que mais chama`, finding: `${b[1].conv} contatos vieram de ${fmt(b[1].users)} visitantes de ${b[0]}.`, action: `Faça um post falando com quem é de ${b[0]}.` },
+        fallback: { title: `${b[0]} é a cidade que mais chama`, finding: `${b[1].conv} contatos vieram de ${fmt(b[1].users)} visitantes de ${b[0]}. Proporcionalmente, é onde mais gente decide chamar você.`, action: `Faça um post falando direto com quem é de ${b[0]} e, se puder, mostre clientes ou trabalhos de lá.` },
       }
     },
   },
@@ -181,7 +181,7 @@ const A = {
       if (out <= 0) return null
       return {
         facts: { estado_principal: r[0], visitantes_fora: out, parcela_fora: inTen(out, x.locTotal) },
-        fallback: { title: 'Tem gente de fora procurando você', finding: `${fmt(out)} pessoas vieram de fora de ${r[0]}.`, action: 'Deixe claro no site onde e como você atende.' },
+        fallback: { title: 'Tem gente de fora procurando você', finding: `${fmt(out)} pessoas vieram de fora de ${r[0]}. Elas podem virar clientes se souberem que você atende longe.`, action: 'Deixe claro no site onde você atende e se faz atendimento online ou envio para outras cidades.' },
       }
     },
   },
@@ -214,20 +214,24 @@ export async function buildReportInsights(kind: ReportKind, x: Derived, business
   if (!hasLLM(llm) || picked.length === 0) return { insights: fallback, model: 'IZI INTELLIGENCE (regras)' }
 
   const negocio = [business.name, business.segment, business.subsegment, business.segmentDetail].filter(Boolean).join(' · ') || 'pequeno negócio'
-  const cards = picked.map(({ a, r }) => ({ id: a.key, intencao: a.intent, fatos: r.facts }))
+  const prev = x.p
+  const contexto = { visitantes_semana: x.users, contatos_semana: x.contacts, visitantes_semana_anterior: prev ? n(prev.users) : 'sem dados', contatos_semana_anterior: prev ? n(prev.contactClicks) : 'sem dados' }
+  const cards = picked.map(({ a, r }) => ({ id: a.key, intencao: a.intent, fatos: r.facts, exemplo: r.fallback }))
   const prompt = `Você escreve o rodapé de um relatório semanal para o dono de um ${negocio}, que não entende de marketing.
 Objetivo do relatório: ${BLUEPRINTS[kind].goal}
-Para cada card, escreva um insight que responda à "intencao" usando SOMENTE os "fatos".
+Contexto da semana: ${JSON.stringify(contexto)}
+Para cada card, escreva um insight que responda à "intencao" usando os "fatos" e o contexto. O "exemplo" mostra o tom e o tamanho esperados: melhore-o, deixando-o mais específico para esse tipo de negócio.
 
 FORMATO (por card):
-- title: até ${LIMITS.title} palavras, frase simples com o achado.
-- finding: até ${LIMITS.finding} palavras, o que os números mostram.
-- action: até ${LIMITS.action} palavras, UMA ação concreta para esta semana.
+- title: até ${LIMITS.title} palavras, o achado em linguagem do dia a dia.
+- finding: até ${LIMITS.finding} palavras, em 2 frases curtas: o que aconteceu (com o número) e por que isso importa para o negócio.
+- action: até ${LIMITS.action} palavras, UMA ação concreta para esta semana dizendo o quê, onde e como. Use exemplos do tipo de negócio.
 
 REGRAS:
-- Use só números que estão em "fatos". Não calcule nem invente.
-- Sem jargão: nada de CTA, conversão, funil, tráfego, engajamento, sessões.
-- Fale com a pessoa ("você"). Mantenha ids e ordem.
+- Use só números que estão em "fatos" ou no contexto. Não calcule nem invente números.
+- Não prometa resultados nem invente motivos que os números não mostram.
+- Sem jargão: nada de CTA, conversão, funil, tráfego, engajamento, sessões, KPI.
+- Fale com a pessoa ("você"), tom próximo e direto. Mantenha ids e ordem.
 
 CARDS:
 ${JSON.stringify(cards)}
@@ -240,7 +244,7 @@ Responda só JSON: {"insights":[{"id":"","title":"","finding":"","action":""}]}`
     const parsed = JSON.parse(raw) as { insights?: Array<Partial<ReportInsight> & { id?: string }> }
     const byId = new Map((parsed.insights || []).map(r => [r.id, r]))
     const insights = picked.map(({ a, r }, i) => {
-      const allowed = new Set(Object.values(r.facts).flatMap(v => numbersIn(String(v))))
+      const allowed = new Set([...Object.values(r.facts), ...Object.values(contexto)].flatMap(v => numbersIn(String(v))))
       const ai = byId.get(a.key)
       return ai && valid(ai, allowed) ? { key: a.key, title: ai.title!.trim(), finding: ai.finding!.trim(), action: ai.action!.trim() } : fallback[i]
     })
