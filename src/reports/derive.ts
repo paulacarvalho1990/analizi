@@ -77,6 +77,6 @@ export function derive(d: ReportData, normalizeSource: (s: string) => string) {
   const contactTypes = new Map<string, number>()
   ;(d.contactDetails ?? []).forEach(c => { const k = c.type || 'outro'; contactTypes.set(k, (contactTypes.get(k) || 0) + n(c.contacts)) })
   const bestConvCity = cityList.filter(([, c]) => c.users >= 10).sort((a, b) => b[1].conv / b[1].users - a[1].conv / a[1].users)[0]
-  return { t, p, contacts, users, pv, sourceList, sourceTotal, contactSourceList, topContactSource, pageContacts, topPages, leak, devTotal, mobile, peak, daily, bestViews, bestContacts, cityList, regionList, locTotal, contactTypes, bestConvCity, pageTitle }
+  return { t, p, contacts, users, pv, sourceList, sourceTotal, contactSourceList, topContactSource, pageContacts, topPages, leak, devTotal, mobile, peak, daily, bestViews, bestContacts, cityList, regionList, locTotal, contactTypes, bestConvCity, pageTitle, peakHours: d.peakHours ?? [] }
 }
 export type Derived = ReturnType<typeof derive>
