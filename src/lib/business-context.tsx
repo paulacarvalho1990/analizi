@@ -1,3 +1,4 @@
+import type { SiteType } from './siteTypes'
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from './supabase'
 
@@ -91,6 +92,8 @@ export interface SiteItem {
   tracker_site_id: string
   is_active: boolean
   analytics_source?: 'tracker' | 'ga4'
+  /** Define quais resultados aparecem no relatório. */
+  site_type?: SiteType
 }
 
 export interface UserProfilePlan {
@@ -257,7 +260,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
           const bizIds = normalizedBusinesses.map(b => b.id)
           const fullSitesResult = await supabase
             .from('sites')
-            .select('id, business_id, name, domain, tracker_site_id, is_active, analytics_source')
+            .select('id, business_id, name, domain, tracker_site_id, is_active, analytics_source, site_type')
             .in('business_id', bizIds)
             .order('name', { ascending: true })
           let sitesData: Partial<SiteItem>[] | null = fullSitesResult.data
@@ -266,7 +269,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
           // Compatibilidade com bancos que ainda não receberam a migration
           // analytics_source. Sem este fallback, a consulta falha inteira e o
           // painel perde o tracker_site_id, exibindo métricas zeradas.
-          if (sitesError && /analytics_source/i.test(sitesError.message || '')) {
+          if (sitesError && /analytics_source|site_type/i.test(sitesError.message || '')) {
             const legacySitesResult = await supabase
               .from('sites')
               .select('id, business_id, name, domain, tracker_site_id, is_active')
@@ -598,7 +601,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
         name: siteName,
         domain: normalized.domain
       })
-      .select('id, business_id, name, domain, tracker_site_id, is_active, analytics_source')
+      .select('id, business_id, name, domain, tracker_site_id, is_active, analytics_source, site_type')
       .single()
 
     if (siteErr || !createdSite) {
