@@ -29,13 +29,13 @@ export const PAGE_TITLES: Record<Page, string> = {
 }
 
 const nav = [
+  { id: 'weekly-report', label: 'Relatório semanal', shortLabel: 'Relatório', icon: Lightbulb, badge: 'IA' },
   { id: 'dashboard', label: 'Visão Geral', shortLabel: 'Visão Geral', icon: BarChart3, badge: undefined },
   { id: 'acquisition', label: 'Aquisição & Campanhas', shortLabel: 'Aquisição', icon: Compass, badge: undefined },
   { id: 'audience', label: 'Público', shortLabel: 'Público', icon: Users, badge: undefined },
   { id: 'pages', label: 'Páginas', shortLabel: 'Páginas', icon: FileText, badge: undefined },
   { id: 'results', label: 'Resultados', shortLabel: 'Resultados', icon: Target, badge: undefined },
   { id: 'heatmap', label: 'Heatmap e Rolagem', shortLabel: 'Heatmap', icon: Flame, badge: undefined },
-  { id: 'weekly-report', label: 'Relatório semanal', shortLabel: 'Relatório', icon: Lightbulb, badge: 'IA' },
 ] as const
 
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
