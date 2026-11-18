@@ -839,7 +839,7 @@ async function analytics(id: string, env: Env, query: URLSearchParams) {
       from daily_conversion_events
       where tracker_site_id = ? and metric_date >= ? and metric_date <= ?${smWhere.sql}
       group by metric_date, conversion_type, conversion_name, conversion_stage, page_path
-      order by date desc, conversions desc limit 250
+      order by date desc, conversions desc limit 5000
     `).bind(safeId, start, end, ...smWhere.params),
   ]) as Array<{ results?: Array<Record<string, unknown>> }>
 
