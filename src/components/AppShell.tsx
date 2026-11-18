@@ -5,7 +5,7 @@ import { WorkspaceSelector, NewSiteModal } from './WorkspaceSelector'
 import { APP_VERSION } from '../lib/version'
 import { useBusiness } from '../lib/business-context'
 
-export type Page = 'dashboard' | 'acquisition' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup' | 'weekly-report' | 'reports-admin' | 'report-geral' | 'report-contatos' | 'report-visitas' | 'report-regiao'
+export type Page = 'dashboard' | 'acquisition' | 'audience' | 'pages' | 'results' | 'heatmap' | 'insights' | 'settings' | 'team' | 'data-sources' | 'ga4-setup' | 'tracker-setup' | 'weekly-report' | 'reports-admin' | 'results-admin' | 'report-geral' | 'report-contatos' | 'report-visitas' | 'report-regiao'
 
 export const PAGE_TITLES: Record<Page, string> = {
   dashboard: 'Visão Geral | Analizi',
@@ -22,6 +22,7 @@ export const PAGE_TITLES: Record<Page, string> = {
   'tracker-setup': 'Instalar Rastreador | Analizi',
   'weekly-report': 'Relatório semanal | Analizi',
   'reports-admin': 'Todos os relatórios (admin) | Analizi',
+  'results-admin': 'Todos os resultados (admin) | Analizi',
   'report-geral': 'Relatório da semana | Analizi',
   'report-contatos': 'Relatório de contatos | Analizi',
   'report-visitas': 'Relatório de visitas | Analizi',
@@ -39,7 +40,7 @@ const nav = [
 ] as const
 
 export function AppShell({ page, setPage, children, onLogout, theme, onToggleTheme }: { page: Page, setPage: (page: Page) => void, children: ReactNode, onLogout: () => void, theme: 'light' | 'dark', onToggleTheme: () => void }) {
-  const paths: Partial<Record<Page, string>> = { dashboard: '/painel', acquisition: '/aquisicao', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics', 'weekly-report': '/relatorio-semanal', 'reports-admin': '/admin/relatorios', 'report-geral': '/relatorios/geral', 'report-contatos': '/relatorios/contatos', 'report-visitas': '/relatorios/visitas', 'report-regiao': '/relatorios/regiao' }
+  const paths: Partial<Record<Page, string>> = { dashboard: '/painel', acquisition: '/aquisicao', audience: '/publico', pages: '/paginas', results: '/resultados', heatmap: '/heatmap', insights: '/insights', settings: '/configuracoes', team: '/configuracoes/negocio', 'data-sources': '/configuracoes/fontes-de-dados', 'tracker-setup': '/configuracoes/rastreador', 'ga4-setup': '/configuracoes/google-analytics', 'weekly-report': '/relatorio-semanal', 'reports-admin': '/admin/relatorios', 'results-admin': '/admin/resultados', 'report-geral': '/relatorios/geral', 'report-contatos': '/relatorios/contatos', 'report-visitas': '/relatorios/visitas', 'report-regiao': '/relatorios/regiao' }
   const { userProfile } = useBusiness()
   const isAdmin = userProfile?.plan === 'admin'
   const navigate = (next: Page) => {
@@ -78,6 +79,13 @@ export function AppShell({ page, setPage, children, onLogout, theme, onToggleThe
             <button onClick={() => navigate('reports-admin')} className={page === 'reports-admin' ? 'nav-item active' : 'nav-item'}>
               <ClipboardList size={19} />
               <span>Todos os relatórios</span>
+              <span className="nav-badge">Admin</span>
+            </button>
+          )}
+          {isAdmin && (
+            <button onClick={() => navigate('results-admin')} className={page === 'results-admin' ? 'nav-item active' : 'nav-item'}>
+              <Target size={19} />
+              <span>Todos os resultados</span>
               <span className="nav-badge">Admin</span>
             </button>
           )}

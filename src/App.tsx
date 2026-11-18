@@ -1240,16 +1240,19 @@ function conversionTypeLabel(type: string): string {
   return labels[type] || 'Outro contato ou intenção';
 }
 
-function Results() {
-  const { currentSite } = useBusiness();
-  const [prototypeType, setPrototypeType] = useState<SiteType | null>(PROTOTYPE_TYPE);
-  const siteType: SiteType = prototypeType ?? (isSiteType(currentSite?.site_type) ? currentSite.site_type : 'servicos');
+// allTypes: página de admin "Todos os resultados", com abas para ver o relatório de cada tipo de site.
+function Results({ allTypes = false }: { allTypes?: boolean }) {
+  const { currentSite, userProfile } = useBusiness();
+  const showTabs = Boolean(PROTOTYPE_TYPE) || (allTypes && userProfile?.plan === 'admin');
+  const ownType: SiteType = isSiteType(currentSite?.site_type) ? currentSite.site_type : 'servicos';
+  const [viewType, setViewType] = useState<SiteType | null>(PROTOTYPE_TYPE);
+  const siteType: SiteType = showTabs ? (viewType ?? ownType) : ownType;
   const liveAnalytics = useAnalytics();
-  const analytics = useMemo(() => (prototypeType ? sampleAnalytics(prototypeType) as unknown as AnalyticsData : liveAnalytics), [prototypeType, liveAnalytics]);
-  const prototypeBar = prototypeType ? (
-    <nav className="rp-proto" aria-label="Protótipo: tipo de site">
-      <span>Protótipo</span>
-      {SITE_TYPE_OPTIONS.map(([type, info]) => <button key={type} type="button" className={type === prototypeType ? 'on' : ''} onClick={() => { setPrototypeType(type); window.history.replaceState(null, '', `?prototipo=${type}`) }}>{info.label}</button>)}
+  const analytics = useMemo(() => (PROTOTYPE_TYPE ? sampleAnalytics(siteType) as unknown as AnalyticsData : liveAnalytics), [siteType, liveAnalytics]);
+  const prototypeBar = showTabs ? (
+    <nav className="rp-proto" aria-label="Tipo de site">
+      <span>{PROTOTYPE_TYPE ? 'Protótipo' : 'Ver como'}</span>
+      {SITE_TYPE_OPTIONS.map(([type, info]) => <button key={type} type="button" className={type === siteType ? 'on' : ''} onClick={() => { setViewType(type); if (PROTOTYPE_TYPE) window.history.replaceState(null, '', `?prototipo=${type}`) }}>{info.label}{type === ownType && !PROTOTYPE_TYPE ? ' (atual)' : ''}</button>)}
     </nav>
   ) : null;
   const [conversionTab, setConversionTab] = useState<'pages' | 'channels'>('pages');
@@ -2018,7 +2021,7 @@ interface AnalyticsFilter {
   browser?: string
 }
 
-function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights' || path === '/relatorio-semanal') return 'weekly-report'; if (path === '/admin/relatorios') return 'reports-admin'; if (path === '/relatorios/geral') return 'report-geral'; if (path === '/relatorios/contatos') return 'report-contatos'; if (path === '/relatorios/visitas') return 'report-visitas'; if (path === '/relatorios/regiao') return 'report-regiao'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; if (path === '/painel') return 'dashboard'; return 'weekly-report' }
+function pageFromPath(): Page { const path = window.location.pathname; if (path === '/aquisicao') return 'acquisition'; if (path === '/publico') return 'audience'; if (path === '/paginas') return 'pages'; if (path === '/resultados') return 'results'; if (path === '/heatmap') return 'heatmap'; if (path === '/insights' || path === '/relatorio-semanal') return 'weekly-report'; if (path === '/admin/relatorios') return 'reports-admin'; if (path === '/admin/resultados') return 'results-admin'; if (path === '/relatorios/geral') return 'report-geral'; if (path === '/relatorios/contatos') return 'report-contatos'; if (path === '/relatorios/visitas') return 'report-visitas'; if (path === '/relatorios/regiao') return 'report-regiao'; if (path === '/configuracoes/negocio') return 'team'; if (path === '/configuracoes/fontes-de-dados') return 'data-sources'; if (path === '/configuracoes/rastreador') return 'tracker-setup'; if (path === '/configuracoes/google-analytics') return 'ga4-setup'; if (path.startsWith('/configuracoes')) return 'settings'; if (path === '/painel') return 'dashboard'; return 'weekly-report' }
 function dateString(date: Date) { return date.toISOString().slice(0, 10) }
 function shiftDays(base: string, offset: number) { const d = new Date(`${base}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + offset); return dateString(d) }
 function shiftMonths(base: string, offset: number) { const d = new Date(`${base.slice(0, 7)}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() + offset); return dateString(d) }
@@ -4090,6 +4093,7 @@ export function App() {
     insights: <Insights setPage={setPage}/>,
     'weekly-report': <WeeklyReportPage/>,
     'reports-admin': <WeeklyReportsAdmin/>,
+    'results-admin': <Results allTypes/>,
     settings: <Settings setPage={setPage}/>,
     team: <TeamSettings setPage={setPage}/>,
     'data-sources': <DataSources setPage={setPage}/>,

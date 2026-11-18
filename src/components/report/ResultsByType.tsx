@@ -180,7 +180,9 @@ export function ResultsByType({ siteType, data, header, filters }: { siteType: E
   const bestDay = daily.reduce<{ date: string, v: number } | null>((best, d) => { const v = primaryByDate.get(d.date) || 0; return v > (best?.v || 0) ? { date: d.date, v } : best }, null)
 
   // Páginas e botões que mais geram o resultado (todas as etapas do tipo principal e da intenção).
-  const relevant = (r: ConversionRow) => matches(r, model.primary.match) || matches(r, model.intent.match) || (model.steps ?? []).some(s => s.match !== 'visits' && matches(r, s.match))
+  // Loja: a tabela mostra só o que leva à compra (sem carrinho e checkout, que já estão no caminho).
+  const hidden = siteType === 'ecommerce' ? ['carrinho', 'carrinho_visita', 'checkout'] : []
+  const relevant = (r: ConversionRow) => !hidden.includes(r.type) && (matches(r, model.primary.match) || matches(r, model.intent.match) || (model.steps ?? []).some(s => s.match !== 'visits' && matches(r, s.match)))
   const [tab, setTab] = useState<'pages' | 'actions'>('pages')
   const [page, setPage] = useState(0)
   const grouped = useMemo(() => {
