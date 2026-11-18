@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Lightbulb, MessageCircle, ShieldCheck, Sparkles, Users } from 'lucide-react'
+import { ArrowLeft, Check, ShieldCheck, Sparkles } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import './LoginScreen.css'
 
@@ -24,64 +24,53 @@ type Props = {
 export function LoginScreen({ loading = false, error, onGoogle, onBack, version = '' }: Props) {
   return (
     <div className="ls">
-      {/* ─── Lado da marca ─────────────────────────────── */}
-      <aside className="ls-brand">
-        <div className="ls-brand-bg" aria-hidden="true" />
-        <button type="button" className="ls-brand-logo" onClick={onBack} aria-label="Voltar para a página inicial">
-          <BrandLogo inverse />
+      <div className="ls-bg" aria-hidden="true" />
+
+      <header className="ls-bar">
+        <button type="button" className="ls-logo" onClick={onBack} aria-label="Voltar para a página inicial">
+          <BrandLogo />
         </button>
+        <button type="button" className="ls-back" onClick={onBack}>
+          <ArrowLeft size={16} /> Voltar para o site
+        </button>
+      </header>
 
-        <div className="ls-brand-body">
+      <main className="ls-main">
+        <section className="ls-copy">
+          <span className="ls-pill"><span className="ls-dot" /> Teste grátis por 7 dias</span>
           <h1>
-            Acompanhe os principais dados do seu site.
-            <span>Cresça com base em dados, sem complicação.</span>
+            Seu painel está a um clique.{' '}
+            <span className="ls-grad">Entre com sua conta Google.</span>
           </h1>
+          <p className="ls-lead">
+            Visitas, origens e cliques no WhatsApp em português simples, com uma IA que sugere o próximo passo.
+          </p>
 
-          <ul className="ls-benefits">
-            <li>
-              <i className="b"><Users size={16} /></i>
-              <div><strong>Visitas e origens</strong><span>Quantas pessoas chegam e de onde vêm: Google, Instagram ou anúncios.</span></div>
-            </li>
-            <li>
-              <i className="p"><MessageCircle size={16} /></i>
-              <div><strong>Cliques no WhatsApp</strong><span>Contados automaticamente, sem configurar nada.</span></div>
-            </li>
-            <li>
-              <i className="o"><Lightbulb size={16} /></i>
-              <div><strong>Insights semanais com IA</strong><span>Sugestões do que fazer para decidir o próximo passo.</span></div>
-            </li>
-          </ul>
-
-          {/* Prévia ilustrativa do produto (sem depoimentos) */}
+          {/* Prévia ilustrativa, no mesmo estilo do mockup da LP */}
           <div className="ls-preview" aria-hidden="true">
-            <div className="ls-preview-kpi">
+            <div className="ls-kpi">
+              <span>Usuários</span>
+              <strong>1.936</strong>
+              <small>+12% vs. semana anterior</small>
+            </div>
+            <div className="ls-kpi is-hl">
               <span>Contatos iniciados</span>
               <strong>87</strong>
-              <small>+24% vs. período anterior</small>
+              <small>+24% vs. semana anterior</small>
             </div>
-            <div className="ls-preview-insight">
-              <em><Sparkles size={12} /> Insight da semana</em>
-              <p>O Instagram trouxe mais contatos que o Google. Vale manter a frequência dos posts.</p>
+            <div className="ls-insight">
+              <Sparkles size={18} />
+              <p><strong>Insight da semana:</strong> o Instagram trouxe mais contatos que o Google. Vale manter a frequência dos posts.</p>
             </div>
+            <small className="ls-note">Dados ilustrativos</small>
           </div>
-        </div>
+        </section>
 
-        <small className="ls-brand-foot">Dados ilustrativos</small>
-      </aside>
-
-      {/* ─── Formulário ────────────────────────────────── */}
-      <main className="ls-form-side">
-        <div className="ls-top">
-          <button type="button" className="ls-back" onClick={onBack}>
-            <ArrowLeft size={16} /> Voltar
-          </button>
-          <span className="ls-mobile-logo"><BrandLogo /></span>
-        </div>
-
-        <div className="ls-card">
-          <span className="ls-pill"><span className="ls-dot" /> Teste grátis por 7 dias</span>
-          <h2>Entre no Analizi</h2>
-          <p className="ls-lead">Use sua conta Google para acessar o painel ou começar seu teste.</p>
+        <section className="ls-card">
+          <div>
+            <h2>Entrar no Analizi</h2>
+            <p className="ls-sub">Primeira vez? É o mesmo botão: seu espaço é criado na hora.</p>
+          </div>
 
           {error && <div className="ls-error" role="alert">{error}</div>}
 
@@ -90,25 +79,20 @@ export function LoginScreen({ loading = false, error, onGoogle, onBack, version 
             <span>{loading ? 'Abrindo o Google…' : 'Continuar com o Google'}</span>
           </button>
 
-          <div className="ls-first">
-            <strong>Primeira vez por aqui?</strong>
-            <p>É o mesmo botão. Seu espaço é criado na hora e o teste de 7 dias começa sem cartão de crédito.</p>
-          </div>
-
           <ul className="ls-checks">
-            <li><Check size={15} /> Sem cartão de crédito</li>
-            <li><Check size={15} /> Sem senha nova para lembrar</li>
-            <li><ShieldCheck size={15} /> Não coletamos dados pessoais dos seus visitantes</li>
+            <li><Check size={16} /> Sem cartão de crédito</li>
+            <li><Check size={16} /> Sem senha nova para lembrar</li>
+            <li><ShieldCheck size={16} /> Não coletamos dados pessoais dos visitantes</li>
           </ul>
 
-          <p className="ls-terms">Antes de começar, você verá os termos de uso e de privacidade para aceitar.</p>
-        </div>
-
-        <footer className="ls-foot">
-          <span>© 2026 Analizi</span>
-          {version && <span>{version}</span>}
-        </footer>
+          <p className="ls-terms">No primeiro acesso você verá os termos de uso e a política de privacidade para aceitar.</p>
+        </section>
       </main>
+
+      <footer className="ls-foot">
+        <span>© 2026 Analizi</span>
+        {version && <span>{version}</span>}
+      </footer>
     </div>
   )
 }
