@@ -177,19 +177,24 @@ function build(kind: ReportKind, x: Derived): Model {
 }
 
 function MetricBox({ m }: { m: NonNullable<ReportInsight['metric']> }) {
-  const verdict = m.previous === null ? 'Sem dados da semana anterior para comparar'
-    : m.trend === 'new' ? 'Novidade: na semana anterior não teve nenhum'
-    : m.trend === 'flat' ? 'Ficou praticamente igual'
-    : `${m.trend === 'up' ? 'Subiu' : 'Caiu'} ${m.change ?? (m.previous ? Math.round(Math.abs((m.current - m.previous) / m.previous) * 100) : 0)}% em relação à semana anterior`
-  const icon = m.trend === 'up' || m.trend === 'new' ? '▲' : m.trend === 'down' ? '▼' : '='
-  return <div className={`wr-ai-metric t-${m.previous === null ? 'flat' : m.trend}`}>
-    <p className="wr-ai-mlabel">{m.label.charAt(0).toUpperCase() + m.label.slice(1)}</p>
-    <div className="wr-ai-cols">
-      {m.previous !== null && <><div><small>Semana anterior</small><b>{fmt(m.previous)}</b></div><span aria-hidden="true">→</span></>}
-      <div className="now"><small>Esta semana</small><b>{fmt(m.current)}</b></div>
-    </div>
-    <p className="wr-ai-verdict">{m.previous !== null && <span aria-hidden="true">{icon} </span>}{verdict}</p>
-  </div>
+  // Tom = bom/ruim para o negócio (em saídas, cair é bom).
+  const good = m.lowerIsBetter ? m.trend === 'down' : m.trend === 'up' || m.trend === 'new'
+  const bad = m.lowerIsBetter ? m.trend === 'up' || m.trend === 'new' : m.trend === 'down'
+  const tone = m.previous === null ? 'flat' : good ? 'up' : bad ? 'down' : 'flat'
+  const verdict = m.previous === null ? 'Sem dados da semana anterior para comparar.'
+    : m.trend === 'new' ? 'Novidade: na semana anterior não teve nenhum.'
+    : m.trend === 'flat' ? 'Ficou praticamente igual à semana anterior.'
+    : `${m.trend === 'up' ? 'Subiu' : 'Caiu'} ${m.change ?? (m.previous ? Math.round(Math.abs((m.current - m.previous) / m.previous) * 100) : 0)}% em relação à semana anterior.`
+  const max = Math.max(m.current, m.previous ?? 0, 1)
+  const bar = (v: number) => ({ width: `${Math.max(3, (v / max) * 100)}%` })
+  return <figure className={`wr-ev t-${tone}`}>
+    <figcaption>{m.label.charAt(0).toUpperCase() + m.label.slice(1)}</figcaption>
+    <dl>
+      {m.previous !== null && <div className="was"><dt>Semana anterior</dt><dd><span className="bar" style={bar(m.previous)} /><b>{fmt(m.previous)}</b></dd></div>}
+      <div className="now"><dt>Esta semana</dt><dd><span className="bar" style={bar(m.current)} /><b>{fmt(m.current)}</b></dd></div>
+    </dl>
+    <p className="wr-ev-verdict">{verdict}</p>
+  </figure>
 }
 
 export function WeeklyReport({ kind, data, start, end, normalizeSource, insights, actions }: { kind: ReportKind, data: ReportData | null, start: string, end: string, normalizeSource: (s: string) => string, insights?: ReportInsight[], actions?: ReactNode }) {
@@ -231,18 +236,19 @@ export function WeeklyReport({ kind, data, start, end, normalizeSource, insights
             <span className="wr-izi">IZI INTELLIGENCE</span>
           </div>
           <p className="wr-ai-note">Criado com IA a partir dos números deste relatório e da semana anterior.</p>
-          <ol className="wr-ai-list">
-            {insights.map(i => <li key={i.key}>
-              <p className="wr-ai-title">{i.title}</p>
+          <div className="wr-ai-list">
+            {insights.map(i => <article key={i.key} className={`wr-card${i.metric ? '' : ' no-ev'}`}>
               {i.metric && <MetricBox m={i.metric} />}
-              {(i.descriptive ?? i.finding) && <p className="wr-ai-sec"><span>O que aconteceu</span>{i.descriptive ?? i.finding}</p>}
-              <div className="wr-ai-action"><b>O que fazer</b>
-                <ul>{(i.actions ?? (i.action ? [i.action] : [])).map((a, k) => <li key={k}>
-                  {typeof a === 'string' ? a : <><span className="wr-ai-step">{a.step}</span><span className="wr-ai-helps">{a.helps}</span></>}
+              <div className="wr-card-body">
+                <h3>{i.title}</h3>
+                {(i.descriptive ?? i.finding) && <p className="wr-card-what">{i.descriptive ?? i.finding}</p>}
+                <h4>O que fazer</h4>
+                <ul className="wr-todo">{(i.actions ?? (i.action ? [i.action] : [])).map((a, k) => <li key={k}>
+                  {typeof a === 'string' ? <p>{a}</p> : <><p>{a.step}</p><p className="wr-todo-why">{a.helps}</p></>}
                 </li>)}</ul>
               </div>
-            </li>)}
-          </ol>
+            </article>)}
+          </div>
         </section>}
       </>}
     </div>
