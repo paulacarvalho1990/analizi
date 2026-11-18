@@ -10,6 +10,8 @@ export type BusinessProfile = {
   content: string[]
   /** Ação típica do setor para usar no texto padrão. */
   tip: string
+  /** No que a ação típica ajuda. */
+  tipHelps: string
   /** Cuidados de linguagem do setor (vai para a IA). */
   care?: string
 }
@@ -36,7 +38,7 @@ const BY_SUBSEGMENT: Array<[RegExp, Partial<BusinessProfile>]> = [
   [/tecnolog|consult/i, { person: ['cliente', 'clientes'], request: 'pedido de proposta', content: ['casos de clientes atendidos', 'problemas comuns que você resolve'], tip: 'Mostre um caso de cliente resolvido e convide para uma conversa rápida.' }],
 ]
 
-const BY_SEGMENT: Record<string, BusinessProfile> = {
+const BY_SEGMENT: Record<string, Omit<BusinessProfile, 'tipHelps'>> = {
   health: { person: ['paciente', 'pacientes'], request: 'agendamento', content: ['dúvidas comuns dos pacientes', 'como funciona o atendimento'], tip: 'Mostre horários, convênios e o botão de agendar logo no topo do site.', care: HEALTH_CARE },
   products: { person: ['cliente', 'clientes'], request: 'compra', content: ['novidades e mais vendidos', 'promoções da semana'], tip: 'Destaque os produtos mais vendidos na página inicial, com preço e botão de comprar.' },
   services: { person: ['cliente', 'clientes'], request: 'pedido de orçamento', content: ['trabalhos recentes', 'dúvidas comuns dos clientes'], tip: 'Mostre trabalhos recentes e o botão de orçamento lado a lado.' },
@@ -53,7 +55,7 @@ export function businessProfile(b: { segment?: string, subsegment?: string, segm
   const base = BY_SEGMENT[segKey(b.segment)]
   const text = `${b.subsegment || ''} ${b.segmentDetail || ''}`
   const hit = BY_SUBSEGMENT.find(([re]) => re.test(text))?.[1]
-  return { ...base, ...hit, care: hit?.care ?? base.care }
+  return { ...base, ...hit, tipHelps: hit?.tipHelps ?? `Ajuda mais visitantes a virarem ${(hit?.request ?? base.request)}.`, care: hit?.care ?? base.care }
 }
 
 /** Troca "cliente(s)" pelo termo do negócio (ex.: paciente) no texto padrão. */
