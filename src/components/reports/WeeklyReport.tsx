@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { Sparkles } from 'lucide-react'
 import './weekly-report.css'
 
 /* Relatórios one-page para leigos: poucas figuras, uma frase cada.
@@ -197,20 +198,26 @@ function MetricBox({ m }: { m: NonNullable<ReportInsight['metric']> }) {
   </figure>
 }
 
-export function WeeklyReport({ kind, data, start, end, normalizeSource, insights, actions }: { kind: ReportKind, data: ReportData | null, start: string, end: string, normalizeSource: (s: string) => string, insights?: ReportInsight[], actions?: ReactNode }) {
+export function WeeklyReport({ kind, data, start, end, normalizeSource, insights, actions, loading }: { kind: ReportKind, data: ReportData | null, start: string, end: string, normalizeSource: (s: string) => string, insights?: ReportInsight[], actions?: ReactNode, loading?: boolean }) {
   const model = data ? build(kind, derive(data, normalizeSource)) : null
   const period = start && end ? `${dateBR(start)} a ${dateBR(end)}` : ''
   return (
     <div className="wr">
       <header className="wr-top">
-        <div><h1>{model?.title ?? 'Relatório'}</h1><p>{model?.subtitle ?? 'Carregando os dados do seu site…'}</p></div>
+        <div><h1>{model?.title ?? 'Relatório'}</h1><p>{model?.subtitle ?? (loading ? 'A IA está preparando o relatório da semana.' : 'Carregando os dados do seu site…')}</p></div>
         <div className="wr-actions">
           {period && <span className="wr-period">{period}</span>}
           {actions}
           <button className="wr-btn" onClick={() => window.print()}>Imprimir ou salvar PDF</button>
         </div>
       </header>
-      {!model ? <div className="wr-empty">Ainda não há dados para montar este relatório.</div> : <>
+      {!model ? (loading
+        ? <div className="wr-loading" role="status" aria-live="polite">
+            <Sparkles className="wr-loading-star" size={28} aria-hidden="true" />
+            <p><b>A IA está gerando o seu relatório.</b></p>
+            <p>Estamos analisando os números da semana e comparando com a anterior. Leva alguns segundos, fique nesta página.</p>
+          </div>
+        : <div className="wr-empty">Ainda não há dados para montar este relatório.</div>) : <>
         <article className="wr-letter" aria-labelledby="wr-hl">
           <p className="wr-greet">Semana de {period}</p>
           <h2 id="wr-hl" className="wr-headline">{model.headline}</h2>
