@@ -1504,6 +1504,9 @@ async function reportKindsBySite(env: Env): Promise<Map<string, Set<ReportKind>>
   return out
 }
 
+/** Sobe quando o formato dos insights muda: relatórios da semana atual com versão menor são gerados de novo uma vez. */
+const REPORT_INSIGHTS_VERSION = 2
+
 /** Gera (ou regera) o relatório de uma semana fechada para um site e um objetivo. */
 async function generateWeeklyReport(env: Env, siteId: string, kind: ReportKind, week: { start: string, end: string }, business: BusinessContext | null) {
   const res = await analytics(siteId, env, new URLSearchParams({ start: week.start, end: week.end, group: 'day' }))
@@ -1519,6 +1522,7 @@ async function generateWeeklyReport(env: Env, siteId: string, kind: ReportKind, 
     console.error('Falha ao ler a semana anterior do relatório:', err)
   }
   if (prev) data.previousWeek = { users: prev.users, contacts: prev.contacts }
+  data.insightsVersion = REPORT_INSIGHTS_VERSION
   const { insights, model } = await buildReportInsights(kind, derive(data, normalizeOriginName), business || {}, env, prev)
   const stmt = env.ANALIZI_EVENTS.prepare(`
     insert into weekly_site_reports (tracker_site_id, week_start, week_end, report_kind, data_json, insights_json, model, created_at)
@@ -1561,11 +1565,7 @@ async function weeklyReport(request: Request, env: Env, query: URLSearchParams):
   const outdated = (() => {
     const r = current.results?.[0]
     if (!r) return false
-    try {
-      const ins = JSON.parse(r.insights_json) as Array<{ metric?: unknown, actions?: unknown[] }>
-      const fresh = ins.length > 0 && ins.every(i => i.metric && Array.isArray(i.actions) && typeof i.actions[0] === 'object')
-      return !fresh || !(JSON.parse(r.data_json) as { previousWeek?: unknown }).previousWeek
-    } catch { return true }
+    try { return (JSON.parse(r.data_json) as { insightsVersion?: number }).insightsVersion !== REPORT_INSIGHTS_VERSION } catch { return true }
   })()
   if ((refresh || outdated || !current.results?.[0]) && requested === week.start) {
     try {
