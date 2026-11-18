@@ -19,6 +19,8 @@ export type ReportData = {
   peakHours?: Array<{ dayOfWeek: number, hourOfDay: number, views: number, contacts: number }>,
   /** Semana anterior calculada com a mesma regra desta semana (gravado na geração do relatório). */
   previousWeek?: { users: number, contacts: number },
+  /** Versão do formato dos insights gravados junto. */
+  insightsVersion?: number,
 }
 
 export const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
