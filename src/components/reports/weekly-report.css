@@ -88,6 +88,11 @@
 .wr-setup-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 
 .wr-admin { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wr-btn.danger { background: #B91C1C; border-color: #B91C1C; color: #fff; }
+[data-theme="dark"] .wr-btn.danger { background: #DC2626; border-color: #DC2626; }
+.wr-regen { display: inline-flex; align-items: center; gap: 10px; }
+.wr-regen span { font-size: 12px; font-weight: 600; color: #B91C1C; }
+[data-theme="dark"] .wr-regen span { color: #FCA5A5; }
 .wr-admin-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; background: var(--wr-surface); border: 1px solid var(--wr-border); border-radius: 12px; padding: 4px; }
 .wr-admin-tabs button { border: 0; background: none; color: var(--wr-muted); font: inherit; font-weight: 600; font-size: 13px; padding: 7px 12px; border-radius: 8px; cursor: pointer; }
 .wr-admin-tabs button.on { background: var(--wr-fg); color: var(--wr-surface); }

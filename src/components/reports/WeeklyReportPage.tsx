@@ -160,7 +160,13 @@ export function WeeklyReportsAdmin() {
         <div className="wr-admin-tabs" role="tablist" aria-label="Tipo de relatório">
           {REPORT_GOALS.map(g => <button key={g.kind} role="tab" aria-selected={kind === g.kind} className={kind === g.kind ? 'on' : ''} onClick={() => setKind(g.kind)}>{g.title}</button>)}
         </div>
-        <button type="button" className="wr-btn ghost" disabled={loading} onClick={() => { setRefresh(true); setTick(t => t + 1) }}>{loading ? 'Gerando…' : 'Gerar de novo'}</button>
+        <div className="wr-regen">
+          <span>Consome IA a cada clique</span>
+          <button type="button" className="wr-btn danger" disabled={loading} onClick={() => {
+            if (!window.confirm('Gerar este relatório de novo? Isso consome créditos de IA e substitui os insights atuais desta semana.')) return
+            setRefresh(true); setTick(t => t + 1)
+          }}>{loading ? 'Gerando…' : 'Gerar de novo'}</button>
+        </div>
       </div>
       {error ? <div className="wr"><div className="wr-empty">{error}</div></div> : (
         <WeeklyReport kind={kind} data={report?.data ?? null} start={report?.weekStart ?? ''} end={report?.weekEnd ?? ''} insights={report?.insights} normalizeSource={normalizeOriginName} />
