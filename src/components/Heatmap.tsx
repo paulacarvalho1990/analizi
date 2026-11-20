@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { MetricCard } from './Metrics'
 import { useBusiness } from '../lib/business-context'
-import { supabase } from '../lib/supabase'
+import { authHeaders, supabase } from '../lib/supabase'
 import { Card, Empty, HBars, Tip } from './report/kit'
 
 interface LayoutBlock {
@@ -568,7 +568,7 @@ export function Heatmap() {
         query.set('start', customStart)
         query.set('end', customEnd)
       }
-      const res = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/heatmap/${targetSiteId}?${query}`)
+      const res = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/heatmap/${targetSiteId}?${query}`, { headers: await authHeaders() })
       if (!res.ok) throw new Error('Falha ao carregar dados do heatmap.')
       const json: HeatmapPayload = await res.json()
       setData(json)

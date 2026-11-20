@@ -2237,6 +2237,32 @@ async function authenticatedUser(request: Request, env: Env): Promise<Authentica
   }
 }
 
+// Valida o token no Supabase Auth (assinatura e revogação), já que
+// authenticatedUser apenas decodifica o JWT. Usado nas leituras do painel.
+async function verifiedUser(request: Request, env: Env): Promise<AuthenticatedUser | null> {
+  const user = await authenticatedUser(request, env)
+  if (!user) return null
+  try {
+    const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_ANON_KEY!, authorization: `Bearer ${user.token}` } })
+    if (!response.ok) return null
+    const body = await response.json() as { id?: string }
+    return body.id === user.id ? user : null
+  } catch {
+    return null
+  }
+}
+
+// Exige sessão válida e vínculo do usuário com o negócio dono do site.
+// Retorna a resposta de erro ou null quando o acesso é permitido.
+async function requireSiteAccess(request: Request, env: Env, trackerSiteId: string): Promise<Response | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return json({ error: 'Autenticação não configurada no servidor.' }, 503)
+  const user = await verifiedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  const site = await ownedSite(trackerSiteId, user, env)
+  if (!site || site.tracker_site_id.toUpperCase() !== trackerSiteId.toUpperCase()) return json({ error: 'Site não encontrado.' }, 404)
+  return null
+}
+
 async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trackerSiteId = '', businessId = ''): Promise<{ id: string, tracker_site_id: string } | null> {
   // Nunca registra identificadores, e-mails ou tokens: estes marcadores existem
   // apenas para diagnosticar falhas de vínculo entre o painel e o Supabase.
@@ -2962,7 +2988,7 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
-    if (request.method === 'OPTIONS' && (url.pathname.startsWith('/v1/ga4/') || url.pathname === '/v1/weekly-report')) {
+    if (request.method === 'OPTIONS' && (url.pathname.startsWith('/v1/ga4/') || url.pathname === '/v1/weekly-report' || /^\/v1\/(analytics|heatmap)\/|^\/v1\/tracker-sites\/[^/]+\/status$/i.test(url.pathname))) {
       return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' } })
     }
     if (url.pathname === '/v1/events' || url.pathname === '/v1/sync' || url.pathname === '/v1/collect') {
@@ -2983,11 +3009,11 @@ export default {
     if (url.pathname === '/v1/ga4/analytics' && request.method === 'GET') return ga4Analytics(request, env, url.searchParams)
     if (url.pathname === '/v1/weekly-report' && request.method === 'GET') return weeklyReport(request, env, url.searchParams)
     const statusMatch = url.pathname.match(/^\/v1\/tracker-sites\/(ANLZ[A-Z0-9]{5}-A)\/status$/i)
-    if (statusMatch) return trackerStatus(statusMatch[1], env)
+    if (statusMatch) return (await requireSiteAccess(request, env, statusMatch[1])) || trackerStatus(statusMatch[1], env)
     const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)
-    if (analyticsMatch) return analytics(analyticsMatch[1], env, url.searchParams)
+    if (analyticsMatch) return (await requireSiteAccess(request, env, analyticsMatch[1])) || analytics(analyticsMatch[1], env, url.searchParams)
     const heatmapMatch = url.pathname.match(/^\/v1\/heatmap\/(ANLZ[A-Z0-9]{5}-A)$/i)
-    if (heatmapMatch) return heatmapData(heatmapMatch[1], env, url.searchParams)
+    if (heatmapMatch) return (await requireSiteAccess(request, env, heatmapMatch[1])) || heatmapData(heatmapMatch[1], env, url.searchParams)
     if (url.pathname === '/v1/ai-insights') return generateAIInsights(request, env)
     return env.ASSETS.fetch(request)
   },

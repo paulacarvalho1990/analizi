@@ -11,7 +11,7 @@ import { MetricCard, DualMetricCard } from './components/Metrics'
 import { Button } from './components/ui/Button'
 import { AuthFlow, CONSENT_VERSION, type AuthFlowMode } from './components/AuthFlow'
 import { LandingPage } from './components/LandingPage'
-import { supabase } from './lib/supabase'
+import { authHeaders, supabase } from './lib/supabase'
 import { BusinessProvider, useBusiness, PLAN_DEFINITIONS, type BusinessItem, type SiteItem, type PlanMetadata } from './lib/business-context'
 import { BrazilGeoMap } from './components/BrazilMap'
 import * as R from './components/report/kit'
@@ -2099,7 +2099,7 @@ function useAnalytics() {
         const response = await fetch(ga4Connected
           ? `https://analizi.carvalhopaula1990.workers.dev/v1/ga4/analytics?${query}`
           : `https://analizi.carvalhopaula1990.workers.dev/v1/analytics/${currentSite.tracker_site_id}?${query}`, {
-          headers: ga4Connected && session?.access_token ? { authorization: `Bearer ${session.access_token}` } : undefined
+          headers: session?.access_token ? { authorization: `Bearer ${session.access_token}` } : undefined
         });
         if (response.ok) {
           const payload = await response.json() as AnalyticsData;
@@ -2396,7 +2396,7 @@ function ConnectionStatus({ compact = false }: { compact?: boolean }) {
 
         if (currentSite.tracker_site_id) {
           try {
-            const check = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${currentSite.tracker_site_id}/status`);
+            const check = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${currentSite.tracker_site_id}/status`, { headers: await authHeaders() });
             if (check.ok) {
               const checkData = await check.json() as { configured?: boolean; received?: boolean; lastEventAt?: string | null };
               if (checkData.received) {
@@ -2750,7 +2750,7 @@ function useTrackerStatus(trackerSiteId?: string) {
     if (!trackerSiteId) { setStatus({ received: false, lastEventAt: null }); return null }
     setChecking(true)
     try {
-      const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${trackerSiteId}/status`)
+      const response = await fetch(`https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites/${trackerSiteId}/status`, { headers: await authHeaders() })
       const data = response.ok ? await response.json() as { received?: boolean; lastEventAt?: string | null } : null
       const next = { received: Boolean(data?.received), lastEventAt: data?.lastEventAt || null }
       setStatus(next)
