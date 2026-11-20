@@ -23,7 +23,7 @@ type Props = {
 
 export function LoginScreen({ loading = false, error, onGoogle, onBack, version = '' }: Props) {
   return (
-    <div className="ls">
+    <div className="ls" data-theme="light">
       <div className="ls-bg" aria-hidden="true" />
 
       <header className="ls-bar">
