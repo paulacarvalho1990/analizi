@@ -2221,32 +2221,16 @@ function ga4Configured(env: Env) {
 async function authenticatedUser(request: Request, env: Env): Promise<AuthenticatedUser | null> {
   const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
   if (!token || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
-  // O PostgREST valida a assinatura e as políticas RLS na consulta de ownedSite.
-  // Aqui só extraímos o subject para evitar uma chamada extra ao endpoint Auth,
-  // que pode rejeitar tokens válidos quando a chave pública foi rotacionada.
+  // Valida o token no Supabase Auth (assinatura, expiração e revogação).
+  // Decodificar o JWT sem verificar permitiria forjar o "sub" de outro usuário.
   try {
-    const part = token.split('.')[1]
-    if (!part) return null
-    const normalized = part.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((part.length + 3) % 4)
-    const claims = JSON.parse(atob(normalized)) as { sub?: string, exp?: number, iss?: string }
-    if (!claims.sub || (claims.exp && claims.exp < Math.floor(Date.now() / 1000))) return null
-    if (claims.iss && !claims.iss.includes('/auth/v1')) return null
-    return { id: claims.sub, token }
-  } catch {
-    return null
-  }
-}
-
-// Valida o token no Supabase Auth (assinatura e revogação), já que
-// authenticatedUser apenas decodifica o JWT. Usado nas leituras do painel.
-async function verifiedUser(request: Request, env: Env): Promise<AuthenticatedUser | null> {
-  const user = await authenticatedUser(request, env)
-  if (!user) return null
-  try {
-    const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_ANON_KEY!, authorization: `Bearer ${user.token}` } })
-    if (!response.ok) return null
+    const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${token}` } })
+    if (!response.ok) {
+      console.warn('auth_validation_failed', JSON.stringify({ status: response.status }))
+      return null
+    }
     const body = await response.json() as { id?: string }
-    return body.id === user.id ? user : null
+    return body.id ? { id: body.id, token } : null
   } catch {
     return null
   }
@@ -2256,7 +2240,7 @@ async function verifiedUser(request: Request, env: Env): Promise<AuthenticatedUs
 // Retorna a resposta de erro ou null quando o acesso é permitido.
 async function requireSiteAccess(request: Request, env: Env, trackerSiteId: string): Promise<Response | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return json({ error: 'Autenticação não configurada no servidor.' }, 503)
-  const user = await verifiedUser(request, env)
+  const user = await authenticatedUser(request, env)
   if (!user) return json({ error: 'Sessão inválida.' }, 401)
   const site = await ownedSite(trackerSiteId, user, env)
   if (!site || site.tracker_site_id.toUpperCase() !== trackerSiteId.toUpperCase()) return json({ error: 'Site não encontrado.' }, 404)
@@ -2271,8 +2255,11 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
     audit('supabase_not_configured')
     return null
   }
-  const apiKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY
-  const requestHeaders = { apikey: apiKey, authorization: `Bearer ${apiKey}` }
+  // Sem a service role, as consultas usam o token do próprio usuário para que
+  // o RLS do Supabase limite o que ele enxerga (nunca a chave anônima pura).
+  const requestHeaders = env.SUPABASE_SERVICE_ROLE_KEY
+    ? { apikey: env.SUPABASE_SERVICE_ROLE_KEY, authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` }
+    : { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${user.token}` }
   const encodedSite = encodeURIComponent(siteId)
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
   if (!response.ok) {
@@ -2282,7 +2269,6 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
   const rows = await response.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
   audit('site_query_complete', { rows: rows.length, hasTrackerFallback: Boolean(trackerSiteId), hasBusinessFallback: Boolean(businessId) })
   const isMember = async (businessId: string) => {
-    if (!env.SUPABASE_SERVICE_ROLE_KEY) return true
     const memberResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/business_members?business_id=eq.${encodeURIComponent(businessId)}&user_id=eq.${encodeURIComponent(user.id)}&select=user_id&limit=1`, { headers: requestHeaders })
     if (!memberResponse.ok) {
       audit('membership_query_failed', { status: memberResponse.status })
