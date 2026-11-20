@@ -2,13 +2,20 @@
 
 Cards no [GitHub Project ANALIZI](https://github.com/users/paulacarvalho1990/projects/2). Marque `[x]` ao concluir e mova o card para Done.
 
+> **Tudo aqui é pré-lançamento.** O lançamento só acontece depois que todos os cards estiverem concluídos.
+
 ## Fase 0 — Correção rápida de segurança (começar aqui)
 - [ ] #6 Exigir autenticação em /v1/analytics, /v1/heatmap e /v1/tracker-sites/:id/status
 - [ ] #7 Proteger /v1/tracker-sites (GET lista todos, POST aceita plan=admin)
 - [ ] #53 Alinhar teste grátis em 7 dias (banco hoje dá 30)
 - [ ] #25 [D1] Definir arquitetura da migração e registrar a decisão
 
-## Fase 1 — Migração Supabase → D1 (#24)
+## Fase 1 — Qualidade: testes, refatoração e rastreador sem cookies
+- [ ] #15 Testes automatizados mínimos
+- [ ] #16 Refatorar App.tsx e worker.ts em módulos + atualizar MVP-ROADMAP
+- [ ] #82 Rastreador sem cookies e de acordo com a LGPD
+
+## Fase 2 — Migração Supabase → D1 (#24)
 - [ ] #26 Criar banco analizi-app e esquema SQLite
 - [ ] #27 Login com Google no Worker (sessão própria)
 - [ ] #28 Camada central de autorização (papéis e planos)
@@ -22,14 +29,14 @@ Cards no [GitHub Project ANALIZI](https://github.com/users/paulacarvalho1990/pro
 - [ ] #39 Backup e restauração do banco
 - [ ] #41 Corte para produção e desligamento do Supabase
 
-## Fase 2 — Cobrança (#38)
+## Fase 3 — Cobrança (#38)
 - [ ] #48 Escolher o provedor de pagamento
 - [ ] #49 Checkout por plano (planos #19–#22)
 - [ ] #50 Webhook que atualiza a assinatura
 - [ ] #51 Portal do cliente: trocar plano e cancelar
 - [ ] #52 Bloquear acesso quando a assinatura vence
 
-## Fase 3 — E-mail (#9)
+## Fase 4 — E-mail (#9)
 - [ ] #42 Migrar envio do Resend para o Cloudflare Email Service e ativar o domínio
 - [ ] #43 Aplicar migrações do envio semanal
 - [ ] #45 Deploy do envio semanal e conferir logs do cron
@@ -38,17 +45,18 @@ Cards no [GitHub Project ANALIZI](https://github.com/users/paulacarvalho1990/pro
 - [ ] #47 E-mails de fim de trial e recuperação de assinatura
 - [ ] #56 E-mail de convite de equipe
 
-## Fase 4 — Lançamento (P1)
+## Fase 5 — Ambientes, coletor, LGPD, GA4 e observabilidade
 - [ ] Ambientes: #57 Bancos D1 de produção · #58 Domínio próprio · #59 Deploy por ambiente
 - [ ] Coletor: #60 Rate limit · #61 Deduplicar eventos · #62 Sem cabeçalho Origin · #63 Limite mensal por plano
 - [ ] LGPD: #64 Termos · #65 Privacidade · #66 Exclusão de conta · #67 DPO · #68 Aviso do rastreador
 - [ ] GA4: #69 · #70 Flag por ambiente · #71 Teste em staging · #72 Estados de erro · #14 Verificação OAuth Google
 - [ ] #13 Observabilidade: erros e alertas de crons
 
-## Fase 5 — Pós-lançamento (P2)
-- [ ] #15 Testes automatizados mínimos
-- [ ] #16 Refatorar App.tsx e worker.ts (junto/depois da Fase 1)
+## Fase 6 — Admin, funil, interface e diferenciais
 - [ ] #17 Painel admin interno
 - [ ] #18 Analytics do próprio funil
 - [ ] UI: #73 · #74 Menu do perfil · #75 Botões sem ação
-- [ ] Negócio: #76–#83 (WhatsApp, benchmark, metas, agências, Search Console, LGPD, indicação)
+- [ ] Negócio: #76 · #77 WhatsApp · #78 Benchmark · #79 Metas e alertas · #80 Agências · #81 Search Console · #83 Indicação
+
+## Lançamento
+- [ ] Todos os cards acima concluídos
