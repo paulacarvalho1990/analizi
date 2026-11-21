@@ -437,6 +437,7 @@ async function provisionTrackerSite(request: Request, env: Env) {
   const existing = await lookup(id)
   if (existing && existing.supabase_site_id !== site.id && existing.supabase_site_id !== id) return json({ error: 'Este identificador pertence a outro site.' }, 403)
 
+  // Plano vem do negócio; uma linha já marcada como admin no D1 (sites internos) não é rebaixada.
   const businessPlan = site.businesses?.plan
   const plan = businessPlan === 'admin' || businessPlan === 'growth' ? businessPlan : 'essential'
   await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare(`
@@ -444,7 +445,7 @@ async function provisionTrackerSite(request: Request, env: Env) {
     values (?, ?, ?, ?, ?, 1)
     on conflict(tracker_site_id) do update set
       supabase_site_id = excluded.supabase_site_id, business_id = excluded.business_id,
-      domain = excluded.domain, plan = excluded.plan, is_active = 1, updated_at = current_timestamp
+      domain = excluded.domain, plan = case when tracker_sites.plan = 'admin' then 'admin' else excluded.plan end, is_active = 1, updated_at = current_timestamp
   `).bind(id, site.id, site.business_id, plan, domain)])
   return json({ trackerSiteId: id, domain, plan })
 }
