@@ -2242,9 +2242,14 @@ async function requireSiteAccess(request: Request, env: Env, trackerSiteId: stri
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return json({ error: 'Autenticação não configurada no servidor.' }, 503)
   const user = await authenticatedUser(request, env)
   if (!user) return json({ error: 'Sessão inválida.' }, 401)
-  const site = await ownedSite(trackerSiteId, user, env)
-  if (!site || site.tracker_site_id.toUpperCase() !== trackerSiteId.toUpperCase()) return json({ error: 'Site não encontrado.' }, 404)
-  return null
+  const requested = trackerSiteId.toUpperCase()
+  // Passa o id também como fallback: sites antigos têm no D1 um tracker_site_id
+  // diferente do gravado no Supabase, ligado pelo supabase_site_id.
+  const site = await ownedSite(requested, user, env, requested)
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  if (site.tracker_site_id.toUpperCase() === requested) return null
+  const linked = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select supabase_site_id from tracker_sites where tracker_site_id = ? and is_active = 1').bind(requested)]) as Array<{ results?: Array<{ supabase_site_id: string }> }>
+  return linked[0]?.results?.[0]?.supabase_site_id === site.id ? null : json({ error: 'Site não encontrado.' }, 404)
 }
 
 async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trackerSiteId = '', businessId = ''): Promise<{ id: string, tracker_site_id: string } | null> {
