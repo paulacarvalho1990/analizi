@@ -11,3 +11,10 @@ const key = rawKey && !rawKey.includes('placeholder') && !rawKey.includes('cole_
 
 export const supabase = url && key ? createClient(url, key) : null
 
+
+// Cabeçalho de autorização para as rotas protegidas do Worker.
+export async function authHeaders(): Promise<Record<string, string>> {
+  if (!supabase) return {}
+  const { data: { session } } = await supabase.auth.getSession()
+  return session?.access_token ? { authorization: `Bearer ${session.access_token}` } : {}
+}

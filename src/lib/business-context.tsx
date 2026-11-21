@@ -1,6 +1,6 @@
 import type { SiteType } from './siteTypes'
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
-import { supabase } from './supabase'
+import { authHeaders, supabase } from './supabase'
 
 export type PlanTier = 'essential' | 'growth' | 'admin'
 export type SubscriptionStatus = 'active' | 'trialing' | 'past_due' | 'canceled'
@@ -287,7 +287,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
           // eventos. Reconcilia sites antigos cujo tracker_site_id no Supabase
           // ficou desatualizado após o provisionamento inicial.
           try {
-            const trackerResponse = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites')
+            const trackerResponse = await fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites', { headers: await authHeaders() })
             if (trackerResponse.ok) {
               const trackerPayload = await trackerResponse.json() as { sites?: Array<{ tracker_site_id: string; supabase_site_id?: string; domain: string }> }
               const trackerSites = trackerPayload.sites || []
@@ -618,14 +618,8 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
     try {
       await fetch('/v1/tracker-sites', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          trackerSiteId: createdSite.tracker_site_id,
-          domain: createdSite.domain,
-          supabaseSiteId: createdSite.id,
-          businessId: createdBusiness.id,
-          plan: effectivePlan.id
-        })
+        headers: { 'content-type': 'application/json', ...await authHeaders() },
+        body: JSON.stringify({ trackerSiteId: createdSite.tracker_site_id, supabaseSiteId: createdSite.id })
       })
     } catch {
       // ignora falha de rede

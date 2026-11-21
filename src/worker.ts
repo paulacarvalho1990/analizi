@@ -376,32 +376,76 @@ function siteDomain(value: unknown) {
   return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain) ? domain : ''
 }
 
+type TrackerSiteRow = { tracker_site_id: string; supabase_site_id: string; business_id: string; plan: string; domain: string; is_active: number; created_at: string }
+
+/** Consulta o Supabase com o token do usuário: o RLS limita o resultado ao que ele pode ver. */
+async function supabaseAsUser<T>(path: string, user: AuthenticatedUser, env: Env): Promise<T | null> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, { headers: { apikey: env.SUPABASE_ANON_KEY!, authorization: `Bearer ${user.token}` } })
+  return res.ok ? await res.json() as T : null
+}
+
 async function provisionTrackerSite(request: Request, env: Env) {
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' } })
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type, authorization' } })
+  if (request.method !== 'GET' && request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Faça login para acessar os sites.' }, 401)
+
   if (request.method === 'GET') {
     const listResult = await env.ANALIZI_EVENTS.batch([
       env.ANALIZI_EVENTS.prepare('select tracker_site_id, supabase_site_id, business_id, plan, domain, is_active, created_at from tracker_sites where is_active = 1 order by created_at asc')
-    ]) as Array<{ results?: Array<{ tracker_site_id: string; supabase_site_id: string; business_id: string; plan: string; domain: string; is_active: number; created_at: string }> }>
-    return json({ sites: listResult[0]?.results || [] })
+    ]) as Array<{ results?: TrackerSiteRow[] }>
+    const all = listResult[0]?.results || []
+    // A consulta com o token do usuário também valida a assinatura do JWT no Supabase.
+    const mine = await supabaseAsUser<Array<{ id: string, domain: string, tracker_site_id: string }>>('sites?select=id,domain,tracker_site_id', user, env)
+    if (!mine) return json({ error: 'Sessão inválida.' }, 401)
+    if (await isAdminUser(user.id, env)) return json({ sites: all })
+    const ids = new Set(mine.map(site => site.id))
+    const trackers = new Set(mine.map(site => site.tracker_site_id))
+    const domains = new Set(mine.map(site => siteDomain(site.domain)).filter(Boolean))
+    // Linhas antigas sem vínculo (supabase_site_id = tracker_site_id) só aparecem pelo domínio de um site do próprio usuário.
+    const sites = all.filter(row => ids.has(row.supabase_site_id) || trackers.has(row.tracker_site_id)
+      || (row.supabase_site_id === row.tracker_site_id && domains.has(row.domain)))
+    return json({ sites })
   }
-  if (request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405)
-  let payload: { trackerSiteId?: unknown, domain?: unknown, supabaseSiteId?: unknown, businessId?: unknown, plan?: unknown }
+
+  let payload: { trackerSiteId?: unknown, supabaseSiteId?: unknown }
   try { payload = await request.json() } catch { return json({ error: 'Formato inválido.' }, 400) }
-  const id = trackerId(payload.trackerSiteId)
-  const domain = siteDomain(payload.domain)
   const supabaseSiteId = compactText(payload.supabaseSiteId, 64)
-  const businessId = compactText(payload.businessId, 64)
-  const rawPlan = compactText(payload.plan, 24).toLowerCase()
-  const plan = rawPlan === 'admin' || rawPlan === 'growth' ? rawPlan : 'essential'
-  if (!id || !domain) return json({ error: 'Identificação ou domínio inválido.' }, 400)
+  if (!/^[0-9a-f-]{36}$/i.test(supabaseSiteId)) return json({ error: 'Site inválido.' }, 400)
+
+  // Site, domínio e plano vêm do Supabase (com RLS), nunca do payload.
+  const rows = await supabaseAsUser<Array<{ id: string, business_id: string, domain: string, tracker_site_id: string, businesses: { owner_id: string, plan: string } | null }>>(
+    `sites?id=eq.${encodeURIComponent(supabaseSiteId)}&select=id,business_id,domain,tracker_site_id,businesses(owner_id,plan)&limit=1`, user, env)
+  const site = rows?.[0]
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  const domain = siteDomain(site.domain)
+  if (!domain) return json({ error: 'Domínio inválido.' }, 400)
+
+  let canManage = site.businesses?.owner_id === user.id
+  if (!canManage) {
+    const members = await supabaseAsUser<Array<{ role: string }>>(`business_members?business_id=eq.${encodeURIComponent(site.business_id)}&user_id=eq.${encodeURIComponent(user.id)}&select=role&limit=1`, user, env)
+    canManage = ['owner', 'admin'].includes(members?.[0]?.role || '')
+  }
+  if (!canManage) return json({ error: 'Só o dono ou um administrador do negócio pode alterar o site.' }, 403)
+
+  // Aceita o identificador do payload só se ele já estiver ligado a este site no D1.
+  const requestedId = trackerId(payload.trackerSiteId)
+  const lookup = async (id: string) => (await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select supabase_site_id from tracker_sites where tracker_site_id = ?').bind(id)]) as Array<{ results?: Array<{ supabase_site_id: string }> }>)[0]?.results?.[0]
+  const requestedRow = requestedId && requestedId !== site.tracker_site_id ? await lookup(requestedId) : undefined
+  const id = requestedRow?.supabase_site_id === site.id ? requestedId : trackerId(site.tracker_site_id)
+  if (!id) return json({ error: 'Identificação inválida.' }, 400)
+  const existing = await lookup(id)
+  if (existing && existing.supabase_site_id !== site.id && existing.supabase_site_id !== id) return json({ error: 'Este identificador pertence a outro site.' }, 403)
+
+  const businessPlan = site.businesses?.plan
+  const plan = businessPlan === 'admin' || businessPlan === 'growth' ? businessPlan : 'essential'
   await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare(`
     insert into tracker_sites (tracker_site_id, supabase_site_id, business_id, plan, domain, is_active)
     values (?, ?, ?, ?, ?, 1)
     on conflict(tracker_site_id) do update set
-      supabase_site_id = case when excluded.supabase_site_id <> excluded.tracker_site_id then excluded.supabase_site_id else tracker_sites.supabase_site_id end,
-      business_id = case when excluded.business_id <> excluded.tracker_site_id then excluded.business_id else tracker_sites.business_id end,
-      domain = excluded.domain, plan = case when tracker_sites.plan = 'admin' then 'admin' else excluded.plan end, is_active = 1, updated_at = current_timestamp
-  `).bind(id, supabaseSiteId || id, businessId || id, plan, domain)])
+      supabase_site_id = excluded.supabase_site_id, business_id = excluded.business_id,
+      domain = excluded.domain, plan = excluded.plan, is_active = 1, updated_at = current_timestamp
+  `).bind(id, site.id, site.business_id, plan, domain)])
   return json({ trackerSiteId: id, domain, plan })
 }
 
