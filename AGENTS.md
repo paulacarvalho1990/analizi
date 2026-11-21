@@ -37,6 +37,15 @@ Este documento define as regras estritas de operação do Git para qualquer dese
 
 ---
 
+4. **Coordenação entre sessões (evitar conflito no git)** — obrigatório antes de começar a mexer em qualquer coisa:
+   - `git fetch origin` e liste o que está em andamento: `git worktree list`, `git branch -a --sort=-committerdate | head -20` e `gh pr list --state open`.
+   - Para cada branch/PR aberta, veja quais arquivos ela toca (`git diff --stat origin/develop...<branch>` ou `gh pr diff <n> --name-only`).
+   - Se outra sessão/branch estiver mexendo nos mesmos arquivos que a sua tarefa vai tocar: **não comece**. Avise o desenvolvedor e aguarde a outra PR ser mergeada (ou combine a ordem), depois parta da `develop` atualizada.
+   - Trabalhe sempre na sua própria worktree/branch. Nunca edite arquivos de outra worktree nem faça checkout da branch de outra sessão.
+   - Antes de abrir a PR, rode `git fetch origin && git merge origin/develop` na sua branch e resolva conflitos localmente.
+
+---
+
 ## 2. Política de Commits Atômicos
 
 > [!IMPORTANT]
@@ -86,6 +95,19 @@ Este documento define as regras estritas de operação do Git para qualquer dese
 >      ```bash
 >      git branch -d feature/nome-da-mudanca
 >      ```
+
+---
+
+## 3.1 Pull Requests e Code Review
+
+> [!IMPORTANT]
+> **Toda PR só pode ser mergeada depois de pelo menos 1 code review.**
+
+- **Toda feature nova fica numa branch nova** (`feature/<nome>` ou `fix/<nome>`), criada a partir da `develop` atualizada. Nunca reaproveite a branch de outra feature.
+- **Uma PR por vez:** cada branch sobe uma única PR, com uma única feature/correção. Não abra a próxima PR enquanto a anterior não tiver sido revisada e mergeada, salvo se tocarem arquivos totalmente diferentes e o desenvolvedor autorizar.
+- Fluxo obrigatório: abrir PR para `develop` → code review (humano ou `/code-review`) → corrigir ou responder cada apontamento → merge.
+- Proibido `gh pr create && gh pr merge` em sequência, ou merge local na `develop` sem PR revisada.
+- O merge na `develop` descrito nas seções 3 e 6 só acontece depois da PR aprovada.
 
 ---
 
