@@ -102,6 +102,8 @@ Este documento define as regras estritas de operação do Git para qualquer dese
 
 > [!IMPORTANT]
 > **Toda PR só pode ser mergeada depois de pelo menos 1 code review.**
+>
+> **Exceção:** PRs que alteram **somente arquivos `.md`** (documentação, regras, planos) dispensam code review e podem ser mergeadas direto. Se a PR tiver qualquer outro arquivo, a revisão é obrigatória.
 
 - **Toda feature nova fica numa branch nova** (`feature/<nome>` ou `fix/<nome>`), criada a partir da `develop` atualizada. Nunca reaproveite a branch de outra feature.
 - **Uma PR por vez:** cada branch sobe uma única PR, com uma única feature/correção. Não abra a próxima PR enquanto a anterior não tiver sido revisada e mergeada, salvo se tocarem arquivos totalmente diferentes e o desenvolvedor autorizar.
@@ -130,7 +132,7 @@ Este documento define as regras estritas de operação do Git para qualquer dese
 12. O que ficar para depois vira card no Project, com o link na resposta do comentário.
 
 **Merge**
-13. Só com ≥ 1 aprovação, todos os comentários resolvidos e nenhum `bloqueante` aberto.
+13. (Exceto PRs só de `.md`) Só com ≥ 1 aprovação, todos os comentários resolvidos e nenhum `bloqueante` aberto.
 14. Se a PR mudar significativamente após a aprovação, peça nova revisão.
 15. Após o merge, apague a branch.
 
