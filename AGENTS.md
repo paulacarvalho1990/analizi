@@ -132,7 +132,11 @@ Este documento define as regras estritas de operação do Git para qualquer dese
 **Merge**
 13. Só com ≥ 1 aprovação, todos os comentários resolvidos e nenhum `bloqueante` aberto.
 14. Se a PR mudar significativamente após a aprovação, peça nova revisão.
-15. Após o merge, apague a branch e mova o card no Project.
+15. Após o merge, apague a branch.
+
+**Cards no GitHub Project**
+17. Um card só vai para **Done** depois do code review aprovado **e** do merge. Abrir a PR não conclui o card.
+18. Ao mergear, para **cada card** resolvido pela PR: comente a solução realizada (o que foi feito, arquivos/rotas afetados, link da PR e commits, como foi validado, pendências que viraram outro card), marque o checklist, feche a issue e mova para Done.
 
 **Revisões por IA (`/code-review`)**
 16. Publique os achados como comentários na PR (`--comment`), um por problema, seguindo as mesmas regras de responder e resolver.
