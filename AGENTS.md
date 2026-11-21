@@ -37,6 +37,15 @@ Este documento define as regras estritas de operação do Git para qualquer dese
 
 ---
 
+4. **Coordenação entre sessões (evitar conflito no git)** — obrigatório antes de começar a mexer em qualquer coisa:
+   - `git fetch origin` e liste o que está em andamento: `git worktree list`, `git branch -a --sort=-committerdate | head -20` e `gh pr list --state open`.
+   - Para cada branch/PR aberta, veja quais arquivos ela toca (`git diff --stat origin/develop...<branch>` ou `gh pr diff <n> --name-only`).
+   - Se outra sessão/branch estiver mexendo nos mesmos arquivos que a sua tarefa vai tocar: **não comece**. Avise o desenvolvedor e aguarde a outra PR ser mergeada (ou combine a ordem), depois parta da `develop` atualizada.
+   - Trabalhe sempre na sua própria worktree/branch. Nunca edite arquivos de outra worktree nem faça checkout da branch de outra sessão.
+   - Antes de abrir a PR, rode `git fetch origin && git merge origin/develop` na sua branch e resolva conflitos localmente.
+
+---
+
 ## 2. Política de Commits Atômicos
 
 > [!IMPORTANT]
@@ -86,6 +95,53 @@ Este documento define as regras estritas de operação do Git para qualquer dese
 >      ```bash
 >      git branch -d feature/nome-da-mudanca
 >      ```
+
+---
+
+## 3.1 Pull Requests e Code Review
+
+> [!IMPORTANT]
+> **Toda PR só pode ser mergeada depois de pelo menos 1 code review.**
+>
+> **Exceção:** PRs que alteram **somente arquivos `.md`** (documentação, regras, planos) dispensam code review e podem ser mergeadas direto. Se a PR tiver qualquer outro arquivo, a revisão é obrigatória.
+
+- **Toda feature nova fica numa branch nova** (`feature/<nome>` ou `fix/<nome>`), criada a partir da `develop` atualizada. Nunca reaproveite a branch de outra feature.
+- **Uma PR por vez:** cada branch sobe uma única PR, com uma única feature/correção. Não abra a próxima PR enquanto a anterior não tiver sido revisada e mergeada, salvo se tocarem arquivos totalmente diferentes e o desenvolvedor autorizar.
+- Fluxo obrigatório: abrir PR para `develop` → code review (humano ou `/code-review`) → corrigir ou responder cada apontamento → merge.
+- Proibido `gh pr create && gh pr merge` em sequência, ou merge local na `develop` sem PR revisada.
+- O merge na `develop` descrito nas seções 3 e 6 só acontece depois da PR aprovada.
+
+### Regras de Code Review
+
+**Antes de pedir review (autor)**
+1. Faça uma auto-revisão do diff.
+2. Descrição da PR com o que mudou, por quê, como foi testado e o card (`Closes #N`).
+3. Só peça review com build passando e sem conflito com a `develop`.
+4. PR pequena e focada em uma feature/correção.
+
+**Durante o review (revisor)**
+5. **Um comentário por problema**, na linha exata do código. Não agrupe vários problemas num comentário.
+6. Prefixe a gravidade: `bloqueante:` (bug, segurança, perda de dados — impede o merge), `sugestão:` (opcional), `dúvida:` (pedido de explicação), `nit:` (estilo/nome).
+7. Explique com um cenário concreto ("se X, acontece Y") e, quando possível, sugira a correção.
+8. Ordem de revisão: segurança e permissões → correção do comportamento → dados e migrações → testes → legibilidade.
+
+**Depois do review (autor)**
+9. Responda **todo** comentário: "corrigido em `<sha>`" ou o motivo de não corrigir.
+10. Cada correção em commit próprio referenciando o comentário; sem reescrever o histórico da PR.
+11. **Marque o comentário como resolvido** só depois de corrigir ou responder. Em `bloqueante`, de preferência quem resolve é o revisor.
+12. O que ficar para depois vira card no Project, com o link na resposta do comentário.
+
+**Merge**
+13. (Exceto PRs só de `.md`) Só com ≥ 1 aprovação, todos os comentários resolvidos e nenhum `bloqueante` aberto.
+14. Se a PR mudar significativamente após a aprovação, peça nova revisão.
+15. Após o merge, apague a branch.
+
+**Cards no GitHub Project**
+17. Um card só vai para **Done** depois do code review aprovado **e** do merge. Abrir a PR não conclui o card.
+18. Ao mergear, para **cada card** resolvido pela PR: comente a solução realizada (o que foi feito, arquivos/rotas afetados, link da PR e commits, como foi validado, pendências que viraram outro card), marque o checklist, feche a issue e mova para Done.
+
+**Revisões por IA (`/code-review`)**
+16. Publique os achados como comentários na PR (`--comment`), um por problema, seguindo as mesmas regras de responder e resolver.
 
 ---
 
