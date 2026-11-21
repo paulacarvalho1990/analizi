@@ -2238,11 +2238,35 @@ async function authenticatedUser(request: Request, env: Env): Promise<Authentica
 
 // Exige sessão válida e vínculo do usuário com o negócio dono do site.
 // Retorna a resposta de erro ou null quando o acesso é permitido.
+// Acessos já liberados, por isolate, para não repetir 3 a 5 consultas ao Supabase
+// a cada chamada do painel. Chave: hash do token + site; vale 60 s.
+const siteAccessCache = new Map<string, number>()
+const SITE_ACCESS_TTL_MS = 60_000
+
+async function siteAccessKey(token: string, trackerSiteId: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${token}|${trackerSiteId}`))
+  return b64encode(new Uint8Array(digest))
+}
+
 async function requireSiteAccess(request: Request, env: Env, trackerSiteId: string): Promise<Response | null> {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return json({ error: 'Autenticação não configurada no servidor.' }, 503)
+  const requested = trackerSiteId.toUpperCase()
+  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return json({ error: 'Sessão inválida.' }, 401)
+  const cacheKey = await siteAccessKey(token, requested)
+  const now = Date.now()
+  if ((siteAccessCache.get(cacheKey) || 0) > now) return null
+  const denied = await checkSiteAccess(request, env, requested)
+  if (!denied) {
+    if (siteAccessCache.size > 1000) siteAccessCache.clear()
+    siteAccessCache.set(cacheKey, now + SITE_ACCESS_TTL_MS)
+  }
+  return denied
+}
+
+async function checkSiteAccess(request: Request, env: Env, requested: string): Promise<Response | null> {
   const user = await authenticatedUser(request, env)
   if (!user) return json({ error: 'Sessão inválida.' }, 401)
-  const requested = trackerSiteId.toUpperCase()
   // Passa o id também como fallback: sites antigos têm no D1 um tracker_site_id
   // diferente do gravado no Supabase, ligado pelo supabase_site_id.
   const site = await ownedSite(requested, user, env, requested)
