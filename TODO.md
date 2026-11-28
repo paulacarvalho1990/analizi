@@ -10,7 +10,12 @@ Cards no [GitHub Project ANALIZI](https://github.com/users/paulacarvalho1990/pro
 - [ ] #53 Alinhar teste grátis em 7 dias (banco hoje dá 30)
 - [ ] #25 [D1] Definir arquitetura da migração e registrar a decisão
 
-## Fase 1 — Refatoração (prepara a migração)
+## Fase 1 — Correções e refatoração (prepara a migração)
+- [ ] #99 Função create_business_for_current_user aceita status e vencimento enviados pelo navegador (P0)
+- [ ] #90 Tempo de carregamento da página não aparece para alguns sites
+- [ ] #89 Ajustes de Dados do Site e Configurações: #91 Remover painel "Como a IZI vai usar isso" · #92 Remover exemplo de relatório em E-mails e alertas · #93 Abas de Configurações como sub-páginas na URL
+- [ ] #101 Correções e pendências diversas
+- [ ] #100 Trazer TODO.md para a develop e marcar a Fase 0 como concluída
 - [ ] #16 Refatorar App.tsx e worker.ts em módulos + atualizar MVP-ROADMAP (só mover código, sem mudar comportamento)
 
 ## Fase 2 — Migração Supabase → D1 (#24)
