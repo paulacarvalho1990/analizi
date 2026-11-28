@@ -2221,20 +2221,59 @@ function ga4Configured(env: Env) {
 async function authenticatedUser(request: Request, env: Env): Promise<AuthenticatedUser | null> {
   const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
   if (!token || !env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null
-  // O PostgREST valida a assinatura e as políticas RLS na consulta de ownedSite.
-  // Aqui só extraímos o subject para evitar uma chamada extra ao endpoint Auth,
-  // que pode rejeitar tokens válidos quando a chave pública foi rotacionada.
+  // Valida o token no Supabase Auth (assinatura, expiração e revogação).
+  // Decodificar o JWT sem verificar permitiria forjar o "sub" de outro usuário.
   try {
-    const part = token.split('.')[1]
-    if (!part) return null
-    const normalized = part.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((part.length + 3) % 4)
-    const claims = JSON.parse(atob(normalized)) as { sub?: string, exp?: number, iss?: string }
-    if (!claims.sub || (claims.exp && claims.exp < Math.floor(Date.now() / 1000))) return null
-    if (claims.iss && !claims.iss.includes('/auth/v1')) return null
-    return { id: claims.sub, token }
+    const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${token}` } })
+    if (!response.ok) {
+      console.warn('auth_validation_failed', JSON.stringify({ status: response.status }))
+      return null
+    }
+    const body = await response.json() as { id?: string }
+    return body.id ? { id: body.id, token } : null
   } catch {
     return null
   }
+}
+
+// Exige sessão válida e vínculo do usuário com o negócio dono do site.
+// Retorna a resposta de erro ou null quando o acesso é permitido.
+// Acessos já liberados, por isolate, para não repetir 3 a 5 consultas ao Supabase
+// a cada chamada do painel. Chave: hash do token + site; vale 60 s.
+const siteAccessCache = new Map<string, number>()
+const SITE_ACCESS_TTL_MS = 60_000
+
+async function siteAccessKey(token: string, trackerSiteId: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${token}|${trackerSiteId}`))
+  return b64encode(new Uint8Array(digest))
+}
+
+async function requireSiteAccess(request: Request, env: Env, trackerSiteId: string): Promise<Response | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return json({ error: 'Autenticação não configurada no servidor.' }, 503)
+  const requested = trackerSiteId.toUpperCase()
+  const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return json({ error: 'Sessão inválida.' }, 401)
+  const cacheKey = await siteAccessKey(token, requested)
+  const now = Date.now()
+  if ((siteAccessCache.get(cacheKey) || 0) > now) return null
+  const denied = await checkSiteAccess(request, env, requested)
+  if (!denied) {
+    if (siteAccessCache.size > 1000) siteAccessCache.clear()
+    siteAccessCache.set(cacheKey, now + SITE_ACCESS_TTL_MS)
+  }
+  return denied
+}
+
+async function checkSiteAccess(request: Request, env: Env, requested: string): Promise<Response | null> {
+  const user = await authenticatedUser(request, env)
+  if (!user) return json({ error: 'Sessão inválida.' }, 401)
+  // Passa o id também como fallback: sites antigos têm no D1 um tracker_site_id
+  // diferente do gravado no Supabase, ligado pelo supabase_site_id.
+  const site = await ownedSite(requested, user, env, requested)
+  if (!site) return json({ error: 'Site não encontrado.' }, 404)
+  if (site.tracker_site_id.toUpperCase() === requested) return null
+  const linked = await env.ANALIZI_EVENTS.batch([env.ANALIZI_EVENTS.prepare('select supabase_site_id from tracker_sites where tracker_site_id = ? and is_active = 1').bind(requested)]) as Array<{ results?: Array<{ supabase_site_id: string }> }>
+  return linked[0]?.results?.[0]?.supabase_site_id === site.id ? null : json({ error: 'Site não encontrado.' }, 404)
 }
 
 async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trackerSiteId = '', businessId = ''): Promise<{ id: string, tracker_site_id: string } | null> {
@@ -2245,8 +2284,11 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
     audit('supabase_not_configured')
     return null
   }
-  const apiKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY
-  const requestHeaders = { apikey: apiKey, authorization: `Bearer ${apiKey}` }
+  // Sem a service role, as consultas usam o token do próprio usuário para que
+  // o RLS do Supabase limite o que ele enxerga (nunca a chave anônima pura).
+  const requestHeaders = env.SUPABASE_SERVICE_ROLE_KEY
+    ? { apikey: env.SUPABASE_SERVICE_ROLE_KEY, authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` }
+    : { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${user.token}` }
   const encodedSite = encodeURIComponent(siteId)
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
   if (!response.ok) {
@@ -2256,7 +2298,6 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
   const rows = await response.json() as Array<{ id: string, tracker_site_id: string, business_id: string }>
   audit('site_query_complete', { rows: rows.length, hasTrackerFallback: Boolean(trackerSiteId), hasBusinessFallback: Boolean(businessId) })
   const isMember = async (businessId: string) => {
-    if (!env.SUPABASE_SERVICE_ROLE_KEY) return true
     const memberResponse = await fetch(`${env.SUPABASE_URL}/rest/v1/business_members?business_id=eq.${encodeURIComponent(businessId)}&user_id=eq.${encodeURIComponent(user.id)}&select=user_id&limit=1`, { headers: requestHeaders })
     if (!memberResponse.ok) {
       audit('membership_query_failed', { status: memberResponse.status })
@@ -2962,7 +3003,7 @@ async function ga4Analytics(request: Request, env: Env, query: URLSearchParams) 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
-    if (request.method === 'OPTIONS' && (url.pathname.startsWith('/v1/ga4/') || url.pathname === '/v1/weekly-report')) {
+    if (request.method === 'OPTIONS' && (url.pathname.startsWith('/v1/ga4/') || url.pathname === '/v1/weekly-report' || /^\/v1\/(analytics|heatmap)\/|^\/v1\/tracker-sites\/[^/]+\/status$/i.test(url.pathname))) {
       return new Response(null, { status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type' } })
     }
     if (url.pathname === '/v1/events' || url.pathname === '/v1/sync' || url.pathname === '/v1/collect') {
@@ -2983,11 +3024,11 @@ export default {
     if (url.pathname === '/v1/ga4/analytics' && request.method === 'GET') return ga4Analytics(request, env, url.searchParams)
     if (url.pathname === '/v1/weekly-report' && request.method === 'GET') return weeklyReport(request, env, url.searchParams)
     const statusMatch = url.pathname.match(/^\/v1\/tracker-sites\/(ANLZ[A-Z0-9]{5}-A)\/status$/i)
-    if (statusMatch) return trackerStatus(statusMatch[1], env)
+    if (statusMatch) return (await requireSiteAccess(request, env, statusMatch[1])) || trackerStatus(statusMatch[1], env)
     const analyticsMatch = url.pathname.match(/^\/v1\/analytics\/(ANLZ[A-Z0-9]{5}-A)$/i)
-    if (analyticsMatch) return analytics(analyticsMatch[1], env, url.searchParams)
+    if (analyticsMatch) return (await requireSiteAccess(request, env, analyticsMatch[1])) || analytics(analyticsMatch[1], env, url.searchParams)
     const heatmapMatch = url.pathname.match(/^\/v1\/heatmap\/(ANLZ[A-Z0-9]{5}-A)$/i)
-    if (heatmapMatch) return heatmapData(heatmapMatch[1], env, url.searchParams)
+    if (heatmapMatch) return (await requireSiteAccess(request, env, heatmapMatch[1])) || heatmapData(heatmapMatch[1], env, url.searchParams)
     if (url.pathname === '/v1/ai-insights') return generateAIInsights(request, env)
     return env.ASSETS.fetch(request)
   },
