@@ -4026,7 +4026,12 @@ export function App() {
         if (!currentUser) { setMode(targetPublicPage); return; }
 
         // Verifica se possui negócio cadastrado
-        const { data: businesses, error: bizError } = await client.from('businesses').select('id').limit(1);
+        let { data: businesses, error: bizError } = await client.from('businesses').select('id').limit(1);
+        if (!bizError && !businesses?.length) {
+          // Convidado no primeiro acesso: aceita o convite antes de mandar para o cadastro.
+          const { error: acceptError } = await client.rpc('accept_pending_invitations_for_user', { p_user_id: currentUser.id, p_email: currentUser.email ?? '' });
+          if (!acceptError) ({ data: businesses, error: bizError } = await client.from('businesses').select('id').limit(1));
+        }
         if (!bizError && businesses && businesses.length > 0) {
           // Usuários já cadastrados não devem voltar ao consentimento a cada login.
           setMode('app');
