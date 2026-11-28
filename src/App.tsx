@@ -3206,6 +3206,8 @@ function PeopleTab({ onToast }: { onToast: (t: string) => void }) {
         if (currentMember) { setFormError(alreadyMember); return }
         const { error } = await supabase.from('business_members').insert({ business_id: businessId, user_id: existingProfile.id, role })
         if (error) { setFormError(error.code === '23505' ? alreadyMember : error.message); return }
+        // O acesso já foi dado: um convite anterior para este e-mail perde a função.
+        await supabase.from('business_invitations').delete().eq('business_id', businessId).eq('email', address)
         onToast(`${existingProfile.full_name || address} já usa o Analizi e recebeu acesso na hora`)
         await load()
       } else {
