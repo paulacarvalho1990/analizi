@@ -1,9 +1,8 @@
 -- =============================================================================
--- Migration: plano e assinatura só podem ser definidos pelo servidor (card #99)
+-- Migration: plano e assinatura do negócio vêm do perfil do dono (card #99, parte A)
 -- ATENÇÃO: publicar o front antes de aplicar (o front antigo envia p_plan etc.).
 -- =============================================================================
 
--- 1. A função deixa de receber plano, status e vencimento do navegador.
 drop function if exists public.create_business_for_current_user(uuid, text, text, text, text, text, text, text, text, timestamptz);
 
 create or replace function public.create_business_for_current_user(
@@ -50,12 +49,5 @@ $$;
 
 revoke all on function public.create_business_for_current_user(uuid, text, text, text, text, text, text) from public, anon;
 grant execute on function public.create_business_for_current_user(uuid, text, text, text, text, text, text) to authenticated;
-
--- 2. Escrita direta: só as colunas que o app edita. O RLS limita linhas, não colunas,
---    e revogar por coluna não desfaz um grant de tabela; por isso revoga e concede de novo.
---    Perfis nascem pelo trigger handle_new_user; negócios, pela função acima.
-revoke insert, update, delete, truncate on public.profiles, public.businesses from anon, authenticated;
-grant update (full_name, email, phone) on public.profiles to authenticated;
-grant update (name, website_url, segment, subsegment, segment_detail) on public.businesses to authenticated;
 
 notify pgrst, 'reload schema';
