@@ -50,4 +50,10 @@ $$;
 revoke all on function public.create_business_for_current_user(uuid, text, text, text, text, text, text) from public, anon;
 grant execute on function public.create_business_for_current_user(uuid, text, text, text, text, text, text) to authenticated;
 
+-- Só os privilégios que o app usa (remove também trigger, references e maintain).
+revoke all on public.profiles, public.businesses from anon, authenticated;
+grant select on public.profiles, public.businesses to anon, authenticated;
+grant update (full_name, email, phone) on public.profiles to authenticated;
+grant update (name, website_url, segment, subsegment, segment_detail) on public.businesses to authenticated;
+
 notify pgrst, 'reload schema';
