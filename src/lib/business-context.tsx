@@ -468,7 +468,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
   }, [userProfile, currentBusiness])
 
   const subscriptionStatus = useMemo<SubscriptionStatus>(() => {
-    return currentBusiness?.subscription_status || userProfile?.subscription_status || 'active'
+    return currentBusiness?.subscription_status || userProfile?.subscription_status || 'trialing'
   }, [currentBusiness, userProfile])
 
   const subscriptionExpiresAt = useMemo<string | null>(() => {
