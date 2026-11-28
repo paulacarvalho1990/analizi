@@ -3990,6 +3990,17 @@ import { Heatmap } from './components/Heatmap';
 const GA4_ENABLED = false;
 
 
+/** Convidado sem negócio: aceita o convite e diz qual é a próxima tela. Chamar só depois dos termos aceitos. */
+async function nextScreenAfterConsent(): Promise<AuthPage> {
+  if (!supabase) return 'onboarding-business';
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return 'login';
+  const { error } = await supabase.rpc('accept_pending_invitations_for_user', { p_user_id: session.user.id, p_email: session.user.email ?? '' });
+  if (error) return 'onboarding-business';
+  const { data: businesses } = await supabase.from('businesses').select('id').limit(1);
+  return businesses?.length ? 'app' : 'onboarding-business';
+}
+
 export function App() {
   const [mode, setMode] = useState<AuthPage>(() => {
     if (PROTOTYPE_TYPE) return 'app';
@@ -4029,17 +4040,12 @@ export function App() {
         if (!currentUser) { setMode(targetPublicPage); return; }
 
         // Verifica se possui negócio cadastrado
-        let { data: businesses, error: bizError } = await client.from('businesses').select('id').limit(1);
-        if (!bizError && !businesses?.length) {
-          // Convidado no primeiro acesso: aceita o convite antes de mandar para o cadastro.
-          const { error: acceptError } = await client.rpc('accept_pending_invitations_for_user', { p_user_id: currentUser.id, p_email: currentUser.email ?? '' });
-          if (!acceptError) ({ data: businesses, error: bizError } = await client.from('businesses').select('id').limit(1));
-        }
+        const { data: businesses, error: bizError } = await client.from('businesses').select('id').limit(1);
         if (!bizError && businesses && businesses.length > 0) {
           // Usuários já cadastrados não devem voltar ao consentimento a cada login.
           setMode('app');
         } else if (!bizError) {
-          // O aceite faz parte apenas do cadastro de um novo usuário.
+          // Quem ainda não tem negócio aceita os termos antes de se cadastrar ou de entrar por convite.
           const { data: consents, error: consentError } = await client
             .from('user_consents')
             .select('consent_key')
@@ -4047,7 +4053,7 @@ export function App() {
             .in('consent_key', ['service_terms', 'site_data_processing']);
 
           if (!consentError && (consents?.length ?? 0) < 2) setMode('consent');
-          else setMode('onboarding-business');
+          else setMode(consentError ? 'onboarding-business' : await nextScreenAfterConsent());
         } else {
           // Em caso de erro transitório de rede na consulta, mantém na app se já estava autenticado
           setMode('app');
@@ -4090,7 +4096,11 @@ export function App() {
     return (
       <AuthFlow
         mode={(mode === 'signup' ? 'login' : mode) as AuthFlowMode}
-        setMode={(next) => setMode(next)}
+        setMode={(next) => {
+          if (mode !== 'consent' || next !== 'onboarding-business') { setMode(next); return; }
+          setMode('loading');
+          nextScreenAfterConsent().then(setMode, () => setMode('onboarding-business'));
+        }}
         onSourceCreated={(source) => {
           setMode('app');
           setPage(source === 'ga4' ? 'ga4-setup' : 'tracker-setup');
