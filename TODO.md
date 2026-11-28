@@ -10,10 +10,8 @@ Cards no [GitHub Project ANALIZI](https://github.com/users/paulacarvalho1990/pro
 - [ ] #53 Alinhar teste grátis em 7 dias (banco hoje dá 30)
 - [ ] #25 [D1] Definir arquitetura da migração e registrar a decisão
 
-## Fase 1 — Qualidade: testes, refatoração e rastreador sem cookies
-- [ ] #15 Testes automatizados mínimos
-- [ ] #16 Refatorar App.tsx e worker.ts em módulos + atualizar MVP-ROADMAP
-- [ ] #82 Rastreador sem cookies e de acordo com a LGPD
+## Fase 1 — Refatoração (prepara a migração)
+- [ ] #16 Refatorar App.tsx e worker.ts em módulos + atualizar MVP-ROADMAP (só mover código, sem mudar comportamento)
 
 ## Fase 2 — Migração Supabase → D1 (#24)
 - [ ] #26 Criar banco analizi-app e esquema SQLite
@@ -25,6 +23,7 @@ Cards no [GitHub Project ANALIZI](https://github.com/users/paulacarvalho1990/pro
 - [ ] #32 Front: trocar Supabase pelo cliente da API e pela sessão
 - [ ] #34 Crons e jobs sem Supabase
 - [ ] #36 Testes de autorização e do fluxo de login
+- [ ] #15 Testes automatizados mínimos (junto com #36, já sobre o D1)
 - [ ] #37 Script de migração dos dados
 - [ ] #39 Backup e restauração do banco
 - [ ] #41 Corte para produção e desligamento do Supabase
@@ -48,7 +47,7 @@ Cards no [GitHub Project ANALIZI](https://github.com/users/paulacarvalho1990/pro
 ## Fase 5 — Ambientes, coletor, LGPD, GA4 e observabilidade
 - [ ] Ambientes: #57 Bancos D1 de produção · #58 Domínio próprio · #59 Deploy por ambiente
 - [ ] Coletor: #60 Rate limit · #61 Deduplicar eventos · #62 Sem cabeçalho Origin · #63 Limite mensal por plano
-- [ ] LGPD: #64 Termos · #65 Privacidade · #66 Exclusão de conta · #67 DPO · #68 Aviso do rastreador
+- [ ] LGPD: #82 Rastreador sem cookies · #64 Termos · #65 Privacidade · #66 Exclusão de conta · #67 DPO · #68 Aviso do rastreador
 - [ ] GA4: #69 · #70 Flag por ambiente · #71 Teste em staging · #72 Estados de erro · #14 Verificação OAuth Google
 - [ ] #13 Observabilidade: erros e alertas de crons
 
