@@ -1,0 +1,8 @@
+{
+  "name": "analizi-auth-poc",
+  "private": true,
+  "type": "module",
+  "scripts": { "deploy": "wrangler deploy" },
+  "dependencies": { "better-auth": "1.7.25" },
+  "devDependencies": { "wrangler": "4.169.0", "typescript": "5.9.3" }
+}
