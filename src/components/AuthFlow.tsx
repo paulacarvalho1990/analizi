@@ -92,7 +92,7 @@ export function AuthFlow({ mode, setMode, onSourceCreated }: Props) {
       const businessId = crypto.randomUUID()
       const createdSiteId = crypto.randomUUID()
       const segmentDetail = isOther ? otherSubsegment.trim() : null
-      const { error: profileError } = await supabase!.from('profiles').update({ full_name: userName.trim(), email: user.email ?? null, phone: phone.trim() || null }).eq('id', user.id)
+      const { error: profileError } = await supabase!.from('profiles').update({ full_name: userName.trim(), phone: phone.trim() || null }).eq('id', user.id)
       if (profileError) throw new Error(profileError.message)
       const { error: businessError } = await supabase!.rpc('create_business_for_current_user', {
         p_business_id: businessId,

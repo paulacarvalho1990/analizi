@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Migration: plano e assinatura do negócio vêm do perfil do dono (card #99, parte A)
--- ATENÇÃO: publicar o front antes de aplicar (o front antigo envia p_plan etc.).
+-- ATENÇÃO: publicar o front antes de aplicar (o front antigo envia p_plan e email).
 -- =============================================================================
 
 drop function if exists public.create_business_for_current_user(uuid, text, text, text, text, text, text, text, text, timestamptz);
@@ -51,9 +51,10 @@ revoke all on function public.create_business_for_current_user(uuid, text, text,
 grant execute on function public.create_business_for_current_user(uuid, text, text, text, text, text, text) to authenticated;
 
 -- Só os privilégios que o app usa (remove também trigger, references e maintain).
+-- O e-mail do perfil é gravado pelo servidor no cadastro (handle_new_user).
 revoke all on public.profiles, public.businesses from anon, authenticated;
 grant select on public.profiles, public.businesses to anon, authenticated;
-grant update (full_name, email, phone) on public.profiles to authenticated;
+grant update (full_name, phone) on public.profiles to authenticated;
 grant update (name, website_url, segment, subsegment, segment_detail) on public.businesses to authenticated;
 
 notify pgrst, 'reload schema';
