@@ -581,10 +581,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
         p_website_url: normalized.url,
         p_segment: resolvedSegment,
         p_subsegment: resolvedSubsegment,
-        p_segment_detail: resolvedDetail,
-        p_plan: effectivePlan.id,
-        p_subscription_status: subscriptionStatus,
-        p_subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 7 * 86400000).toISOString()
+        p_segment_detail: resolvedDetail
       })
       .single()
 
