@@ -2683,6 +2683,7 @@ interface SiteInvitation {
   role: 'admin' | 'viewer'
   status: string
   created_at?: string
+  expires_at?: string
 }
 
 const ROLE_DESCRIPTIONS: Record<'owner' | 'admin' | 'viewer', { label: string; badgeClass: string; permissions: string }> = {
@@ -3145,8 +3146,8 @@ function PeopleTab({ onToast }: { onToast: (t: string) => void }) {
           }
         }))
       } else setMembers([])
-      const { data: inviteRows } = await supabase.from('business_invitations').select('id, email, role, status, created_at').eq('business_id', businessId).order('created_at', { ascending: false })
-      setInvites((inviteRows || []).filter((inv) => inv.status !== 'accepted').map((inv) => ({ id: inv.id, email: inv.email, role: (inv.role as 'admin' | 'viewer') || 'viewer', status: inv.status, created_at: inv.created_at })))
+      const { data: inviteRows } = await supabase.from('business_invitations').select('id, email, role, status, created_at, expires_at').eq('business_id', businessId).order('created_at', { ascending: false })
+      setInvites((inviteRows || []).filter((inv) => inv.status !== 'accepted').map((inv) => ({ id: inv.id, email: inv.email, role: (inv.role as 'admin' | 'viewer') || 'viewer', status: inv.status, created_at: inv.created_at, expires_at: inv.expires_at })))
     } finally {
       setLoading(false)
     }
@@ -3197,9 +3198,11 @@ function PeopleTab({ onToast }: { onToast: (t: string) => void }) {
     setSending(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      const { data: existingProfile } = await supabase.from('profiles').select('id, full_name, email').ilike('email', address).maybeSingle()
+      const { data: existingProfile } = await supabase.from('profiles').select('id, full_name, email').eq('email', address).maybeSingle()
       if (existingProfile?.id) {
-        const { error } = await supabase.from('business_members').upsert({ business_id: businessId, user_id: existingProfile.id, role }, { onConflict: 'business_id,user_id' })
+        const { data: currentMember } = await supabase.from('business_members').select('user_id').eq('business_id', businessId).eq('user_id', existingProfile.id).maybeSingle()
+        if (currentMember) { setFormError('Esta pessoa já tem acesso a este site. Para mudar o nível, use a lista da equipe.'); return }
+        const { error } = await supabase.from('business_members').insert({ business_id: businessId, user_id: existingProfile.id, role })
         if (error) { setFormError(error.message); return }
         onToast(`${existingProfile.full_name || address} já usa o Analizi e recebeu acesso na hora`)
         await load()
@@ -3255,14 +3258,17 @@ function PeopleTab({ onToast }: { onToast: (t: string) => void }) {
                 </tr>
               )
             })}
-            {shownInvites.map((inv) => (
+            {shownInvites.map((inv) => {
+              const expired = !!inv.expires_at && new Date(inv.expires_at).getTime() <= Date.now()
+              return (
               <tr key={inv.id} className="pend">
-                <td><div className="z-who"><span className="z-av inv">@</span><div><b>{inv.email}<span className="z-pill warn">Convite pendente</span></b><small>Ainda não entrou no Analizi</small></div></div></td>
+                <td><div className="z-who"><span className="z-av inv">@</span><div><b>{inv.email}<span className="z-pill warn">{expired ? 'Convite vencido' : 'Convite pendente'}</span></b><small>{expired ? 'Convide de novo para liberar mais 7 dias' : 'Ainda não entrou no Analizi'}</small></div></div></td>
                 <td><select aria-label={`Nível de acesso do convite para ${inv.email}`} value={inv.role} disabled={busyId === inv.id} onChange={(e) => void changeInviteRole(inv, e.target.value as 'admin' | 'viewer')}><option value="admin">Administrador</option><option value="viewer">Visualizador</option></select></td>
                 <td className="z-muted-sm z-nowrap">Convidado em {fmtDate(inv.created_at)}</td>
                 <td className="z-right"><button type="button" className="z-btn ghost sm" disabled={busyId === inv.id} onClick={() => setModal({ kind: 'remove-invite', invite: inv })}>Cancelar convite</button></td>
               </tr>
-            ))}
+              )
+            })}
             {!loading && !shownMembers.length && !shownInvites.length && <tr><td colSpan={4} className="z-muted-sm">{q ? 'Ninguém encontrado com essa busca.' : 'Nenhuma pessoa encontrada para este site.'}</td></tr>}
           </tbody>
         </table>
