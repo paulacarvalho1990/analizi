@@ -7,6 +7,7 @@ interface Env {
   BETTER_AUTH_SECRET: string
   GOOGLE_OAUTH_CLIENT_ID: string
   GOOGLE_OAUTH_CLIENT_SECRET: string
+  APP_ORIGIN: string
 }
 
 // Conta quantas consultas cada requisição faz ao D1.
@@ -15,7 +16,8 @@ function countingD1(db: D1Database) {
   const wrapped = new Proxy(db, {
     get(target, prop, receiver) {
       if (prop === 'prepare') return (sql: string) => { counter.queries++; counter.sql.push(sql.slice(0, 120)); return target.prepare(sql) }
-      if (prop === 'batch') return (stmts: D1PreparedStatement[]) => { counter.queries += stmts.length; return target.batch(stmts) }
+      // prepare() já registra cada SQL; batch só executa os statements preparados.
+      if (prop === 'batch') return (stmts: D1PreparedStatement[]) => target.batch(stmts)
       const value = Reflect.get(target, prop, receiver)
       return typeof value === 'function' ? value.bind(target) : value
     }
@@ -23,7 +25,10 @@ function countingD1(db: D1Database) {
   return { db: wrapped, counter }
 }
 
-function createAuth(env: Env, db: D1Database, origin: string) {
+// Endereço e origens vêm da configuração do ambiente, nunca da requisição:
+// a instância é reaproveitada pelo isolate e serviria qualquer host que chegasse primeiro.
+function createAuth(env: Env, db: D1Database) {
+  const origin = env.APP_ORIGIN
   return betterAuth({
     baseURL: origin,
     secret: env.BETTER_AUTH_SECRET,
@@ -54,7 +59,7 @@ export default {
     const url = new URL(request.url)
     // Uma instância por isolate: criar a cada requisição relê a estrutura do banco (~13 consultas).
     const { db, counter } = countingD1(env.DB)
-    if (!cached) cached = { auth: createAuth(env, db, url.origin), counter }
+    if (!cached) cached = { auth: createAuth(env, db), counter }
     cached.counter.queries = 0
     cached.counter.sql = []
     const auth = cached.auth
@@ -71,16 +76,23 @@ export default {
     }
 
     if (url.pathname === '/me') {
-      const session = await auth.api.getSession({ headers: request.headers })
-      const payload = { d1Queries: counterRef.queries, sql: counterRef.sql, session }
+      // returnHeaders: o Better Auth devolve o cookie de cache renovado; sem repassá-lo, o cache vence e nunca volta.
+      const { headers: authHeaders, response: session } = await auth.api.getSession({ headers: request.headers, returnHeaders: true })
+      const withCookies = (res: Response) => { authHeaders.forEach((v, k) => { if (k.toLowerCase() === 'set-cookie') res.headers.append('set-cookie', v) }); return res }
+      // Nunca devolve o token da sessão.
+      const safeSession = session && { user: session.user, session: { id: session.session.id, userId: session.session.userId, expiresAt: session.session.expiresAt, createdAt: session.session.createdAt, updatedAt: session.session.updatedAt } }
+      const payload = { d1Queries: counterRef.queries, sql: counterRef.sql, session: safeSession }
       console.log(JSON.stringify({ route: '/me', d1Queries: counterRef.queries, logged: Boolean(session) }))
-      if (url.searchParams.has('json')) return Response.json(payload)
-      return html(session
-        ? `<h1>Logada</h1><p>Consultas ao D1 nesta requisição: <b>${counterRef.queries}</b></p><pre>${JSON.stringify(payload, null, 2).replace(/</g, '&lt;')}</pre><p><a href="/me">Recarregar</a> · <a href="/sair">Sair</a></p>`
-        : `<h1>Sem sessão</h1><p><a href="/">Voltar</a></p>`)
+      if (url.searchParams.has('json')) return withCookies(Response.json(payload))
+      return withCookies(html(session
+        ? `<h1>Logada</h1><p>Consultas ao D1 nesta requisição: <b>${counterRef.queries}</b></p><pre>${JSON.stringify(payload, null, 2).replace(/</g, '&lt;')}</pre><p><a href="/me">Recarregar</a></p><form method="post" action="/sair"><button>Sair</button></form><p></p>`
+        : `<h1>Sem sessão</h1><p><a href="/">Voltar</a></p>`))
     }
 
     if (url.pathname === '/sair') {
+      // Só POST: um link ou imagem de outro site não consegue deslogar o usuário.
+      if (request.method !== 'POST') return new Response('Use POST.', { status: 405, headers: { allow: 'POST' } })
+      if (request.headers.get('origin') !== env.APP_ORIGIN) return new Response('Origem inválida.', { status: 403 })
       const res = await auth.api.signOut({ headers: request.headers, asResponse: true })
       const headers = new Headers({ location: '/' })
       res.headers.forEach((v, k) => { if (k.toLowerCase() === 'set-cookie') headers.append('set-cookie', v) })

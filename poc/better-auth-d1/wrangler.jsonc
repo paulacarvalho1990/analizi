@@ -4,6 +4,7 @@
   "compatibility_date": "2026-11-01",
   "workers_dev": true,
   "observability": { "enabled": true },
+  "vars": { "APP_ORIGIN": "https://analizi-auth-poc.carvalhopaula1990.workers.dev" },
   "d1_databases": [
     { "binding": "DB", "database_name": "analizi-auth-poc", "database_id": "3cbf0f12-ddc5-426b-bf87-0d123a18af3a", "migrations_dir": "migrations" }
   ]
