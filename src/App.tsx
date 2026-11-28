@@ -3730,13 +3730,13 @@ function TrackerSetup({ setPage }: { setPage: (page: Page) => void }) {
   const alreadyInstalled = Boolean(tracker.status?.received);
 
   useEffect(() => {
-    if (!siteId || !domain) return;
-    void fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites', {
+    if (!siteId || !domain || !currentSite?.id) return;
+    void (async () => fetch('https://analizi.carvalhopaula1990.workers.dev/v1/tracker-sites', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ trackerSiteId: siteId, domain })
-    }).catch(() => {});
-  }, [siteId, domain]);
+      headers: { 'content-type': 'application/json', ...await authHeaders() },
+      body: JSON.stringify({ trackerSiteId: siteId, supabaseSiteId: currentSite.id })
+    }))().catch(() => {});
+  }, [siteId, domain, currentSite?.id]);
 
   const testInstallation = async () => {
     if (!siteId) return;
