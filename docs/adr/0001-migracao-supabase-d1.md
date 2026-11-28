@@ -32,7 +32,13 @@ A cópia `tracker_sites` é sincronizada pelo front por uma rota pública, e o W
 
 - Biblioteca: **Better Auth**, com adaptador D1 e provedor Google (único provedor).
 - Não escrever OAuth à mão. Auth.js fica como alternativa se a validação falhar.
-- **Validar antes do #27:** um teste mínimo no Worker (login Google → sessão gravada no D1), incluindo flags de compatibilidade exigidas.
+- **Validado em 28/11/2026** com o protótipo `poc/better-auth-d1/` (Better Auth 1.7.25, Worker + D1, sem flags de compatibilidade extras). Ver [Resultado da validação](#resultado-da-validação).
+- **Instância única por isolate:** criar o Better Auth a cada requisição faz ele reler a estrutura do banco (~13 consultas). Criando uma vez e reaproveitando, só a primeira requisição do isolate paga esse custo.
+- **Endereço vem da configuração:** como a instância é reaproveitada, `baseURL` e `trustedOrigins` vêm de uma variável do ambiente (`APP_ORIGIN`), nunca do endereço da requisição. Senão, o primeiro host que chegar ao isolate vira o oficial e o login falha nos outros.
+- **Sair só por POST,** com checagem de origem. Logout por GET deixa qualquer site deslogar o usuário com um link.
+- A API de sessão nunca devolve o token da sessão.
+- **Repassar os cookies do Better Auth:** ao ler a sessão no servidor (`getSession`), usar `returnHeaders: true` e repassar os `Set-Cookie` na resposta. Sem isso o cache do cookie vence e nunca é renovado: toda requisição volta a ler sessão e usuário no D1 (2 consultas). Medido no protótipo.
+- Cliente OAuth próprio para o login (`Analizi — Login`), separado do cliente do GA4. Escopos: `openid`, `email`, `profile`.
 - IDs de usuário em **UUID** (configurar a geração de ID do Better Auth; o padrão dele não é UUID).
 
 ### 3. Sessão
@@ -73,6 +79,23 @@ A cópia `tracker_sites` é sincronizada pelo front por uma rota pública, e o W
 ### 9. Banco por cliente (Rede/Grupo, #22)
 
 Fica para depois. Todas as tabelas do app levam `business_id`, para que um cliente possa ser separado num banco próprio sem reescrever o app.
+
+## Resultado da validação
+
+Protótipo em `poc/better-auth-d1/` (Worker `analizi-auth-poc` + D1 `analizi-auth-poc`, ambos descartáveis), 28/11/2026:
+
+| Verificação | Resultado |
+|---|---|
+| Better Auth roda no Worker com D1 direto (sem Kysely à parte, sem flags extras) | ✅ |
+| Login com Google cria usuário com **UUID** (`generateId: 'uuid'`) | ✅ |
+| Conta Google gravada em `account` (`providerId = google`, `accountId` = `sub` do Google) | ✅ — é esse par que a migração (#37) precisa trazer de `auth.identities` |
+| Sessão gravada no D1, vence em 30 dias | ✅ |
+| Cookie de state do login com `__Secure-`, `HttpOnly`, `Secure`, `SameSite=Lax` (lido no cabeçalho) | ✅ |
+| Cookies de sessão invisíveis ao JavaScript (mesma configuração `defaultCookieAttributes`) | ✅ |
+| Cache de sessão: **0 consultas** ao D1 enquanto o cache do cookie vale (5 min); depois, 1 leitura, e 1 gravação por dia para renovar a sessão | ✅ (com instância única por isolate) |
+| POST de outra origem com cookie é recusado (`403 Invalid origin`) | ✅ |
+
+Pendências levadas ao #27: tabelas do Better Auth no esquema do `analizi-app` (#26), URLs de retorno de staging e produção no cliente `Analizi — Login`, e remover do cliente a URL do protótipo.
 
 ## Alternativas descartadas
 
