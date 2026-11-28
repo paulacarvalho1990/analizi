@@ -514,7 +514,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
         segment_detail: resolvedDetail,
         plan: effectivePlan.id,
         subscription_status: subscriptionStatus,
-        subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 30 * 86400000).toISOString()
+        subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 7 * 86400000).toISOString()
       }
 
       const fallbackSite: SiteItem = {
@@ -584,7 +584,7 @@ export function BusinessProvider({ children }: { children: React.ReactNode }) {
         p_segment_detail: resolvedDetail,
         p_plan: effectivePlan.id,
         p_subscription_status: subscriptionStatus,
-        p_subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 30 * 86400000).toISOString()
+        p_subscription_expires_at: subscriptionExpiresAt || new Date(Date.now() + 7 * 86400000).toISOString()
       })
       .single()
 
