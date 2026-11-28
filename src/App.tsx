@@ -3266,7 +3266,7 @@ function PeopleTab({ onToast }: { onToast: (t: string) => void }) {
               <tr key={inv.id} className="pend">
                 <td><div className="z-who"><span className="z-av inv">@</span><div><b>{inv.email}<span className="z-pill warn">{expired ? 'Convite vencido' : 'Convite pendente'}</span></b><small>{expired ? 'Convide de novo para liberar mais 7 dias' : 'Ainda não entrou no Analizi'}</small></div></div></td>
                 <td><select aria-label={`Nível de acesso do convite para ${inv.email}`} value={inv.role} disabled={busyId === inv.id} onChange={(e) => void changeInviteRole(inv, e.target.value as 'admin' | 'viewer')}><option value="admin">Administrador</option><option value="viewer">Visualizador</option></select></td>
-                <td className="z-muted-sm z-nowrap">Convidado em {fmtDate(inv.created_at)}</td>
+                <td className="z-muted-sm z-nowrap">{inv.expires_at ? `${expired ? 'Venceu' : 'Vence'} em ${fmtDate(inv.expires_at)}` : `Convidado em ${fmtDate(inv.created_at)}`}</td>
                 <td className="z-right"><button type="button" className="z-btn ghost sm" disabled={busyId === inv.id} onClick={() => setModal({ kind: 'remove-invite', invite: inv })}>Cancelar convite</button></td>
               </tr>
               )
