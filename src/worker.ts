@@ -2335,7 +2335,11 @@ async function ownedSite(siteId: string, user: AuthenticatedUser, env: Env, trac
     ? { apikey: env.SUPABASE_SERVICE_ROLE_KEY, authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}` }
     : { apikey: env.SUPABASE_ANON_KEY, authorization: `Bearer ${user.token}` }
   const encodedSite = encodeURIComponent(siteId)
-  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
+  // sites.id é uuid: comparar com um identificador ANLZ… faz o PostgREST recusar a consulta inteira (400).
+  const siteFilter = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(siteId)
+    ? `or=(id.eq.${encodedSite},tracker_site_id.eq.${encodedSite})`
+    : `tracker_site_id=eq.${encodedSite}`
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/sites?${siteFilter}&select=id,tracker_site_id,business_id`, { headers: requestHeaders })
   if (!response.ok) {
     audit('site_query_failed', { status: response.status, usingServiceRole: Boolean(env.SUPABASE_SERVICE_ROLE_KEY) })
     return null
