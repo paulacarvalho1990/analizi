@@ -3200,10 +3200,12 @@ function PeopleTab({ onToast }: { onToast: (t: string) => void }) {
       const { data: { user } } = await supabase.auth.getUser()
       const { data: existingProfile } = await supabase.from('profiles').select('id, full_name, email').eq('email', address).maybeSingle()
       if (existingProfile?.id) {
-        const { data: currentMember } = await supabase.from('business_members').select('user_id').eq('business_id', businessId).eq('user_id', existingProfile.id).maybeSingle()
-        if (currentMember) { setFormError('Esta pessoa já tem acesso a este site. Para mudar o nível, use a lista da equipe.'); return }
+        const alreadyMember = 'Esta pessoa já tem acesso a este site. Para mudar o nível, use a lista da equipe.'
+        const { data: currentMember, error: memberError } = await supabase.from('business_members').select('user_id').eq('business_id', businessId).eq('user_id', existingProfile.id).maybeSingle()
+        if (memberError) { setFormError('Não foi possível conferir a equipe agora. Tente de novo.'); return }
+        if (currentMember) { setFormError(alreadyMember); return }
         const { error } = await supabase.from('business_members').insert({ business_id: businessId, user_id: existingProfile.id, role })
-        if (error) { setFormError(error.message); return }
+        if (error) { setFormError(error.code === '23505' ? alreadyMember : error.message); return }
         onToast(`${existingProfile.full_name || address} já usa o Analizi e recebeu acesso na hora`)
         await load()
       } else {
