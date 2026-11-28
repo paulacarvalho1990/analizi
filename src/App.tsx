@@ -3995,8 +3995,14 @@ async function nextScreenAfterConsent(): Promise<AuthPage> {
   if (!supabase) return 'onboarding-business';
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) return 'login';
-  const { error } = await supabase.rpc('accept_pending_invitations_for_user', { p_user_id: session.user.id, p_email: session.user.email ?? '' });
-  if (error) return 'onboarding-business';
+  const client = supabase;
+  const accept = () => client.rpc('accept_pending_invitations_for_user', { p_user_id: session.user.id, p_email: session.user.email ?? '' });
+  let { error } = await accept();
+  if (error) ({ error } = await accept());
+  if (error) {
+    console.warn('Não foi possível conferir convites pendentes:', error.message);
+    return 'onboarding-business';
+  }
   const { data: businesses } = await supabase.from('businesses').select('id').limit(1);
   return businesses?.length ? 'app' : 'onboarding-business';
 }
